@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from .pipeline_logic import SpeechPipeline
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
-    from .runtime_policy import RuntimePolicyGate
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -90,6 +89,14 @@ class GatewayDependencies:
     recording_secrets: Any = None
     recording_keys: Any = None
     recording_ceremony: Any = None
+    # Where each conversation's recording state lives; always built, used once wired.
+    recording_state_store: Any = None
+    recording_sessions: Any = None
+    # The archive behind recording (#615), wired with it when a store is configured.
+    recording_archive: Any = None
+    recording_spools: Any = None
+    recording_archive_client: Any = None
+    recording_stamper: Any = None
 
 
 def build_gateway_dependencies(
@@ -100,7 +107,6 @@ def build_gateway_dependencies(
     studio_runtime_flow: StudioRuntimeFlow | None = None,
     studio_token_provider: StudioRuntimeTokenProvider | None = None,
     studio_content: StudioContentService | None = None,
-    runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
     websocket_metrics: WebSocketMetrics | None = None,
     translation_refiner: BaseTranslationRefiner,
@@ -145,6 +151,7 @@ def build_gateway_dependencies(
         RealtimeTicketStore,
         RedisRealtimeTicketBackend,
     )
+    from .recording.session_store import MemoryRecordingStateStore, RedisRecordingStateStore
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -182,7 +189,6 @@ def build_gateway_dependencies(
         audio_store=audio_store,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
-        runtime_policy=runtime_policy,
         pseudonymizer=pseudonymizer,
     )
     websocket_manager = WebSocketManager(session_manager, polling_store, monitor=websocket_monitor)
@@ -230,6 +236,11 @@ def build_gateway_dependencies(
         pipeline_admission=pipeline_admission,
         quality_telemetry=quality_telemetry,
         quality_telemetry_exporter=quality_telemetry_exporter,
+        recording_state_store=(
+            RedisRecordingStateStore(redis, namespace=redis_namespace)
+            if redis is not None
+            else MemoryRecordingStateStore()
+        ),
     )
 
 

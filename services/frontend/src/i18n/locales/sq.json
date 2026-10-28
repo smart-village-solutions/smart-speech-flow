@@ -24,8 +24,6 @@
     "intro": "$t(app.name) është një shërbim automatik përkthimi në kohë reale, i krijuar për të mbështetur bisedat mes njerëzve që flasin gjuhë të ndryshme. Shërbimi funksionon vetëm në një server privat të dedikuar.",
     "howTo": "Për të filluar regjistrimin, prekni butonin e mikrofonit. Pastaj do të keni 20 sekonda për të folur. Mund ta përfundoni regjistrimin edhe më herët me një prekje tjetër. Si alternativë, mund ta shkruani tekstin.",
     "retention": "Si parazgjedhje, të dhënat audio dhe të transkriptimit përpunohen vetëm gjatë seancës aktive dhe nuk ruhen më pas. Pasi mbaron biseda, të dhënat fshihen automatikisht. Në çdo kohë mund të raportoni probleme ose të ndani ide për përmirësim përmes funksionit të komenteve në aplikacion.",
-    "optIn": "Nëse dëshironi të na ndihmoni të përmirësojmë $t(app.name), mund të lejoni që të dhënat e bisedës suaj të ruhen deri në 180 ditë. Këto të dhëna mund të përdoren vetëm për analizë dhe përmirësim të cilësisë brenda projektit $t(app.name).",
-    "checkbox": "Pranoj që të dhënat e bisedës sime të ruhen deri në 180 ditë me qëllim përmirësimin e $t(app.name).",
     "getStarted": "Fillo",
     "loading": "Po ngarkohen informacionet"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Po rilidhet…",
     "ended": "Kjo bisedë ka përfunduar.",
     "timeoutWarning": "Kjo bisedë do të përfundojë në orën {{time}}."
+  },
+  "recording": {
+    "label": "Po regjistrohet",
+    "starting": "Regjistrimi po fillon…",
+    "paused": "Regjistrimi është në pauzë",
+    "stop": "Ndalo regjistrimin",
+    "error": "Regjistrimi nuk mund të ndryshohej. Ju lutemi provoni përsëri.",
+    "reason": {
+      "liveness": "lidhja u ndërpre",
+      "unacknowledged": "në pritje të të dy ekraneve",
+      "storage": "ruajtja nuk është e disponueshme",
+      "policy": "nuk lejohet për momentin"
+    },
+    "ask": {
+      "title": "A mund të regjistrohet kjo bisedë?",
+      "resumeTitle": "Të vazhdojë regjistrimi?",
+      "yes": "Po, regjistro",
+      "no": "Jo"
+    },
+    "consent": {
+      "readAloud": "Lexo me zë",
+      "stopReading": "Ndalo leximin",
+      "loading": "Teksti po ngarkohet…",
+      "unavailable": "Teksti nuk mund të ngarkohet tani. Ju lutemi drejtojuni punonjësit.",
+      "name": "Emri juaj",
+      "nameProposed": "Futur nga punonjësi. Ju lutemi kontrollojeni.",
+      "signature": "Nënshkrimi juaj",
+      "optional": "opsionale",
+      "clear": "Fshi",
+      "cannotSign": "Nuk mund të nënshkruaj dhe konfirmoj me prekje.",
+      "nameRequired": "Ju lutemi shkruani emrin tuaj.",
+      "signatureRequired": "Ju lutemi nënshkruani ose konfirmoni që nuk mund të nënshkruani.",
+      "textChanged": "Teksti ka ndryshuar. Ju lutemi lexojeni përsëri para se të përgjigjeni."
+    }
   },
   "feedback": {
     "title": "Ndani mendimin tuaj",

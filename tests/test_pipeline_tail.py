@@ -84,7 +84,11 @@ def test_the_refiner_is_told_the_source_and_the_mode(mode):
 
     assert refiner.refine.call_args.args == ("Good day", "de", "en")
     assert refiner.refine.call_args.kwargs == {
-        "context": {"original_text": "Guten Tag", "pipeline": mode}
+        "context": {
+            "original_text": "Guten Tag",
+            "pipeline": mode,
+            "withhold_languages": False,
+        }
     }
 
 

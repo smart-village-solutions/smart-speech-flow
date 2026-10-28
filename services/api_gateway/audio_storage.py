@@ -1,20 +1,17 @@
-"""
-Audio Storage Service for SSF Backend
+"""The delivery audio the other screen fetches, for as long as its session runs.
 
-Manages persistent storage of audio files with automatic cleanup.
 - Files: <SSF_AUDIO_BASE_DIR>/v2/<tenant_ref>/<session_id>/<original|translated>/<message_id>.wav
-- Retention: per session, from <session_id>/retention.json; the short
-  SSF_TERMINAL_RECORD_HOURS when it is missing or invalid
-- Cleanup: Hourly background job
+- Where: the RAM-backed tmpfs at /tmp/audio in the deployed stacks (spec §5.5)
+- Deleted when the session ends; an hourly pass removes anything older than
+  the longest a session can run (SSF_SESSION_MAX_HOURS, plus an hour)
 """
 
 import copy
 import fnmatch
-import json
 import logging
 import os
 import re
-import tempfile
+import shutil
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -24,7 +21,7 @@ from typing import Any, Iterator, Optional
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from .clock import utc_now
-from .content_retention import terminal_record_hours, valid_retention_hours
+from .content_retention import delivery_audio_hours
 from .log_safety import sanitize_log_value
 from .tenant_session import TenantSessionKey
 
@@ -36,9 +33,8 @@ class AudioStorageMetrics:
     """The audio store's series, on the registry /metrics serves (#426).
 
     The ssf-audio-storage alerts read when a retention pass last completed and
-    what it failed to delete, not how much it deleted: a quiet deployment, or
-    one whose sessions captured a retention of 0, deletes nothing on every
-    healthy pass.
+    what it failed to delete, not how much it deleted: a quiet deployment
+    deletes nothing on every healthy pass.
     """
 
     def __init__(self, registry: CollectorRegistry) -> None:
@@ -92,17 +88,12 @@ class AudioStorageMetrics:
 
 
 def _configured_base_dir() -> Path:
-    # Default remains /data/audio for local/Docker parity, but CI can override it.
-    return Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
-
-
-# Beside a session's audio: {"hours": N}, the retention captured with granted
-# consent. It is not a WAV, so the walk never mistakes it for audio.
-RETENTION_MARKER = "retention.json"
-_MARKER_MAX_BYTES = 64
-_MARKER_TEMP_PREFIX = ".retention-"
-# A marker write takes milliseconds; a temp file this old was left by a process that died.
-_STALE_MARKER_TEMP_SECONDS = 3600
+    # No default: the stacks name their tmpfs, and a guessed path could sit on
+    # disk or in a /tmp other users can write to.
+    configured = os.environ.get("SSF_AUDIO_BASE_DIR")
+    if not configured:
+        raise RuntimeError("SSF_AUDIO_BASE_DIR is not set")
+    return Path(configured)
 
 
 _STORAGE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -134,66 +125,24 @@ def audio_path(
     )
 
 
-def delete_message_audio(
-    key: TenantSessionKey,
-    message_id: str,
-    variant: AudioVariant,
-    *,
-    base_dir: Path,
-) -> bool:
-    """Delete one message's audio file, reporting whether it existed.
+def _session_directory(key: TenantSessionKey, base_dir: Path) -> Path:
+    return base_dir / "v2" / key.tenant_ref / _storage_identifier(key.session_id)
 
-    Args:
-        key: The tenant-scoped session the message belongs to.
-        message_id: The message whose artefact is being removed.
-        variant: Which of the two artefacts to remove.
-        base_dir: The storage root.
 
-    Returns:
-        True when a file was removed, False when there was nothing to remove
-        or the removal failed.
+def delete_session_audio(key: TenantSessionKey, *, base_dir: Path) -> None:
+    """Delete every delivery file of a session that has ended.
+
+    A symlink in place of the directory is left alone: the store never makes one.
     """
-    path = audio_path(key, message_id, variant, base_dir=base_dir)
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        return False
-    except OSError:
-        logger.warning("Failed to delete refused audio")
-        return False
-    return True
-
-
-def read_retention_marker(session_dir: Path) -> int | None:
-    """The hours a session directory's marker carries, or None when it has no valid one.
-
-    A symlink is never followed: it could borrow another directory's "keep".
-    """
-    marker = session_dir / RETENTION_MARKER
-    try:
-        if marker.is_symlink() or not marker.is_file():
-            return None
-        if marker.stat().st_size > _MARKER_MAX_BYTES:
-            return None
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(payload, dict) or set(payload) != {"hours"}:
-        return None
-    return valid_retention_hours(payload["hours"])
-
-
-def _write_retention_marker(session_dir: Path, hours: int) -> None:
-    """Write the marker atomically, unless it already says the same."""
-    if read_retention_marker(session_dir) == hours:
+    session_dir = _session_directory(key, base_dir)
+    if session_dir.is_symlink():
         return
-    descriptor, temporary = tempfile.mkstemp(dir=session_dir, prefix=_MARKER_TEMP_PREFIX)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump({"hours": hours}, handle)
-        os.replace(temporary, session_dir / RETENTION_MARKER)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+        shutil.rmtree(session_dir)
+    except FileNotFoundError:
+        return
+    except OSError:
+        logger.warning("Failed to delete a session's audio", extra={"tenant_ref": key.tenant_ref})
 
 
 def save_audio(
@@ -203,15 +152,8 @@ def save_audio(
     data: bytes,
     *,
     base_dir: Path,
-    retention_hours: int | None = None,
 ) -> Path:
-    """Persist one audio artifact below its tenant and session scope.
-
-    With `retention_hours` (captured with granted consent) the session's
-    marker is written first, and a failure to write it fails the save: the
-    short default the cleanup would apply instead can outlive a shorter
-    retention. Without it the cleanup applies the short default.
-    """
+    """Write one audio artifact below its tenant and session scope."""
     if not data:
         raise ValueError("audio data cannot be empty")
     path = audio_path(key, message_id, variant, base_dir=base_dir)
@@ -220,8 +162,6 @@ def save_audio(
     for attempt in range(2):
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            if retention_hours is not None:
-                _write_retention_marker(path.parents[1], retention_hours)
             path.write_bytes(data)
             break
         except FileNotFoundError:
@@ -353,15 +293,12 @@ def _managed_v2_audio_files(
         yield from files
 
 
-def _remove_session_directory(session_dir: Path, hours: int | None) -> None:
+def _remove_session_directory(session_dir: Path) -> None:
     """Remove an emptied session directory; stop at the first entry that is not ours.
 
-    `rmdir` refuses a directory a concurrent save has just written into. Only
-    a marker this pass read is unlinked, so it can be put back; one it could
-    not read may be a save's fresh write, and stays.
+    `rmdir` refuses a directory a concurrent save has just written into.
     """
     try:
-        _remove_stale_marker_temps(session_dir)
         for variant in AudioVariant:
             variant_dir = session_dir / variant.value
             if variant_dir.is_symlink():
@@ -370,8 +307,6 @@ def _remove_session_directory(session_dir: Path, hours: int | None) -> None:
                 variant_dir.rmdir()
             except FileNotFoundError:
                 continue
-        if hours is not None:
-            (session_dir / RETENTION_MARKER).unlink(missing_ok=True)
         session_dir.rmdir()
     except FileNotFoundError:
         return
@@ -380,22 +315,6 @@ def _remove_session_directory(session_dir: Path, hours: int | None) -> None:
             "Audio session directory without audio could not be removed",
             extra={"tenant_ref": session_dir.parent.name},
         )
-        if hours is not None:
-            _restore_marker(session_dir, hours)
-
-
-def _remove_stale_marker_temps(session_dir: Path) -> None:
-    stale_before = utc_now().timestamp() - _STALE_MARKER_TEMP_SECONDS
-    for temporary in session_dir.glob(f"{_MARKER_TEMP_PREFIX}*"):
-        if not temporary.is_symlink() and temporary.lstat().st_mtime < stale_before:
-            temporary.unlink(missing_ok=True)
-
-
-def _restore_marker(session_dir: Path, hours: int) -> None:
-    try:
-        _write_retention_marker(session_dir, hours)
-    except OSError:
-        logger.warning("Failed to restore the audio retention marker")
 
 
 def _delete_expired(
@@ -427,13 +346,12 @@ def _delete_expired(
 
 def cleanup_old_audio_files(*, base_dir: Path) -> dict:
     """
-    Delete audio files older than their session's retention.
+    Delete audio files older than any session can be (`delivery_audio_hours`).
 
-    Each session directory's marker carries the retention captured with
-    granted consent; `0` keeps that directory's audio. A missing or invalid
-    marker falls back to the short SSF_TERMINAL_RECORD_HOURS. A session
-    directory left without audio is removed; a save racing that removal finds
-    `rmdir` refused or retries into a recreated directory.
+    A session's end deletes its audio; this catches what an ending missed (a
+    crash, a failed deletion). A session directory left without audio is
+    removed; a save racing that removal finds `rmdir` refused or retries into
+    a recreated directory.
 
     Returns:
         Statistics about deleted files:
@@ -450,20 +368,14 @@ def cleanup_old_audio_files(*, base_dir: Path) -> dict:
         "total_deleted": 0,
         "errors": 0,
     }
-    now = utc_now()
-    short_default = terminal_record_hours()
-    logger.info("Starting audio cleanup (default retention: %sh)", short_default)
+    keep_for = delivery_audio_hours()
+    cutoff = utc_now() - timedelta(hours=keep_for)
+    logger.info("Starting audio cleanup (keeping %sh)", keep_for)
 
     unreadable: list[OSError] = []
     for session_dir, files in _managed_sessions(base_dir, unreadable):
-        marker_hours = read_retention_marker(session_dir)
-        keep_for = short_default if marker_hours is None else marker_hours
-        if keep_for:
-            emptied = _delete_expired(files, now - timedelta(hours=keep_for), stats)
-        else:
-            emptied = not files
-        if emptied:
-            _remove_session_directory(session_dir, marker_hours)
+        if _delete_expired(files, cutoff, stats):
+            _remove_session_directory(session_dir)
     stats["errors"] += len(unreadable)
 
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
@@ -535,15 +447,11 @@ class AudioStore:
         message_id: str,
         variant: AudioVariant,
         data: bytes,
-        *,
-        retention_hours: int | None = None,
     ) -> Path:
-        return save_audio(
-            key, message_id, variant, data, base_dir=self.base_dir, retention_hours=retention_hours
-        )
+        return save_audio(key, message_id, variant, data, base_dir=self.base_dir)
 
-    def delete(self, key: TenantSessionKey, message_id: str, variant: AudioVariant) -> bool:
-        return delete_message_audio(key, message_id, variant, base_dir=self.base_dir)
+    def delete_session(self, key: TenantSessionKey) -> None:
+        delete_session_audio(key, base_dir=self.base_dir)
 
     def cleanup_expired(self) -> dict:
         stats = cleanup_old_audio_files(base_dir=self.base_dir)

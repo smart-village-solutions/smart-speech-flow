@@ -1,4 +1,4 @@
-"""Studio display content held by revision: sanitised once, never the storage mode."""
+"""Studio display content held by revision: sanitised once, never the display name."""
 
 from __future__ import annotations
 
@@ -68,10 +68,8 @@ def _html_fields(node: Any) -> list[str]:
     return []
 
 
-def kassel_read(
-    revision_seed: str = "", *, mode_scenario: str | None = None, extra_locale: str | None = None
-):
-    body = contract_fixtures.runtime_configuration_v2(TENANT, mode_scenario)
+def kassel_read(revision_seed: str = "", *, extra_locale: str | None = None):
+    body = contract_fixtures.runtime_configuration_v2(TENANT, None)
     if extra_locale:
         body["guestLanguages"].append({**body["guestLanguages"][0], "locale": extra_locale})
     if revision_seed:
@@ -81,6 +79,9 @@ def kassel_read(
 
 def test_every_html_field_is_sanitised_at_insert() -> None:
     body = load_fixture(KASSEL)
+    # Retired with the `ask` mode: parsed past, so never cached.
+    for language in body["guestLanguages"]:
+        language["guest"].pop("storageQuestionHtml")
     poisoned = _poison_html(body)
     read = parse_runtime_configuration_v2(body, expected_tenant_id=body["tenant"]["id"])
 
@@ -107,13 +108,13 @@ def test_every_installation_html_field_is_sanitised() -> None:
     assert all("<script" not in fragment and "onclick" not in fragment for fragment in html)
 
 
-def test_cached_content_has_no_storage_mode_and_no_display_name() -> None:
+def test_cached_content_has_no_display_name_and_takes_no_new_field() -> None:
     names = {field.name for field in dataclasses.fields(TenantContent)}
 
     assert names == {"revision", "time_zone", "branding", "staff", "guest_languages"}
     content = StudioContentCache().record(kassel_read())
     with pytest.raises((AttributeError, TypeError)):
-        content.mode = "ask"  # type: ignore[misc, attr-defined]
+        content.display_name = "Kassel"  # type: ignore[misc, attr-defined]
     assert "Kassel Test Municipality" not in repr(content)
 
 

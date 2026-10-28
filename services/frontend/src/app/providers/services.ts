@@ -35,6 +35,8 @@ import { createResumeMemory } from '@/core/storage/resume-memory';
 import type { ResumeMemory } from '@/core/storage/resume-memory.port';
 import { createRecordingKeysRepository } from '@/domain/recording/recording.repository';
 import type { RecordingKeysRepository } from '@/domain/recording/recording.repository';
+import { createRecordingSessionRepository } from '@/domain/recording/recordingSession.repository';
+import type { RecordingSessionRepository } from '@/domain/recording/recordingSession.repository';
 import { createRecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
 import type { RecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
 
@@ -53,6 +55,7 @@ export interface Services {
   clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
   recordingKeys: RecordingKeysRepository;
+  recordingSession: RecordingSessionRepository;
   archiveCrypto: ArchiveCrypto;
   keyVault: KeyVault;
   passphraseStrength: PassphraseStrength;
@@ -88,6 +91,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     audio,
     clips: createBrowserClipLoader(http, audio),
     recordingKeys: createRecordingKeysRepository(http),
+    recordingSession: createRecordingSessionRepository(http),
     archiveCrypto: createWebArchiveCrypto(),
     // Lives as long as these services: a reload or sign-out locks the keys.
     keyVault: createKeyVault(),

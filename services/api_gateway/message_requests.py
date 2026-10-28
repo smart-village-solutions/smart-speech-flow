@@ -180,12 +180,7 @@ def _validate_audio_payload(file: Any, file_bytes: bytes, validator: AudioValida
 
 
 def _correlation_id_for(request: Request) -> str:
-    """The caller's correlation ID, or a fresh one for this write.
-
-    Validated rather than forwarded raw: an unvalidated value reaches the
-    policy gate, whose blanket except would turn Studio's `ValueError` into a
-    silent refusal to persist -- a retention switch operated by the caller.
-    """
+    """The caller's correlation ID, or a fresh one; a malformed header is refused."""
     return correlation_id_from_request(request)
 
 
@@ -196,13 +191,10 @@ def _store_audio_artifacts(
     file_bytes: bytes,
     *,
     audio_store: AudioStore,
-    retention_hours: Optional[int] = None,
 ) -> bool:
     original_audio_available = False
     try:
-        audio_store.save(
-            key, message_id, AudioVariant.ORIGINAL, file_bytes, retention_hours=retention_hours
-        )
+        audio_store.save(key, message_id, AudioVariant.ORIGINAL, file_bytes)
         original_audio_available = True
     except Exception as e:
         # See _store_translated_audio: success is still reported to the
@@ -222,15 +214,12 @@ def _store_translated_audio(
     audio_bytes: Optional[bytes],
     *,
     audio_store: AudioStore,
-    retention_hours: Optional[int] = None,
 ) -> bool:
     """Save the synthesised reply, reporting whether the listener can play it."""
     if not audio_bytes:
         return False
     try:
-        audio_store.save(
-            key, message_id, AudioVariant.TRANSLATED, audio_bytes, retention_hours=retention_hours
-        )
+        audio_store.save(key, message_id, AudioVariant.TRANSLATED, audio_bytes)
     except Exception as error:
         # Logged at error, not warning: the pipeline still answers
         # successfully, so this line is the only signal that the reply

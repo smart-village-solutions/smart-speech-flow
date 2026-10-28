@@ -78,8 +78,13 @@ def _add_unsupported_question(owner: dict[str, Any]) -> None:
     owner["feedback"]["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
 
 
+def _recording_disabled(body: dict[str, Any]) -> None:
+    body.pop("recording", None)
+
+
 _RUNTIME_SCENARIOS: dict[str, Transform] = {
     "storage-disabled": _storage_disabled,
+    "recording-disabled": _recording_disabled,
     "invalid-content": _invalid_guest_form,
 }
 _INSTALLATION_SCENARIOS: dict[str, Transform] = {

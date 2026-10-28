@@ -401,25 +401,17 @@ groups:
           summary: Session-Connection state mismatch detected
           description: "Sessions report connections but connection count is 0. Possible state corruption in WebSocketManager."
 
-  # Audio retention (#426). The pass runs before the gateway serves and then
-  # hourly, deleting nothing on a quiet deployment or for sessions that
-  # captured a retention of 0, so no rule here may read a missing deletion
-  # as a failure. The size thresholds are absolute: the audio volume shares
-  # the host disk that ServerDiskUsageHigh watches.
+  # Delivery audio (#426, #615). It lives on the gateway's 1 GiB tmpfs (spec
+  # §5.5): a session's files go when it ends, and the hourly pass, which also
+  # runs before the gateway serves, deletes any an ending missed once they are
+  # older than any session can be (SSF_SESSION_MAX_HOURS plus an hour). A quiet
+  # deployment deletes nothing, so no rule here may read a missing deletion as
+  # a failure.
   #
-  # Sized for 180 days of retention (Studio retentionHours 4320):
-  #   original audio is stored after validation as 16 kHz 16-bit mono WAV,
-  #   32,000 B/s; the spoken translation is Piper TTS at 22,050 Hz 16-bit
-  #   mono, 44,100 B/s (Amharic's MMS voice is 16 kHz). A 10 s voice message
-  #   whose translation runs about as long stores 320,000 + 441,000 =
-  #   761,000 B in two files. A text message stores only its spoken
-  #   translation, one file; the headroom below covers them.
-  #   Budget: 500 voice messages a day, an assumption well above today's
-  #   traffic. 500 x 180 = 90,000 messages = 68.5 GB (63.8 GiB), 180,000 files.
-  # Warning at 100 GiB (1.6x budget), critical at 150 GiB (2.4x; 161 GB, under
-  # a quarter of the 715 GB free on the production host), files at 250,000
-  # (1.4x). A tenant with retentionHours 0 keeps its audio until it is removed
-  # by hand, so its growth eventually reaches these too.
+  # A 10 s voice message whose translation runs about as long holds 761,000 B
+  # in two files (16 kHz original, 22.05 kHz TTS). A full tmpfs fails new voice
+  # messages through the existing error path. Warning at 768 MiB (three
+  # quarters of the tmpfs), critical at 922 MiB (nine tenths).
   - name: ssf-audio-storage
     rules:
       # Two missed hourly passes. Until a pass completes the gauge holds the
@@ -432,8 +424,8 @@ groups:
           severity: warning
           component: audio-storage
         annotations:
-          summary: The audio retention pass has stopped reporting.
-          description: No retention pass has completed for more than two and a half hours, so recordings and transcripts past their session's retention may not be deleted. Check the gateway log for the hourly Audio-Cleanup line and for an error from the pass.
+          summary: The audio cleanup pass has stopped reporting.
+          description: No cleanup pass has completed for more than two and a half hours, so delivery audio and transcripts that an ended session left behind may not be deleted. Check the gateway log for the hourly Audio-Cleanup line and for an error from the pass.
 
       - alert: AudioCleanupErrors
         expr: sum(increase(audio_cleanup_errors_total[2h])) > 0
@@ -442,42 +434,32 @@ groups:
           severity: warning
           component: audio-storage
         annotations:
-          summary: The audio retention pass cannot delete expired recordings.
-          description: "{{ $value | printf \"%.0f\" }} failed deletions in the last two hours. Each hourly pass retries the same files, so this counts attempts, not files; the recordings outlive their session's retention until it clears. The gateway log names the failure; an audio volume the gateway's user cannot write or read is the usual cause."
+          summary: The audio cleanup pass cannot delete expired delivery audio.
+          description: "{{ $value | printf \"%.0f\" }} failed deletions in the last two hours. Each hourly pass retries the same files, so this counts attempts, not files; the audio outlives its session until it clears. The gateway log names the failure; a tmpfs the gateway's user cannot write or read is the usual cause."
 
       - alert: AudioStorageDiskUsageHigh
-        expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 100
+        expr: sum(audio_storage_disk_usage_bytes) / 1024^2 > 768
         for: 5m
         labels:
           severity: warning
           component: audio-storage
         annotations:
-          summary: Stored audio exceeds 100 GiB.
-          description: "Stored audio totals {{ $value | humanize }} GiB, above the 100 GiB sized for 180 days of retention at 500 voice messages a day. Retention should keep it below this, so check AudioCleanupNotRunning and AudioCleanupErrors, the tenants' Studio retentionHours (0 keeps audio until it is removed by hand) and whether traffic has outgrown the budget. ServerDiskUsageHigh covers the disk itself."
+          summary: Delivery audio fills three quarters of its tmpfs.
+          description: "Delivery audio totals {{ $value | printf \"%.0f\" }} MiB of the gateway's 1 GiB tmpfs. Sessions free theirs when they end, so check AudioCleanupNotRunning and AudioCleanupErrors and whether many long sessions run at once. New voice messages fail once the tmpfs is full."
 
       - alert: AudioStorageDiskUsageCritical
-        expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 150
+        expr: sum(audio_storage_disk_usage_bytes) / 1024^2 > 922
         for: 2m
         labels:
           severity: critical
           component: audio-storage
         annotations:
-          summary: Stored audio exceeds 150 GiB.
-          description: "Stored audio totals {{ $value | humanize }} GiB and is still growing past the warning threshold. Check the cleanup alerts and free space on the host disk before saving audio starts to fail."
+          summary: Delivery audio nearly fills its tmpfs.
+          description: "Delivery audio totals {{ $value | printf \"%.0f\" }} MiB of the gateway's 1 GiB tmpfs and is still growing past the warning threshold. New voice messages fail once it is full."
 
-      - alert: AudioStorageFileCountHigh
-        expr: sum(audio_files_total) > 250000
-        for: 5m
-        labels:
-          severity: warning
-          component: audio-storage
-        annotations:
-          summary: More than 250,000 audio files are stored.
-          description: "{{ $value }} audio files are stored, above the 250,000 sized for 180 days of retention at 500 voice messages a day, two files each. Check AudioCleanupNotRunning and AudioCleanupErrors and the tenants' Studio retentionHours."
-
-  # Studio contract v2. The storage policy is read live and never cached, so a
-  # failed read refuses whatever waited on it: session create answers 502/503,
-  # an activation cannot grant consent, and a message's content is not stored.
+  # Studio contract v2. The policy is read live and never cached, so a failed
+  # read refuses whatever waited on it: session create answers 502/503, and
+  # recording cannot be requested. Activation lets a guest in all the same.
   # Display content fails open to the last known texts, then to bundled copy.
   - name: ssf-studio
     rules:
@@ -500,10 +482,10 @@ groups:
           component: studio
         annotations:
           summary: Most live Studio policy reads are failing.
-          description: "{{ $value | humanizePercentage }} of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+          description: "{{ $value | humanizePercentage }} of Studio policy reads failed over the last ten minutes. Staff cannot start sessions or recordings while this lasts; conversations already running and their translation keep working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
 
       # Without a runtime client the gateway reads nothing, so the rule above
-      # sees no reads at all while every decision is refused.
+      # sees no reads at all while every session create is refused.
       - alert: StudioPolicyGateUnbound
         expr: min(ssf_studio_policy_gate_bound) == 0
         for: 5m
@@ -512,7 +494,7 @@ groups:
           component: studio
         annotations:
           summary: The gateway cannot read the Studio policy at all.
-          description: "The gateway started without a usable Studio runtime client, so it never reads the policy: staff cannot start sessions and no conversation content is stored. Its startup log says 'Runtime policy gate unbound' with the reason. Check STUDIO_RUNTIME_CONFIGURATION_BASE_URL and the ssf-runtime client settings (STUDIO_RUNTIME_TOKEN_URL, STUDIO_RUNTIME_CLIENT_SECRET) in .env, then recreate the gateway."
+          description: "The gateway started without a usable Studio runtime client, so it never reads the policy: staff cannot start sessions or recordings. Its startup log says 'Studio runtime client unbound' with the reason. Check STUDIO_RUNTIME_CONFIGURATION_BASE_URL and the ssf-runtime client settings (STUDIO_RUNTIME_TOKEN_URL, STUDIO_RUNTIME_CLIENT_SECRET) in .env, then recreate the gateway."
 
       # ssf_studio_content_staleness_seconds keeps the age of a route's latest
       # answer between requests, so it cannot tell stale now from stale when

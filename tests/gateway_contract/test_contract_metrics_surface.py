@@ -123,21 +123,6 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "Quality telemetry events by outcome",
         frozenset({"outcome"}),
     ),
-    "ssf_runtime_policy_content_discarded_total": (
-        "counter",
-        "Messages whose conversation content was refused and discarded",
-        frozenset({"reason"}),
-    ),
-    "ssf_runtime_policy_decision_total": (
-        "counter",
-        "Conversation-content persistence decisions, one per message",
-        frozenset({"decision", "reason"}),
-    ),
-    "ssf_runtime_policy_read_duration_seconds": (
-        "histogram",
-        "Duration of one live Studio policy read",
-        frozenset(),
-    ),
     "ssf_studio_content_fetch_total": (
         "counter",
         "Content route answers, by route and by where their content came from",
@@ -431,7 +416,6 @@ def _drive_the_realtime_and_message_paths(client, conversations, dependencies) -
     conversations.activate(session_id, "en")
     poller = client.post(f"/api/customer/session/{session_id}/polling/activate")
     assert poller.status_code == 200, poller.text
-    polling_id = poller.json()["polling_id"]
     ticket = conversations.ticket(session_id)
 
     with client.websocket_connect(
@@ -441,15 +425,9 @@ def _drive_the_realtime_and_message_paths(client, conversations, dependencies) -
         with open_guest_socket(client, session_id, ORIGIN) as customer:
             assert _frame(customer)["type"] == "connection_ack"
             assert _frame(admin)["type"] == "client_joined"
-            admin.send_json({"type": "message", "content": {"text": "relayed"}})
             _settle(admin)
             _answer_a_fresh_ping(customer)
 
-            sent = client.post(
-                f"/api/customer/session/{session_id}/polling/{polling_id}/send",
-                json={"type": "message", "content": {"text": "from the poller"}},
-            )
-            assert sent.json() == {"status": "success"}
             assert conversations.send_text(session_id).status_code == 200
             assert _send_audio(client, session_id).status_code == 200
 
@@ -471,7 +449,7 @@ def test_metrics_exposes_exactly_the_pinned_families(client, conversations, gate
     with client:
         dependencies = gateway.state.dependencies
         assert dependencies.feedback_maintenance is not None
-        assert dependencies.session_manager.runtime_policy is not None
+        assert dependencies.studio_runtime_flow is not None
         _drive_the_realtime_and_message_paths(client, conversations, dependencies)
         _drive_the_rate_limit(conversations)
         dependencies.audio_store.cleanup_expired()

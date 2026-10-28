@@ -24,8 +24,6 @@
     "intro": "$t(app.name) este un serviciu automat de traducere în timp real, conceput pentru a sprijini conversațiile dintre persoane care vorbesc limbi diferite. Serviciul funcționează exclusiv pe un server privat dedicat.",
     "howTo": "Pentru a începe înregistrarea, atingeți butonul microfonului. Veți avea apoi 20 de secunde pentru a vorbi. Puteți încheia înregistrarea și mai devreme, cu o nouă atingere. Ca alternativă, puteți folosi introducerea de text.",
     "retention": "În mod implicit, datele audio și de transcriere sunt prelucrate doar pe durata sesiunii active și nu sunt păstrate ulterior. După încheierea conversației, datele sunt șterse automat. Puteți raporta probleme sau împărtăși idei de îmbunătățire oricând, prin funcția de feedback din aplicație.",
-    "optIn": "Dacă doriți să ne ajutați să îmbunătățim $t(app.name), puteți permite stocarea datelor conversației dumneavoastră timp de până la 180 de zile. Aceste date pot fi folosite exclusiv în scopuri de analiză și de îmbunătățire a calității în cadrul proiectului $t(app.name).",
-    "checkbox": "Sunt de acord cu stocarea datelor conversației mele timp de până la 180 de zile, în scopul îmbunătățirii serviciului $t(app.name).",
     "getStarted": "Începeți",
     "loading": "Se încarcă informațiile"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Se reconectează…",
     "ended": "Această conversație s-a încheiat.",
     "timeoutWarning": "Această conversație se va încheia la {{time}}."
+  },
+  "recording": {
+    "label": "Înregistrare în curs",
+    "starting": "Înregistrarea pornește…",
+    "paused": "Înregistrare în pauză",
+    "stop": "Opriți înregistrarea",
+    "error": "Înregistrarea nu a putut fi modificată. Încercați din nou.",
+    "reason": {
+      "liveness": "conexiune întreruptă",
+      "unacknowledged": "se așteaptă ambele ecrane",
+      "storage": "stocare indisponibilă",
+      "policy": "nepermis în acest moment"
+    },
+    "ask": {
+      "title": "Poate fi înregistrată această conversație?",
+      "resumeTitle": "Continuați înregistrarea?",
+      "yes": "Da, înregistrați",
+      "no": "Nu"
+    },
+    "consent": {
+      "readAloud": "Citește cu voce tare",
+      "stopReading": "Oprește citirea",
+      "loading": "Se încarcă textul…",
+      "unavailable": "Textul nu poate fi încărcat acum. Vă rugăm să vă adresați interlocutorului.",
+      "name": "Numele dumneavoastră",
+      "nameProposed": "Introdus de interlocutor. Vă rugăm să-l verificați.",
+      "signature": "Semnătura dumneavoastră",
+      "optional": "opțional",
+      "clear": "Șterge",
+      "cannotSign": "Nu pot semna și confirm prin atingere.",
+      "nameRequired": "Vă rugăm să introduceți numele.",
+      "signatureRequired": "Vă rugăm să semnați sau să confirmați că nu puteți semna.",
+      "textChanged": "Textul s-a schimbat. Vă rugăm să-l citiți din nou înainte de a răspunde."
+    }
   },
   "feedback": {
     "title": "Spuneți-ne părerea",

@@ -73,9 +73,12 @@ broadcasts through the manager as a `SessionSockets[TenantSessionKey]`.
 Both then check the `Origin` header (1008 if it is not allowed) and the
 session (1003 if it is missing or terminated), and register the socket. The
 client receives `connection_ack` with the heartbeat interval; its peers receive
-`client_joined`. Inbound `message` and `typing_indicator` frames are relayed to
-the session's other sockets and pollers, never back to the sender. A frame
-that is not a JSON object is answered with `error`, and the socket stays open.
+`client_joined`. An inbound `typing_indicator` frame is relayed to the
+session's other sockets and pollers, never back to the sender, carrying only
+whether `is_typing` is `true`. No client frame carries conversation content:
+content travels only through the HTTP message route, the path recording mode
+archives, so the former client `message` relay is gone. A frame that is not a
+JSON object is answered with `error`, and the socket stays open.
 
 On disconnect the socket is released, its peers receive `client_left` with the
 reason, and the monitor records the disconnect. When the session ends, every
@@ -89,6 +92,26 @@ goes through `ConversationService`, which runs the pipeline and then calls the
 differentiated broadcast: the sender's sockets receive a sender confirmation
 with the original text, and the receiver's sockets and pollers receive the
 translated text, the audio URLs and the pipeline metadata scoped to their role.
+
+## Recording frames
+
+Recording mode (#615, spec `docs/architecture/recording-mode.md`) adds these
+frames. The gateway holds each conversation's recording state
+(`recording/session_service.py`) and sends `recording_state` (`state`,
+`reason`, `window_id`, `state_version`, `since`) to both sockets on every
+transition and to every socket that connects; the guest also gets
+`recording_request` while a request is open. Each screen answers a state with
+`recording_state_ack` carrying its `state_version`. While a recording is
+arming, on or paused, the gateway sends `recording_ping` every 5 seconds and
+each screen answers `recording_pong`; a screen silent for 12 seconds, or one
+whose last socket has closed, turns ON into PAUSED, and a screen that hears
+nothing from the gateway for 12 seconds shows "paused" on its own. ARMING and
+ON also pause when both screens have not acknowledged them within 10 seconds. Recording frames go to sockets only: a poller cannot answer a ping.
+When the archive cannot record a guest's yes, the question stays open and the
+employee's sockets get `recording_error` with `code` `ARCHIVE_WRITE_FAILED`.
+The routes that change the state live under
+`/api/{admin|customer}/session/{session_id}/recording`; the receiving screen
+reports each clip it plays there too (`POST …/recording/playback`).
 
 ## Heartbeat
 
@@ -107,8 +130,8 @@ A client that cannot keep a WebSocket open activates a poller below
 (`websocket_polling_routes.py`) keeps a bounded queue per poller, at most ten
 pollers per role and session, and counts dropped messages in
 `tenant_polling_messages_dropped_total`. `BroadcastDispatcher` delivers every
-broadcast to the session's pollers as well as its sockets, and a message sent
-through a poller reaches the other role's sockets and pollers.
+broadcast to the session's pollers as well as its sockets. A poller only
+receives; like a socket, it cannot relay content to the other role.
 
 ## Tenant isolation
 

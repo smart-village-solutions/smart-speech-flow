@@ -212,32 +212,26 @@ describe('toGuestContent', () => {
   it('maps content Studio provides', () => {
     const content = toGuestContent(guestContentBody('en'));
 
-    expect(content.storage.mode).toBe('ask');
-    expect(content.provided && content.storageQuestionHtml).toContain('180 days');
+    expect(content.provided && content.explanationHtml).toContain('KasselDIALOG');
     expect(content.provided && content.feedback?.button).toBe('Send feedback');
   });
 
-  it('maps content Studio does not provide to exactly its mode', () => {
-    expect(toGuestContent(guestContentBody('ar'))).toEqual({
-      storage: { mode: 'ask' },
-      provided: false,
-    });
+  it('maps content Studio does not provide', () => {
+    expect(toGuestContent(guestContentBody('ar'))).toEqual({ provided: false });
   });
 
-  it('keeps a disabled mode without a storage question', () => {
+  it('drops the storage fields an earlier gateway still sends', () => {
     const content = toGuestContent({
       ...guestContentBody('en'),
-      storage: { mode: 'disabled' },
-      storageQuestionHtml: null,
+      storage: { mode: 'ask' },
+      storageQuestionHtml: '<p>Keep it?</p>',
     });
 
-    expect(content).toMatchObject({ storage: { mode: 'disabled' }, storageQuestionHtml: null });
-  });
-
-  it('reads a mode it does not know as unknown', () => {
-    expect(toGuestContent({ storage: { mode: 'always' }, provided: false }).storage.mode).toBe(
-      'unknown'
-    );
+    expect(content).not.toHaveProperty('storage');
+    expect(content).not.toHaveProperty('storageQuestionHtml');
+    expect(toGuestContent({ provided: false, storage: { mode: 'ask' } })).toEqual({
+      provided: false,
+    });
   });
 });
 

@@ -23,6 +23,9 @@ from .sigv4 import Credentials
 ARCHIVE_ENDPOINT_ENV: Final[str] = "SSF_ARCHIVE_ENDPOINT"
 ARCHIVE_WRITERS_FILE_ENV: Final[str] = "SSF_ARCHIVE_WRITERS_FILE"
 DEFAULT_WRITERS_FILE: Final[str] = f"{SECRETS_DIRECTORY}/archive-writers.json"
+ARCHIVE_SPOOL_DIR_ENV: Final[str] = "SSF_ARCHIVE_SPOOL_DIR"
+# The compose volume `archive-spool`, which survives a container's replacement.
+DEFAULT_SPOOL_DIR: Final[str] = "/data/archive-spool"
 
 
 class ArchiveConfigError(ValueError):
@@ -33,6 +36,7 @@ class ArchiveConfigError(ValueError):
 class ArchiveSettings:
     endpoint: str
     writers: Mapping[str, Credentials]
+    spool_directory: Path = Path(DEFAULT_SPOOL_DIR)
 
     def credentials_for(self, tenant_id: str) -> Credentials:
         try:
@@ -47,7 +51,8 @@ class ArchiveSettings:
         if not endpoint:
             return None
         path = Path(os.environ.get(ARCHIVE_WRITERS_FILE_ENV) or DEFAULT_WRITERS_FILE)
-        return cls(endpoint, load_writers(path))
+        spool = Path(os.environ.get(ARCHIVE_SPOOL_DIR_ENV) or DEFAULT_SPOOL_DIR)
+        return cls(endpoint, load_writers(path), spool)
 
 
 def load_writers(path: Path) -> dict[str, Credentials]:

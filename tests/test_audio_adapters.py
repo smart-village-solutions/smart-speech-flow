@@ -148,8 +148,7 @@ def test_a_running_app_keeps_audio_in_the_directory_it_started_with(
 ):
     """Read when the lifespan builds the container, not when the module was imported.
 
-    Without Studio no write is authorised, so termination settles the message
-    as refused and removes its audio through the same store.
+    Termination removes the session's audio through the same store.
     """
     for variable in STUDIO_ENVIRONMENT:
         monkeypatch.delenv(variable, raising=False)
@@ -197,6 +196,7 @@ def test_a_running_app_keeps_audio_in_the_directory_it_started_with(
 
     for directory in stored.values():
         assert not (directory / f"{message_id}.wav").exists()
+    assert not (tmp_path / "v2" / key.tenant_ref / session_id).exists()
 
 
 def test_the_cleanup_task_removes_expired_audio_from_its_store(
@@ -218,7 +218,7 @@ def test_the_cleanup_task_removes_expired_audio_from_its_store(
 
     class Sessions:
         def sweep_expired_content(self, _now: Any) -> dict[str, int]:
-            return {"refused_removed": 0, "expired_removed": 0, "failed": 0}
+            return {"removed": 0, "failed": 0}
 
     # Its own loop: `asyncio.sleep` is patched for the whole module while this runs.
     monkeypatch.setattr(background_tasks.asyncio, "sleep", one_pass)

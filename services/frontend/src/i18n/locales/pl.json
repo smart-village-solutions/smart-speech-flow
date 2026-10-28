@@ -24,8 +24,6 @@
     "intro": "$t(app.name) to automatyczna usługa tłumaczenia w czasie rzeczywistym, która wspiera rozmowy osób mówiących różnymi językami. Usługa działa wyłącznie na dedykowanym, prywatnym serwerze.",
     "howTo": "Aby rozpocząć nagrywanie, należy dotknąć przycisku mikrofonu. Na wypowiedź jest wtedy 20 sekund. Nagrywanie można też zakończyć wcześniej, dotykając przycisku ponownie. Zamiast tego można również skorzystać z pola tekstowego.",
     "retention": "Domyślnie dane audio i transkrypcje są przetwarzane wyłącznie w trakcie aktywnej sesji i nie są później przechowywane. Po zakończeniu rozmowy dane są automatycznie usuwane. Problemy lub pomysły na ulepszenia można w każdej chwili zgłosić za pomocą funkcji opinii w aplikacji.",
-    "optIn": "Aby pomóc nam ulepszyć $t(app.name), można wyrazić zgodę na przechowywanie danych rozmowy przez maksymalnie 180 dni. Dane te mogą być wykorzystywane wyłącznie do analiz i poprawy jakości w ramach projektu $t(app.name).",
-    "checkbox": "Wyrażam zgodę na przechowywanie danych mojej rozmowy przez maksymalnie 180 dni w celu ulepszenia $t(app.name).",
     "getStarted": "Rozpocznij",
     "loading": "Wczytywanie informacji"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Ponowne łączenie…",
     "ended": "Ta rozmowa została zakończona.",
     "timeoutWarning": "Ta rozmowa zakończy się o {{time}}."
+  },
+  "recording": {
+    "label": "Nagrywanie",
+    "starting": "Rozpoczynanie nagrywania…",
+    "paused": "Nagrywanie wstrzymane",
+    "stop": "Zatrzymaj nagrywanie",
+    "error": "Nie udało się zmienić nagrywania. Proszę spróbować ponownie.",
+    "reason": {
+      "liveness": "połączenie przerwane",
+      "unacknowledged": "oczekiwanie na oba ekrany",
+      "storage": "magazyn niedostępny",
+      "policy": "obecnie niedozwolone"
+    },
+    "ask": {
+      "title": "Czy tę rozmowę można nagrać?",
+      "resumeTitle": "Kontynuować nagrywanie?",
+      "yes": "Tak, nagrywaj",
+      "no": "Nie"
+    },
+    "consent": {
+      "readAloud": "Przeczytaj na głos",
+      "stopReading": "Zatrzymaj czytanie",
+      "loading": "Wczytywanie tekstu…",
+      "unavailable": "Nie można teraz wczytać tekstu. Prosimy zwrócić się do pracownika.",
+      "name": "Imię i nazwisko",
+      "nameProposed": "Wpisane przez pracownika. Prosimy sprawdzić.",
+      "signature": "Podpis",
+      "optional": "opcjonalnie",
+      "clear": "Wyczyść",
+      "cannotSign": "Nie mogę się podpisać i potwierdzam dotknięciem.",
+      "nameRequired": "Prosimy wpisać imię i nazwisko.",
+      "signatureRequired": "Prosimy złożyć podpis lub potwierdzić, że nie można się podpisać.",
+      "textChanged": "Tekst się zmienił. Prosimy przeczytać go ponownie przed udzieleniem odpowiedzi."
+    }
   },
   "feedback": {
     "title": "Podziel się opinią",

@@ -22,8 +22,7 @@
   --font-legacy: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --font-sans:
-    'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    sans-serif;
+    'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /* ── Type scale, exact px from the export ── */
   --text-caption: 11px;
@@ -90,9 +89,7 @@
   /* A bubble's own width once both its inline margins are taken off, so an
      audio bubble can be given a definite width without overflowing the stack.
      Capped by --container-bubble, as every bubble is. */
-  --container-bubble-span: calc(
-    100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset)
-  );
+  --container-bubble-span: calc(100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset));
   --container-menu: 288px;
   --spacing-menu-row: 44px;
 
@@ -107,6 +104,12 @@
   --spacing-status-top: 80px;
   --spacing-composer-lift: 40px;
   --spacing-flag-pill: 16px;
+
+  /* Secure recording (#615, SCREEN_SPECS "Recording"). */
+  --spacing-recording-band: 40px;
+  --spacing-signature-pad: 160px;
+  /* The consent dialog stops short of the viewport's edges and scrolls inside. */
+  --spacing-consent-dialog: calc(100dvh - 40px);
 
   /* The load lamp's glow. SCREEN_SPECS "Admin dashboard" gives it as the lamp's
      own colour at 0.56 alpha, which the export writes as `${color}90`
@@ -139,6 +142,9 @@
   --color-surface-icon-hover: var(--surface-icon-hover);
   --color-surface-wave-idle: var(--surface-wave-idle);
   --color-surface-status: var(--surface-status);
+  --color-recording-live: var(--recording-live);
+  --color-signature-paper: var(--signature-paper);
+  --color-signature-ink: var(--signature-ink);
 
   --color-fg-strong: var(--fg-strong);
   --color-fg-chat: var(--fg-chat);

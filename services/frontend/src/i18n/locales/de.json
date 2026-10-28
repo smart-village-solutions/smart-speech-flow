@@ -24,8 +24,6 @@
     "intro": "$t(app.name) ist ein automatischer Echtzeit-Übersetzungsdienst für Gespräche zwischen Menschen, die verschiedene Sprachen sprechen. Der Dienst läuft ausschließlich auf einem dedizierten, privaten Server.",
     "howTo": "Tippen Sie auf die Mikrofontaste, um die Aufnahme zu starten. Sie haben dann 20 Sekunden Zeit zu sprechen. Mit einem weiteren Tippen können Sie die Aufnahme früher beenden. Alternativ können Sie die Texteingabe verwenden.",
     "retention": "Standardmäßig werden Audio- und Transkriptionsdaten nur während der aktiven Sitzung verarbeitet und danach nicht aufbewahrt. Nach Ende des Gesprächs werden die Daten automatisch verworfen. Über die Feedback-Funktion können Sie jederzeit Probleme melden oder Verbesserungsvorschläge einreichen.",
-    "optIn": "Wenn Sie uns helfen möchten, $t(app.name) zu verbessern, können Sie der Speicherung Ihrer Gesprächsdaten für bis zu 180 Tage zustimmen. Diese Daten werden ausschließlich zur Analyse und Qualitätsverbesserung innerhalb des Projekts $t(app.name) verwendet.",
-    "checkbox": "Ich stimme der Speicherung meiner Gesprächsdaten für bis zu 180 Tage zum Zweck der Verbesserung von $t(app.name) zu.",
     "getStarted": "Loslegen",
     "loading": "Informationen werden geladen"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Verbindung wird wiederhergestellt…",
     "ended": "Dieses Gespräch ist beendet.",
     "timeoutWarning": "Dieses Gespräch endet um {{time}} Uhr."
+  },
+  "recording": {
+    "label": "Aufnahme läuft",
+    "starting": "Aufnahme startet …",
+    "paused": "Aufnahme pausiert",
+    "stop": "Aufnahme beenden",
+    "error": "Die Aufnahme konnte nicht geändert werden. Bitte versuchen Sie es erneut.",
+    "reason": {
+      "liveness": "Verbindung unterbrochen",
+      "unacknowledged": "warten auf beide Bildschirme",
+      "storage": "Speicher nicht erreichbar",
+      "policy": "derzeit nicht erlaubt"
+    },
+    "ask": {
+      "title": "Darf dieses Gespräch aufgezeichnet werden?",
+      "resumeTitle": "Aufnahme fortsetzen?",
+      "yes": "Ja, aufzeichnen",
+      "no": "Nein"
+    },
+    "consent": {
+      "readAloud": "Vorlesen",
+      "stopReading": "Vorlesen beenden",
+      "loading": "Text wird geladen …",
+      "unavailable": "Der Text kann gerade nicht geladen werden. Bitte wenden Sie sich an Ihre Ansprechperson.",
+      "name": "Ihr Name",
+      "nameProposed": "Von Ihrer Ansprechperson eingetragen. Bitte prüfen Sie ihn.",
+      "signature": "Ihre Unterschrift",
+      "optional": "freiwillig",
+      "clear": "Löschen",
+      "cannotSign": "Ich kann nicht unterschreiben und bestätige durch Antippen.",
+      "nameRequired": "Bitte geben Sie Ihren Namen ein.",
+      "signatureRequired": "Bitte unterschreiben Sie oder bestätigen Sie, dass Sie nicht unterschreiben können.",
+      "textChanged": "Der Text hat sich geändert. Bitte lesen Sie ihn erneut, bevor Sie antworten."
+    }
   },
   "feedback": {
     "title": "Feedback geben",
@@ -277,6 +309,37 @@
       "abortBody": "Alle bisherigen Beiträge verfallen. Die Zeremonie muss danach vollständig neu gestartet werden.",
       "abortFailed": "Die Zeremonie konnte nicht abgebrochen werden. Bitte versuchen Sie es erneut.",
       "keepGoing": "Weitermachen"
+    },
+    "recording": {
+      "off": "Keine Aufnahme",
+      "request": "Aufnahme anfragen",
+      "waiting": "Warten auf die Antwort des Gastes …",
+      "cancel": "Anfrage zurückziehen",
+      "reason": {
+        "declined": "Der Gast hat die Aufnahme abgelehnt.",
+        "unanswered": "Der Gast hat nicht geantwortet.",
+        "stopped_by_guest": "Der Gast hat die Aufnahme beendet."
+      },
+      "error": {
+        "GUEST_NOT_CONNECTED": "Der Gast ist nicht verbunden.",
+        "RECORDING_DISABLED": "Aufnahmen sind für diese Organisation nicht freigegeben.",
+        "RECOVERY_KEY_MISSING": "Für diese Organisation fehlt noch der Wiederherstellungsschlüssel.",
+        "RECORDING_POLICY_UNAVAILABLE": "Die Aufnahmeeinstellungen sind gerade nicht erreichbar. Bitte erneut versuchen.",
+        "RECORDING_BUSY": "Die Aufnahme ist bereits angefragt oder läuft.",
+        "ARCHIVE_UNAVAILABLE": "Für diese Installation ist kein Aufnahmearchiv eingerichtet.",
+        "ARCHIVE_WRITE_FAILED": "Die Zustimmung des Gastes konnte nicht gespeichert werden. Der Gast kann es erneut versuchen.",
+        "generic": "Die Aufnahme konnte nicht geändert werden.",
+        "ID_CHECK_REQUIRED": "Bitte prüfen Sie zuerst das Ausweisdokument des Gastes."
+      },
+      "ask": {
+        "title": "Aufnahme anfragen",
+        "body": "Der Gast wird auf seinem Bildschirm um Zustimmung zur Aufnahme gebeten.",
+        "name": "Name des Gastes (freiwillig)",
+        "nameHint": "Der Gast bestätigt oder korrigiert ihn auf seinem Bildschirm.",
+        "idChecked": "Identität mit Ausweisdokument geprüft",
+        "idRequired": "Diese Organisation verlangt vor der Aufnahme die Ausweisprüfung.",
+        "cancel": "Abbrechen"
+      }
     }
   }
 }

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useScreenLocale } from '@/app/providers/locale';
@@ -16,19 +15,13 @@ export function useConsentScreen() {
   const queryClient = useQueryClient();
   const languages = useGuestLanguages(sessionId);
   const { ready, copy } = useConsentContent(sessionId, languageCode);
-  const [agreed, setAgreed] = useState(false);
 
   useScreenLocale(languageCode ?? '');
 
   const entry = languages.data?.find((candidate) => candidate.code === languageCode);
 
   const start = useMutation({
-    // The answer travels on the activation request itself. A separate call to
-    // the same endpoint would activate the session twice, and the second,
-    // consent-less one would resolve to declined. Without a live `ask` there
-    // is no question, so the answer is no.
-    mutationFn: async () =>
-      session.activate(sessionId as string, languageCode as string, copy.asksStorage && agreed),
+    mutationFn: async () => session.activate(sessionId as string, languageCode as string),
     // The route guard cached this session before activation, when the customer
     // had no language yet. Publishing the activated one keeps the conversation
     // screen from opening on the stale entry and sending its first message
@@ -46,8 +39,6 @@ export function useConsentScreen() {
     language: entry && languageChoice(entry),
     ready,
     copy,
-    agreed,
-    setAgreed,
     start,
     goBack: () => void navigate(`/s/${sessionId}/language`),
     goHome: () => void navigate('/'),

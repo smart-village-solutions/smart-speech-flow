@@ -89,6 +89,7 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
   return {
     ...composer,
     state,
+    dispatch,
     recorder,
     retryLast,
     flight,

@@ -78,6 +78,10 @@ def service(runtime=None, installation=None, clock=None):
     return content, cache, registry
 
 
+def revision(content) -> str | None:
+    return None if content is None else content.revision
+
+
 def answered(registry, endpoint: str, outcome: str) -> float:
     return registry.get_sample_value(FETCH, {"endpoint": endpoint, "outcome": outcome})
 
@@ -147,8 +151,7 @@ async def test_without_studio_settings_content_is_unavailable() -> None:
         await content.tenant_content(TENANT, "c", endpoint="staff_content")
     with pytest.raises(ContentUnavailable):
         await content.installation_content("c")
-    guest = await content.guest_content(TENANT, "c")
-    assert (guest.mode, guest.content) == ("unknown", None)
+    assert await content.guest_content(TENANT, "c") is None
 
 
 async def test_a_new_revision_reaches_later_reads() -> None:
@@ -164,52 +167,58 @@ async def test_a_new_revision_reaches_later_reads() -> None:
     assert tenant.revision == "sha256:" + "9" * 64
 
 
-async def test_the_guest_mode_comes_from_each_live_read_never_the_cache() -> None:
-    ask = read()
-    disabled = parse_runtime_configuration_v2(
-        {
-            **contract_fixtures.runtime_configuration_v2(TENANT, "storage-disabled"),
-            "configurationRevision": ask.policy.configuration_revision,
-        },
-        expected_tenant_id=TENANT,
-    )
-    studio = Studio(ask, disabled)
-    content, _, registry = service(studio)
-
-    first = await content.guest_content(TENANT, "c")
-    second = await content.guest_content(TENANT, "c")
-
-    assert (first.mode, second.mode) == ("ask", "disabled")
-    assert studio.calls == 2
-    assert answered(registry, "guest_content", "live") == 2
-
-
-async def test_a_failed_guest_read_reports_unknown_with_stale_content() -> None:
-    content, cache, registry = service(Studio(DOWN))
-    cache.record(read())
+async def test_fresh_guest_content_is_answered_from_the_cache_without_a_studio_read() -> None:
+    clock = Clock()
+    studio = Studio(read(seed="2"))
+    content, cache, registry = service(studio, clock=clock)
+    cache.record(read(seed="1"))
+    clock.now += 59
 
     guest = await content.guest_content(TENANT, "c")
 
-    assert guest.mode == "unknown"
-    assert guest.content is not None and "en" in guest.content.guest_languages
+    assert studio.calls == 0
+    assert guest is not None and guest.revision == "sha256:" + "1" * 64
+    assert answered(registry, "guest_content", "cached") == 1
+    assert answered(registry, "guest_content", "live") == 0
+
+
+async def test_aged_guest_content_is_refreshed_by_one_live_read() -> None:
+    clock = Clock()
+    studio = Studio(read(seed="2"))
+    content, cache, registry = service(studio, clock=clock)
+    cache.record(read(seed="1"))
+    clock.now += 61
+
+    guest = await content.guest_content(TENANT, "c")
+
+    assert guest is not None and guest.revision == "sha256:" + "2" * 64
+    assert studio.calls == 1
+    assert answered(registry, "guest_content", "live") == 1
+
+
+async def test_a_failed_guest_read_serves_the_last_known_content() -> None:
+    clock = Clock()
+    content, cache, registry = service(Studio(DOWN), clock=clock)
+    cache.record(read())
+    clock.now += 61
+
+    guest = await content.guest_content(TENANT, "c")
+
+    assert guest is not None and "en" in guest.guest_languages
     assert answered(registry, "guest_content", "stale") == 1
 
 
-async def test_a_failed_guest_read_with_nothing_cached_reports_unknown_alone() -> None:
+async def test_a_failed_guest_read_with_nothing_cached_answers_none() -> None:
     content, _, registry = service(Studio(DOWN))
 
-    guest = await content.guest_content(TENANT, "c")
-
-    assert (guest.mode, guest.content) == ("unknown", None)
+    assert await content.guest_content(TENANT, "c") is None
     assert answered(registry, "guest_content", "unavailable") == 1
 
 
 async def test_a_read_naming_another_tenant_is_not_served() -> None:
     content, _, _ = service(Studio(read("tenant-fulda")))
 
-    guest = await content.guest_content(TENANT, "c")
-
-    assert (guest.mode, guest.content) == ("unknown", None)
+    assert await content.guest_content(TENANT, "c") is None
 
 
 async def test_installation_content_is_cached_refreshed_and_stale_on_failure() -> None:
@@ -311,14 +320,15 @@ async def test_concurrent_guest_requests_share_one_live_read() -> None:
     results = await asyncio.gather(*waiting)
 
     assert studio.calls == 1
-    assert {result.mode for result in results} == {"ask"}
+    assert [revision(result) for result in results] == [read().policy.configuration_revision] * 4
 
 
-async def test_guest_content_answers_unknown_at_once_while_studio_is_paused() -> None:
+async def test_guest_content_answers_stale_content_at_once_while_studio_is_paused() -> None:
     clock = Clock()
-    studio = Studio(DOWN, read())
+    studio = Studio(DOWN, read(seed="2"))
     content, cache, _ = service(studio, clock=clock)
-    cache.record(read())
+    cache.record(read(seed="1"))
+    clock.now += 61
 
     first = await content.guest_content(TENANT, "c")
     clock.now += 59
@@ -327,9 +337,12 @@ async def test_guest_content_answers_unknown_at_once_while_studio_is_paused() ->
     clock.now += 1
     after = await content.guest_content(TENANT, "c")
 
-    assert (first.mode, paused.mode, after.mode) == ("unknown", "unknown", "ask")
+    assert [revision(guest) for guest in (first, paused, after)] == [
+        "sha256:" + "1" * 64,
+        "sha256:" + "1" * 64,
+        "sha256:" + "2" * 64,
+    ]
     assert reads_while_paused == 1
-    assert paused.content is not None
     assert studio.calls == 2
 
 
@@ -363,8 +376,8 @@ async def test_guest_and_display_requests_share_one_live_read() -> None:
     guest, languages = await asyncio.gather(*waiting)
 
     assert studio.calls == 1
-    assert guest.content is not None
-    assert guest.content.revision == languages.revision == "sha256:" + "2" * 64
+    assert guest is not None
+    assert guest.revision == languages.revision == "sha256:" + "2" * 64
 
 
 class FailingNewRevisions(StudioContentCache):
@@ -378,22 +391,22 @@ class FailingNewRevisions(StudioContentCache):
         return super().record(read)
 
 
-async def test_a_live_mode_is_never_paired_with_another_revisions_content() -> None:
-    cache = FailingNewRevisions(clock=Clock())
+async def test_guest_content_falls_back_when_a_read_cannot_be_cached() -> None:
+    clock = Clock()
+    cache = FailingNewRevisions(clock=clock)
     cache.record(read(seed="1"))
     cache.frozen = True
-    disabled = read(scenario="storage-disabled", seed="2")
+    clock.now += 61
     content = StudioContentService(
         cache,
-        runtime=Studio(disabled),
+        runtime=Studio(read(seed="2")),
         installation=None,
         metrics=StudioContentMetrics(CollectorRegistry()),
     )
 
     guest = await content.guest_content(TENANT, "c")
 
-    # Revision 1 asks the storage question; it must not sit beside "disabled".
-    assert (guest.mode, guest.content) == ("disabled", None)
+    assert guest is not None and guest.revision == "sha256:" + "1" * 64
 
 
 async def test_display_reads_fall_back_when_a_read_cannot_be_cached() -> None:

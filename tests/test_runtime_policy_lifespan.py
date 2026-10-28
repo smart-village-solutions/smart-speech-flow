@@ -1,4 +1,4 @@
-"""Binding the gate must never be able to stop the gateway starting."""
+"""Binding Studio must never be able to stop the gateway starting."""
 
 import pytest
 
@@ -28,20 +28,13 @@ async def test_gateway_starts_with_no_studio_configuration(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     async with lifespan(app):
         assert app.state is not None
-        assert app.state.dependencies.session_manager.runtime_policy is None
+        assert app.state.dependencies.studio_runtime_flow is None
 
 
-async def test_gateway_binds_the_gate_when_configured(monkeypatch):
+async def test_gateway_binds_studio_when_configured(monkeypatch):
     _configure_studio(monkeypatch)
     async with lifespan(app):
-        assert app.state.dependencies.session_manager.runtime_policy is not None
-
-
-async def test_shutdown_unbinds_the_gate(monkeypatch):
-    _configure_studio(monkeypatch)
-    async with lifespan(app):
-        sessions = app.state.dependencies.session_manager
-    assert sessions.runtime_policy is None
+        assert app.state.dependencies.studio_runtime_flow is not None
 
 
 def test_timeout_variable_reaches_the_client(monkeypatch):

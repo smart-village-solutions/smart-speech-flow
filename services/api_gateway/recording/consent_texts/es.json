@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Su interlocutor desea grabar esta conversación. A partir de ahora, cada mensaje se guardaría cifrado hasta que usted o su interlocutor detengan la grabación. Puede detenerla en cualquier momento.</p><p>Solo las personas autorizadas pueden abrir la grabación. Se elimina cuando termina el plazo de conservación.</p><p>Su consentimiento es voluntario. Si se niega, la conversación continúa sin grabación. Los mensajes ya guardados siguen guardados después de detenerla.</p>",
+    "resume": "<p>La grabación se detuvo. ¿Puede continuar a partir de ahora? Puede volver a detenerla en cualquier momento.</p>"
+  },
+  "statutory": {
+    "first": "<p>Su interlocutor desea grabar esta conversación. A partir de ahora, cada mensaje se guardaría cifrado hasta que usted o su interlocutor detengan la grabación. Puede detenerla en cualquier momento.</p><p>La grabación se realiza sobre una base legal. Solo las personas autorizadas pueden abrir la grabación. Se elimina cuando termina el plazo de conservación.</p><p>Por favor, confirme que ha recibido esta información y que la grabación puede comenzar.</p>",
+    "resume": "<p>La grabación se detuvo. A partir de ahora debe continuar sobre la misma base legal. Puede volver a detenerla en cualquier momento.</p>"
+  }
+}

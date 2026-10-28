@@ -5,10 +5,8 @@ import { guestOrigin } from '@/domain/feedback/feedbackOrigin';
 import { AppError } from '@/core/http/AppError';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
-import { RichText } from '@/ui/patterns/RichText';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { Button } from '@/ui/primitives/Button';
-import { Checkbox } from '@/ui/primitives/Checkbox';
 import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 import { ConsentProse } from './ConsentProse';
 import { ConsentSkeleton } from './ConsentSkeleton';
@@ -17,8 +15,7 @@ import { useConsentScreen } from './useConsentScreen';
 export function ConsentScreen() {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
-  const { sessionId, language, ready, copy, agreed, setAgreed, start, goBack, goHome } =
-    useConsentScreen();
+  const { sessionId, language, ready, copy, start, goBack, goHome } = useConsentScreen();
 
   return (
     <ScreenShell>
@@ -38,17 +35,7 @@ export function ConsentScreen() {
 
           {ready ? (
             <>
-              <ConsentProse explanationHtml={copy.explanationHtml} showsOptIn={copy.asksStorage} />
-
-              {copy.asksStorage && (
-                <Checkbox checked={agreed} onCheckedChange={setAgreed} className="mt-8 opacity-65">
-                  {copy.questionHtml === undefined ? (
-                    t('consent.checkbox')
-                  ) : (
-                    <RichText html={copy.questionHtml} inline />
-                  )}
-                </Checkbox>
-              )}
+              <ConsentProse explanationHtml={copy.explanationHtml} />
 
               <Button
                 className="mt-10 bg-accent text-accent-on"

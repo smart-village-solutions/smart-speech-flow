@@ -24,8 +24,6 @@
     "intro": "A $t(app.name) automatikus, valós idejű fordítószolgáltatás, amely a különböző nyelveket beszélő emberek közötti beszélgetéseket segíti. A szolgáltatás kizárólag egy dedikált, privát szerveren fut.",
     "howTo": "A felvétel indításához koppintson a mikrofon gombra. Ezután 20 másodperce van beszélni. A felvételt egy újabb koppintással korábban is befejezheti. Ehelyett szöveges bevitelt is használhat.",
     "retention": "Alapértelmezés szerint a hang- és átirati adatokat csak az aktív munkamenet alatt dolgozzuk fel, utána nem őrizzük meg őket. A beszélgetés végén az adatok automatikusan törlődnek. Problémát jelezhet vagy fejlesztési ötletet oszthat meg bármikor az alkalmazás visszajelzési funkciójával.",
-    "optIn": "Ha szeretne segíteni a $t(app.name) fejlesztésében, engedélyezheti, hogy beszélgetése adatait legfeljebb 180 napig tároljuk. Ezek az adatok kizárólag elemzésre és minőségjavításra használhatók a $t(app.name) projekt keretében.",
-    "checkbox": "Hozzájárulok, hogy beszélgetésem adatait legfeljebb 180 napig tárolják a $t(app.name) fejlesztése céljából.",
     "getStarted": "Kezdés",
     "loading": "Az információk betöltése"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Újracsatlakozás…",
     "ended": "Ez a beszélgetés véget ért.",
     "timeoutWarning": "Ez a beszélgetés ekkor ér véget: {{time}}."
+  },
+  "recording": {
+    "label": "Felvétel folyamatban",
+    "starting": "A felvétel indul…",
+    "paused": "A felvétel szünetel",
+    "stop": "Felvétel leállítása",
+    "error": "A felvételt nem sikerült módosítani. Próbálja újra.",
+    "reason": {
+      "liveness": "megszakadt a kapcsolat",
+      "unacknowledged": "várakozás mindkét képernyőre",
+      "storage": "a tárhely nem érhető el",
+      "policy": "jelenleg nem engedélyezett"
+    },
+    "ask": {
+      "title": "Rögzíthető ez a beszélgetés?",
+      "resumeTitle": "Folytatódhat a felvétel?",
+      "yes": "Igen, rögzítés",
+      "no": "Nem"
+    },
+    "consent": {
+      "readAloud": "Felolvasás",
+      "stopReading": "Felolvasás leállítása",
+      "loading": "A szöveg betöltése…",
+      "unavailable": "A szöveg most nem tölthető be. Kérjük, forduljon az ügyintézőhöz.",
+      "name": "Az Ön neve",
+      "nameProposed": "Az ügyintéző adta meg. Kérjük, ellenőrizze.",
+      "signature": "Az Ön aláírása",
+      "optional": "nem kötelező",
+      "clear": "Törlés",
+      "cannotSign": "Nem tudok aláírni, koppintással erősítem meg.",
+      "nameRequired": "Kérjük, adja meg a nevét.",
+      "signatureRequired": "Kérjük, írja alá, vagy erősítse meg, hogy nem tud aláírni.",
+      "textChanged": "A szöveg megváltozott. Kérjük, olvassa el újra, mielőtt válaszol."
+    }
   },
   "feedback": {
     "title": "Ossza meg véleményét",

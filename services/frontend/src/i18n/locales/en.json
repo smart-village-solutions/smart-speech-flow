@@ -24,8 +24,6 @@
     "intro": "$t(app.name) is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.",
     "howTo": "To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.",
     "retention": "By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.",
-    "optIn": "If you would like to help us improve $t(app.name), you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the $t(app.name) project.",
-    "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving $t(app.name).",
     "getStarted": "Get started",
     "loading": "Loading the information"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Reconnecting…",
     "ended": "This conversation has ended.",
     "timeoutWarning": "This conversation will end at {{time}}."
+  },
+  "recording": {
+    "label": "Recording",
+    "starting": "Recording is starting…",
+    "paused": "Recording paused",
+    "stop": "Stop recording",
+    "error": "The recording could not be changed. Please try again.",
+    "reason": {
+      "liveness": "connection interrupted",
+      "unacknowledged": "waiting for both screens",
+      "storage": "storage unavailable",
+      "policy": "not permitted at the moment"
+    },
+    "ask": {
+      "title": "May this conversation be recorded?",
+      "resumeTitle": "Continue recording?",
+      "yes": "Yes, record",
+      "no": "No"
+    },
+    "consent": {
+      "readAloud": "Read aloud",
+      "stopReading": "Stop reading",
+      "loading": "Loading the text…",
+      "unavailable": "The text cannot be loaded right now. Please ask the staff member.",
+      "name": "Your name",
+      "nameProposed": "Entered by the staff member. Please check it.",
+      "signature": "Your signature",
+      "optional": "optional",
+      "clear": "Clear",
+      "cannotSign": "I cannot sign and confirm by tapping.",
+      "nameRequired": "Please enter your name.",
+      "signatureRequired": "Please sign, or confirm that you cannot sign.",
+      "textChanged": "The text has changed. Please read it again before you answer."
+    }
   },
   "feedback": {
     "title": "Share your feedback",
@@ -277,6 +309,37 @@
       "abortBody": "Every contribution so far is lost. The ceremony must then be started again from the beginning.",
       "abortFailed": "The ceremony could not be aborted. Please try again.",
       "keepGoing": "Keep going"
+    },
+    "recording": {
+      "off": "Not recording",
+      "request": "Request recording",
+      "waiting": "Waiting for the guest's answer…",
+      "cancel": "Withdraw request",
+      "reason": {
+        "declined": "The guest declined the recording.",
+        "unanswered": "The guest did not answer.",
+        "stopped_by_guest": "The guest stopped the recording."
+      },
+      "error": {
+        "GUEST_NOT_CONNECTED": "The guest is not connected.",
+        "RECORDING_DISABLED": "Recording is not enabled for this organisation.",
+        "RECOVERY_KEY_MISSING": "This organisation has no recovery key yet.",
+        "RECORDING_POLICY_UNAVAILABLE": "The recording settings cannot be reached right now. Please try again.",
+        "RECORDING_BUSY": "Recording is already requested or running.",
+        "ARCHIVE_UNAVAILABLE": "No recording archive is set up for this installation.",
+        "ARCHIVE_WRITE_FAILED": "The guest's consent could not be saved. The guest can try again.",
+        "generic": "The recording could not be changed.",
+        "ID_CHECK_REQUIRED": "Please check the guest's ID document first."
+      },
+      "ask": {
+        "title": "Request recording",
+        "body": "The guest will be asked on their screen to consent to the recording.",
+        "name": "Guest's name (optional)",
+        "nameHint": "The guest confirms or corrects it on their screen.",
+        "idChecked": "Identity checked with ID document",
+        "idRequired": "This organisation requires the ID check before recording.",
+        "cancel": "Cancel"
+      }
     }
   }
 }

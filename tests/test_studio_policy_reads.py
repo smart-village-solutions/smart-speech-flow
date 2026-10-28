@@ -4,9 +4,8 @@ import pytest
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway.app import _build_studio
-from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.gateway_metrics import GatewayMetrics
-from services.api_gateway.session_lifecycle import TenantConflictError, _read_activation_policy
+from services.api_gateway.session_lifecycle import TenantConflictError, _check_tenant_allowed
 from services.api_gateway.studio_content import StudioContentCache
 from services.api_gateway.studio_content_metrics import StudioContentMetrics
 from services.api_gateway.studio_policy_reads import (
@@ -110,25 +109,27 @@ def test_the_label_does_not_change_with_the_retryable_flag():
 async def test_a_successful_read_counts_ok_under_its_stage():
     registry = CollectorRegistry()
     reads = CountedPolicyReads(
-        RecordingClient(runtime_read()), StudioPolicyReadMetrics(registry), "message"
+        RecordingClient(runtime_read()), StudioPolicyReadMetrics(registry), "activation"
     )
 
     await reads.fetch("tenant-kassel", "cid")
 
-    assert _count(registry, "message", "ok") == 1.0
+    assert _count(registry, "activation", "ok") == 1.0
 
 
 async def test_a_failed_read_is_counted_and_raised_unchanged():
     registry = CollectorRegistry()
     error = _runtime_error("runtime_configuration_unavailable")
-    reads = CountedPolicyReads(RecordingClient(error), StudioPolicyReadMetrics(registry), "message")
+    reads = CountedPolicyReads(
+        RecordingClient(error), StudioPolicyReadMetrics(registry), "activation"
+    )
 
     with pytest.raises(StudioRuntimeV2ClientError) as raised:
         await reads.fetch("tenant-kassel", "cid")
 
     assert raised.value is error
-    assert _count(registry, "message", "unavailable") == 1.0
-    assert _count(registry, "message", "ok") == 0.0
+    assert _count(registry, "activation", "unavailable") == 1.0
+    assert _count(registry, "activation", "ok") == 0.0
 
 
 async def test_session_create_counts_its_read():
@@ -153,33 +154,36 @@ async def test_activation_counts_its_read_including_a_tenant_conflict():
     )
 
     with pytest.raises(TenantConflictError):
-        await _read_activation_policy(lambda: "cid", "tenant-kassel", flow)
+        await _check_tenant_allowed(lambda: "cid", "tenant-kassel", flow)
 
     assert _count(registry, "activation", "tenant_conflict") == 1.0
 
 
-async def test_the_persistence_gate_counts_one_read_per_message():
+async def test_the_wired_flow_counts_one_read_per_session_create():
     registry = CollectorRegistry()
     wiring = wire_studio(
         RecordingClient(runtime_read()),
         None,
         StudioContentCache(),
-        policy_registry=CollectorRegistry(),
         content_metrics=StudioContentMetrics(CollectorRegistry()),
         policy_reads=StudioPolicyReadMetrics(registry),
     )
-    assert wiring.runtime_policy is not None
+    assert wiring.runtime_flow is not None
 
-    await wiring.runtime_policy.authorize("tenant-kassel", ConsentStatus.GRANTED, "cid")
+    await wiring.runtime_flow.resolve(StudioTenantContext("tenant-kassel"), "cid")
 
-    assert _count(registry, "message", "ok") == 1.0
+    assert _count(registry, "session_create", "ok") == 1.0
     assert sum(_count(registry, stage, "ok") for stage in STAGES) == 1.0
+
+
+def test_policy_reads_have_no_message_stage():
+    assert STAGES == ("session_create", "activation")
 
 
 def test_a_flow_without_metrics_hands_out_its_own_client():
     client = RecordingClient(runtime_read())
 
-    assert StudioRuntimeFlow(client).reads("message") is client
+    assert StudioRuntimeFlow(client).reads("activation") is client
 
 
 def test_the_app_owns_one_set_of_policy_read_series():
@@ -212,10 +216,7 @@ def test_a_configured_studio_marks_the_gate_bound(monkeypatch):
     registry = CollectorRegistry()
 
     _build_studio(
-        CollectorRegistry(),
-        _Tokens(),
-        StudioContentMetrics(CollectorRegistry()),
-        StudioPolicyReadMetrics(registry),
+        _Tokens(), StudioContentMetrics(CollectorRegistry()), StudioPolicyReadMetrics(registry)
     )
 
     assert registry.get_sample_value(GATE_BOUND) == 1.0
@@ -226,10 +227,8 @@ def test_an_unconfigured_studio_marks_the_gate_unbound(monkeypatch):
     monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", STUDIO_BASE_URL)
     registry = CollectorRegistry()
     metrics = StudioPolicyReadMetrics(registry)
-    _build_studio(
-        CollectorRegistry(), _Tokens(), StudioContentMetrics(CollectorRegistry()), metrics
-    )
+    _build_studio(_Tokens(), StudioContentMetrics(CollectorRegistry()), metrics)
 
-    _build_studio(CollectorRegistry(), None, StudioContentMetrics(CollectorRegistry()), metrics)
+    _build_studio(None, StudioContentMetrics(CollectorRegistry()), metrics)
 
     assert registry.get_sample_value(GATE_BOUND) == 0.0

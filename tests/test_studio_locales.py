@@ -19,7 +19,7 @@ def language(locale: str) -> GuestLanguageContent:
             "nativeName": f"native {locale}",
             "staffName": f"staff {locale}",
             "icon": None,
-            "guest": {"explanationHtml": "<p>x</p>", "storageQuestionHtml": "<p>q</p>"},
+            "guest": {"explanationHtml": "<p>x</p>"},
         }
     )
 

@@ -19,6 +19,17 @@
     "mode": "ask",
     "retentionHours": 4320
   },
+  "recording": {
+    "enabled": true,
+    "legalBasis": "consent",
+    "signature": "optional",
+    "idCheck": "optional",
+    "retentionHours": 4320,
+    "verificationRequired": false,
+    "recoveryMode": "standard",
+    "timestampAuthorityUrl": "https://freetsa.org/tsr",
+    "auditRetentionHours": 8760
+  },
   "staff": {
     "locale": "de-DE",
     "dashboard": {

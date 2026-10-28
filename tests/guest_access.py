@@ -19,13 +19,10 @@ def activate_guest(
     session_id: str,
     language: str = "en",
     *,
-    consent: bool | None = None,
     token: str | None = None,
 ) -> dict[str, Any]:
     """Activate as the guest; the body's `guest_token` is set on the first activation."""
     body: dict[str, Any] = {"session_id": session_id, "customer_language": language}
-    if consent is not None:
-        body["data_retention_consent"] = consent
     response = client.post(
         "/api/customer/session/activate", json=body, headers=guest_headers(token)
     )

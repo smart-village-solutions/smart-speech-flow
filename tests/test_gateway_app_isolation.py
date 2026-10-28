@@ -44,6 +44,7 @@ CONTAINER_BUILT = (
     "quality_telemetry",
     "quality_telemetry_exporter",
     "oidc_key_cache",
+    "recording_state_store",
 )
 # Built once per app by create_app(), so every lifespan of that app reuses it.
 APP_BUILT = ("prometheus_registry",)
@@ -64,6 +65,12 @@ RECORDING = (
     "recording_secrets",
     "recording_keys",
     "recording_ceremony",
+    "recording_sessions",
+    # ...and without an archive store (#615).
+    "recording_archive",
+    "recording_spools",
+    "recording_archive_client",
+    "recording_stamper",
 )
 
 
@@ -125,7 +132,7 @@ def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None
     first_app, second_app = create_app(), create_app()
 
     with TestClient(first_app), TestClient(second_app):
-        gates = []
+        flows = []
         for dependencies in (first_app.state.dependencies, second_app.state.dependencies):
             sessions = dependencies.session_manager
             assert sessions.realtime_tickets is dependencies.realtime_tickets
@@ -135,9 +142,9 @@ def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None
             # One reference per session in the manager's and the monitor's log lines.
             assert dependencies.websocket_monitor.pseudonymizer is dependencies.pseudonymizer
             assert dependencies.websocket_manager.monitor is dependencies.websocket_monitor
-            assert sessions.runtime_policy is not None
-            gates.append(sessions.runtime_policy)
-        assert gates[0] is not gates[1]
+            assert dependencies.studio_runtime_flow is not None
+            flows.append(dependencies.studio_runtime_flow)
+        assert flows[0] is not flows[1]
 
 
 @pytest.mark.usefixtures("configured_process")
@@ -232,7 +239,9 @@ def test_a_provider_override_stays_on_its_own_app(monkeypatch: pytest.MonkeyPatc
     assert untouched.dependency_overrides == {}
 
 
-async def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_polling_records_presence_in_its_own_apps_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A poller's presence lands in the session manager of the app it polled.
 
     Each app's session store is its own, so a route that reached another

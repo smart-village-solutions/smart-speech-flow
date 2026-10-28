@@ -205,7 +205,7 @@ def test_invalid_content_withdraws_only_that_language(client, conversations, stu
 
     assert by_code["en"]["provided"] is False
     assert all(by_code[code]["provided"] for code in ("ar", "tr", "ku"))
-    assert english == {"storage": {"mode": "ask"}, "provided": False}
+    assert english == {"provided": False}
     assert turkish["provided"] is True
 
 
@@ -218,7 +218,7 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     content = client.get(content_path(session_id, "en")).json()
 
     assert [language["provided"] for language in languages] == [False] * 21
-    assert content == {"storage": {"mode": "unknown"}, "provided": False}
+    assert content == {"provided": False}
 
 
 # Guest content
@@ -232,11 +232,9 @@ def test_guest_content_for_a_provided_language(client, conversations):
 
     assert response.status_code == 200
     assert response.json() == {
-        "storage": {"mode": "ask"},
         "provided": True,
         "revision": runtime_body()["configurationRevision"],
         "explanationHtml": english["guest"]["explanationHtml"],
-        "storageQuestionHtml": english["guest"]["storageQuestionHtml"],
         "feedback": english["feedback"],
     }
     assert_no_display_name(response)
@@ -247,7 +245,7 @@ def test_guest_content_for_a_language_studio_does_not_provide(client, conversati
 
     response = client.get(content_path(session_id, "fa"))
 
-    assert response.json() == {"storage": {"mode": "ask"}, "provided": False}
+    assert response.json() == {"provided": False}
 
 
 @pytest.mark.parametrize("language", ["de", "hr", "xx"])
@@ -260,37 +258,45 @@ def test_guest_content_only_for_ssfs_guest_languages(client, conversations, lang
     assert response.json() == {"detail": "Language not supported"}
 
 
-def test_a_disabled_tenant_reports_disabled_without_a_storage_question(client, conversations):
+def test_a_tenant_whose_studio_storage_is_disabled_gets_the_same_guest_content(
+    client, conversations
+):
+    assert runtime_body(FULDA)["conversationContentStorage"]["mode"] == "disabled"
     session_id = conversations.create(FULDA)
 
     body = client.get(content_path(session_id, "en")).json()
 
-    assert body["storage"] == {"mode": "disabled"}
-    assert body["provided"] is True
-    assert body["storageQuestionHtml"] is None
+    assert body == {
+        "provided": True,
+        "revision": runtime_body(FULDA)["configurationRevision"],
+        "explanationHtml": guest_language(FULDA, "en")["guest"]["explanationHtml"],
+        "feedback": guest_language(FULDA, "en").get("feedback"),
+    }
 
 
-def test_the_mode_is_read_live_on_every_request(client, conversations, studio_mock):
+def test_guest_content_is_answered_from_the_cache_until_it_ages(client, conversations, studio_mock):
     session_id = conversations.create(KASSEL)
-    first = client.get(content_path(session_id, "en")).json()
+    # The scenario drops English: only a fresh Studio read would see it.
+    studio_mock.scenario = "invalid-content"
 
-    studio_mock.scenario = "storage-disabled"
-    second = client.get(content_path(session_id, "en")).json()
+    cached = client.get(content_path(session_id, "en")).json()
+    studio_mock.age_content(61)
+    refreshed = client.get(content_path(session_id, "en")).json()
 
-    assert first["storage"] == {"mode": "ask"}
-    assert second["storage"] == {"mode": "disabled"}
+    assert cached["provided"] is True
+    assert cached["revision"] == runtime_body()["configurationRevision"]
+    assert refreshed == {"provided": False}
 
 
-def test_a_failed_live_read_reports_unknown_with_the_last_content(
-    client, conversations, studio_mock
-):
+def test_a_failed_live_read_serves_the_last_content(client, conversations, studio_mock):
     session_id = conversations.create(KASSEL)
+    studio_mock.age_content(3600)
     studio_mock.stopped = True
 
     body = client.get(content_path(session_id, "en")).json()
 
-    assert body["storage"] == {"mode": "unknown"}
     assert body["provided"] is True
+    assert body["revision"] == runtime_body()["configurationRevision"]
     assert body["explanationHtml"] == guest_language(KASSEL, "en")["guest"]["explanationHtml"]
 
 

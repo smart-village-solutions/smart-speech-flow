@@ -51,18 +51,12 @@ export type GuestLanguage =
   | (GuestLanguageNames & { provided: false })
   | (GuestLanguageNames & { provided: true; nativeName: string; icon: ContentMedia | null });
 
-/** `unknown` when the gateway could not read the mode live. */
-export type StorageMode = 'ask' | 'disabled' | 'unknown';
-
 export type GuestContent =
-  | { storage: { mode: StorageMode }; provided: false }
+  | { provided: false }
   | {
-      storage: { mode: StorageMode };
       provided: true;
       revision: string;
       explanationHtml: string;
-      /** Null when the tenant's mode is `disabled`. */
-      storageQuestionHtml: string | null;
       feedback: StudioFeedbackForm | null;
     };
 

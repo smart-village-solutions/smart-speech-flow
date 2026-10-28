@@ -104,20 +104,15 @@ def test_peers_see_joins_relayed_messages_typing_and_leaves(client, conversation
                 "role",
             }
 
-            admin.send_json({"type": "message", "content": {"text": "hallo"}})
+            admin.send_json({"type": "typing_indicator", "is_typing": True})
             relayed = customer.receive_json()
-            assert set(relayed) == {"type", "from", "session_id", "content", "timestamp"}
-            assert relayed["from"] == "admin"
-            assert relayed["content"] == {"text": "hallo"}
+            assert (relayed["type"], relayed["from"]) == ("typing_indicator", "admin")
 
-            customer.send_json({"type": "typing_indicator", "is_typing": True})
+            customer.send_json({"type": "typing_indicator", "is_typing": False})
+            # The admin's next frame is the customer's: its own was not echoed.
             typing = admin.receive_json()
             assert typing["type"] == "typing_indicator"
-            assert (typing["from"], typing["is_typing"]) == ("customer", True)
-
-            customer.send_json({"type": "message", "content": {"text": "marhaba"}})
-            # The admin's next frame is the customer's message: its own was not echoed.
-            assert admin.receive_json()["content"] == {"text": "marhaba"}
+            assert (typing["from"], typing["is_typing"]) == ("customer", False)
 
             customer.close()
             left = admin.receive_json()

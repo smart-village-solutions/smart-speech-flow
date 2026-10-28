@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>O atendente gostaria de gravar esta conversa. A partir de agora, cada mensagem seria armazenada de forma criptografada até que você ou o atendente parem a gravação. Você pode pará-la a qualquer momento.</p><p>Apenas pessoas autorizadas podem abrir a gravação. Ela é excluída quando termina o prazo de retenção.</p><p>Seu consentimento é voluntário. Se você recusar, a conversa continua sem gravação. As mensagens já armazenadas continuam armazenadas após a parada.</p>",
+    "resume": "<p>A gravação foi parada. Ela pode continuar a partir de agora? Você pode pará-la novamente a qualquer momento.</p>"
+  },
+  "statutory": {
+    "first": "<p>O atendente gostaria de gravar esta conversa. A partir de agora, cada mensagem seria armazenada de forma criptografada até que você ou o atendente parem a gravação. Você pode pará-la a qualquer momento.</p><p>A gravação é feita com base legal. Apenas pessoas autorizadas podem abrir a gravação. Ela é excluída quando termina o prazo de retenção.</p><p>Por favor, confirme que recebeu estas informações e que a gravação pode começar.</p>",
+    "resume": "<p>A gravação foi parada. A partir de agora, ela deve continuar com a mesma base legal. Você pode pará-la novamente a qualquer momento.</p>"
+  }
+}

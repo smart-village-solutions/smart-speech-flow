@@ -46,6 +46,14 @@ class MessageType(str, Enum):
     CLIENT_LEFT = "client_left"
     CUSTOMER_LANGUAGE_CHANGED = "customer_language_changed"
 
+    # Recording mode (spec §5.2): the gateway decides, both screens acknowledge.
+    RECORDING_STATE = "recording_state"
+    RECORDING_REQUEST = "recording_request"
+    RECORDING_STATE_ACK = "recording_state_ack"
+    RECORDING_PING = "recording_ping"
+    RECORDING_PONG = "recording_pong"
+    RECORDING_ERROR = "recording_error"
+
     # 📱 Mobile-Optimization Messages
     TAB_VISIBILITY_CHANGE = "tab_visibility_change"
     BATTERY_STATUS_UPDATE = "battery_status_update"
@@ -126,14 +134,10 @@ class ClientLeftFrame(TypedDict):
     timestamp: str
 
 
-# "from" is a keyword, so these two use the functional syntax.
-RelayedMessageFrame = TypedDict(
-    "RelayedMessageFrame",
-    {"type": str, "from": str, "session_id": str, "content": Any, "timestamp": str},
-)
+# "from" is a keyword, so this one uses the functional syntax.
 TypingFrame = TypedDict(
     "TypingFrame",
-    {"type": str, "from": str, "session_id": str, "is_typing": Any, "timestamp": str},
+    {"type": str, "from": str, "session_id": str, "is_typing": bool, "timestamp": str},
 )
 
 
@@ -173,6 +177,38 @@ class CustomerLanguageChangedFrame(TypedDict):
     role: Literal["customer_language_changed"]
 
 
+class RecordingStateFrame(TypedDict):
+    type: str
+    session_id: str
+    state: str
+    reason: str | None
+    window_id: str | None
+    state_version: int
+    since: str | None
+    role: Literal["recording_state"]
+
+
+class RecordingRequestFrame(TypedDict):
+    type: str
+    session_id: str
+    request_id: str
+    consent_kind: str
+    role: Literal["recording_request"]
+
+
+class RecordingPingFrame(TypedDict):
+    type: str
+    session_id: str
+    role: Literal["recording_ping"]
+
+
+class RecordingErrorFrame(TypedDict):
+    type: str
+    session_id: str
+    code: str
+    role: Literal["recording_error"]
+
+
 class PollingIntervalUpdateFrame(TypedDict):
     type: str
     new_interval: int
@@ -193,15 +229,6 @@ class BatterySaverFrame(TypedDict):
     new_polling_interval: int
     tips: list[str]
     timestamp: str
-
-
-class PolledEnvelopeFrame(TypedDict):
-    """What a poller's `send` relays: its own type and content, stamped by the server."""
-
-    type: str
-    content: dict[str, Any]
-    session_id: str
-    client_type: str
 
 
 class SenderConfirmationFrame(TypedDict):
@@ -301,17 +328,7 @@ def client_left_frame(
     }
 
 
-def relayed_message_frame(sender: ClientType, session_id: str, content: Any) -> RelayedMessageFrame:
-    return {
-        "type": MessageType.MESSAGE.value,
-        "from": sender.value,
-        "session_id": session_id,
-        "content": content,
-        "timestamp": _timestamp(),
-    }
-
-
-def typing_frame(sender: ClientType, session_id: str, is_typing: Any) -> TypingFrame:
+def typing_frame(sender: ClientType, session_id: str, is_typing: bool) -> TypingFrame:
     return {
         "type": MessageType.TYPING_INDICATOR.value,
         "from": sender.value,
@@ -379,6 +396,60 @@ def customer_language_changed_frame(
     }
 
 
+def recording_state_frame(
+    session_id: str,
+    *,
+    state: str,
+    reason: str | None,
+    window_id: str | None,
+    state_version: int,
+    since: datetime | None,
+) -> RecordingStateFrame:
+    """The recording state both screens render and acknowledge by `state_version`."""
+    return {
+        "type": MessageType.RECORDING_STATE.value,
+        "session_id": session_id,
+        "state": state,
+        "reason": reason,
+        "window_id": window_id,
+        "state_version": state_version,
+        "since": since.isoformat() if since else None,
+        # The frontend transport forwards only frames that carry a role.
+        "role": "recording_state",
+    }
+
+
+def recording_request_frame(
+    session_id: str, *, request_id: str, consent_kind: str
+) -> RecordingRequestFrame:
+    """Asks the guest to answer the employee's request (`first` or `resume`)."""
+    return {
+        "type": MessageType.RECORDING_REQUEST.value,
+        "session_id": session_id,
+        "request_id": request_id,
+        "consent_kind": consent_kind,
+        "role": "recording_request",
+    }
+
+
+def recording_ping_frame(session_id: str) -> RecordingPingFrame:
+    return {
+        "type": MessageType.RECORDING_PING.value,
+        "session_id": session_id,
+        "role": "recording_ping",
+    }
+
+
+def recording_error_frame(session_id: str, *, code: str) -> RecordingErrorFrame:
+    """To the employee: recording could not do what the guest asked for, and why."""
+    return {
+        "type": MessageType.RECORDING_ERROR.value,
+        "session_id": session_id,
+        "code": code,
+        "role": "recording_error",
+    }
+
+
 def polling_interval_update_frame(
     *,
     new_interval: int,
@@ -411,17 +482,6 @@ def battery_saver_frame(battery_level: float) -> BatterySaverFrame:
         "new_polling_interval": BATTERY_SAVER_INTERVAL,
         "tips": list(_BATTERY_SAVER_TIPS),
         "timestamp": _timestamp(),
-    }
-
-
-def polled_envelope_frame(
-    message_type: str, content: dict[str, Any], session_id: str, client_type: ClientType
-) -> PolledEnvelopeFrame:
-    return {
-        "type": message_type,
-        "content": content,
-        "session_id": session_id,
-        "client_type": client_type.value,
     }
 
 

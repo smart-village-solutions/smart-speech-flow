@@ -139,9 +139,7 @@ async def test_stale_admin_poll_request_releases_presence_before_refresh(
 
 @pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
 @pytest.mark.parametrize("selector_source", ["query", "body", "header", "cookie"])
-@pytest.mark.parametrize(
-    "operation", ["activate", "poll", "send", "status", "recover", "disconnect"]
-)
+@pytest.mark.parametrize("operation", ["activate", "poll", "status", "recover", "disconnect"])
 async def test_customer_polling_rejects_tenant_selectors_without_side_effects(
     request, monkeypatch, session_manager, polling_store, authenticated, selector_source, operation
 ) -> None:
@@ -160,7 +158,6 @@ async def test_customer_polling_rejects_tenant_selectors_without_side_effects(
     methods = {
         "activate": "POST",
         "poll": "GET",
-        "send": "POST",
         "status": "GET",
         "recover": "POST",
         "disconnect": "DELETE",

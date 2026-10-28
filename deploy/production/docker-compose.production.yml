@@ -30,6 +30,11 @@ services:
     - '8000'
     volumes:
     - ../../models:/models
+    # Every utterance passes through a temporary file: RAM only (spec §5.5).
+    - type: tmpfs
+      target: /tmp
+      tmpfs:
+        size: 256M
     deploy:
       resources:
         reservations:
@@ -72,22 +77,38 @@ services:
     restart: unless-stopped
     pull_policy: never
   api_gateway:
+    # No core dumps: a crashed gateway's memory holds live plaintext (spec §5.5).
+    ulimits:
+      core: 0
     ports:
     - 8000:8000
     deploy:
       resources:
         limits:
           cpus: '2.0'
-          memory: 2G
+          # 2 GiB for the process plus both tmpfs mounts, whose pages count here:
+          # a full tmpfs then refuses a write instead of costing the gateway.
+          memory: 3328M
         reservations:
           cpus: '1.0'
           memory: 1G
+    # The host has swap; tmpfs and heap pages hold conversation plaintext (spec §5.5).
+    memswap_limit: 3328M
     volumes:
-    - audio-data:/data/audio
+    # Encrypted archive objects waiting for upload (#615): ciphertext only.
+    - archive-spool:/data/archive-spool
+    # Starlette spools an upload over 1 MiB into /tmp: RAM only (spec §5.5).
+    - type: tmpfs
+      target: /tmp
+      tmpfs:
+        size: 256M
+    # Delivery audio lives in RAM and nowhere else (spec §5.5). World-writable
+    # with the sticky bit: the gateway runs as the unprivileged `app` user.
     - type: tmpfs
       target: /tmp/audio
       tmpfs:
         size: 1G
+        mode: 01777
     # Recording secrets (#614): outside the project and outside .env, so no
     # backup-production.sh artifact carries them. Back the directory up offline.
     - ${SSF_RECORDING_SECRETS_DIR:-/etc/ssf/recording-secrets}:/run/secrets/ssf-recording:ro
@@ -95,10 +116,7 @@ services:
     - REDIS_URL=redis://redis:6379/0
     - REDIS_NAMESPACE=ssf
     - CLIENT_BASE_URL=https://dialog.kassel.de
-    - AUDIO_STORAGE_PATH=/data/audio
-    - AUDIO_TEMP_PATH=/tmp/audio
-    - AUDIO_MAX_DISK_USAGE_GB=9
-    - AUDIO_CLEANUP_INTERVAL_MINUTES=60
+    - SSF_AUDIO_BASE_DIR=/tmp/audio
     - ENABLE_PIPELINE_METADATA=true
     # Bounds concurrent GPU pipeline work. Set here, not left to the code
     # default, so the limit production runs on can be tuned from the env file
@@ -148,8 +166,7 @@ services:
     - STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS=${STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS:-5.0}
     - STUDIO_CONTENT_CACHE_SECONDS=${STUDIO_CONTENT_CACHE_SECONDS:-60}
     - STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS=${STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS:-3}
-    # Sessions with granted consent keep content for the retention Studio
-    # reported then; every other terminal record expires after this many hours.
+    # A terminal record holds metadata only and expires after this many hours.
     - SSF_TERMINAL_RECORD_HOURS=${SSF_TERMINAL_RECORD_HOURS:-24}
     - SSF_SESSION_RECONNECT_GRACE_MINUTES=30
     - SSF_SESSION_TIMEOUT_WARNING_MINUTES=5
@@ -287,14 +304,16 @@ services:
     pull_policy: never
   redis:
     image: redis@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
+    # Nothing on disk (D12): live conversations are in memory only, and a
+    # Redis restart ends them.
     command:
     - redis-server
+    - --save
+    - ''
     - --appendonly
-    - 'yes'
+    - 'no'
     expose:
     - '6379'
-    volumes:
-    - redis-data:/data
     restart: unless-stopped
     pull_policy: never
   clickhouse:
@@ -572,10 +591,9 @@ services:
     - ../../monitoring/promtail-data:/var/lib/promtail
     pull_policy: never
 volumes:
-  redis-data: null
   ollama-data: null
   vllm-models: null
-  audio-data: null
+  archive-spool: null
   clickhouse-data: null
   keycloak-postgres-data: null
   ssf-postgres-data: null

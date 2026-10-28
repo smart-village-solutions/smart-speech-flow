@@ -1,4 +1,4 @@
-"""A conversation's state: the session, its messages, its status and its content settlement."""
+"""A conversation's state: the session, its messages and its status."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .clock import utc_now
-from .consent import ConsentStatus
-from .content_retention import valid_retention_hours
 from .studio_v2 import REVISION_PATTERN
 from .tenant_session import TenantSessionKey
 
@@ -104,14 +102,8 @@ class SessionMessage:
     # NEW: Pipeline Metadata
     pipeline_metadata: Optional[Dict[str, Any]] = None
     original_audio_url: Optional[str] = None  # URL to original input audio
-    # Whether the message's live policy read authorised keeping each artefact.
-    # Defaults are refused, so a record written before consent existed, or a
-    # process with no gate bound, retains nothing.
-    record_authorized: bool = False
-    original_audio_authorized: bool = False
-    translated_audio_authorized: bool = False
 
-    def to_dict(self, *, include_authorization: bool = False) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
             "id": self.id,
             "sender": self.sender.value,
@@ -127,10 +119,6 @@ class SessionMessage:
             data["pipeline_metadata"] = self.pipeline_metadata
         if self.original_audio_url:
             data["original_audio_url"] = self.original_audio_url
-        if include_authorization:
-            data["record_authorized"] = self.record_authorized
-            data["original_audio_authorized"] = self.original_audio_authorized
-            data["translated_audio_authorized"] = self.translated_audio_authorized
         return data
 
     @classmethod
@@ -140,8 +128,8 @@ class SessionMessage:
             sender=ClientType(data["sender"]),
             original_text=data.get("original_text", ""),
             translated_text=data.get("translated_text", ""),
-            # Audio bytes belong in the tenant-scoped, retention-managed file
-            # store. Ignore legacy Redis payloads that embedded the bytes.
+            # Audio bytes belong in the tenant-scoped file store. Ignore legacy
+            # Redis payloads that embedded the bytes.
             audio_base64=None,
             source_lang=data.get("source_lang", ""),
             target_lang=data.get("target_lang", ""),
@@ -149,9 +137,6 @@ class SessionMessage:
             translated_audio_available=bool(data.get("translated_audio_available", False)),
             pipeline_metadata=data.get("pipeline_metadata"),
             original_audio_url=data.get("original_audio_url"),
-            record_authorized=bool(data.get("record_authorized", False)),
-            original_audio_authorized=bool(data.get("original_audio_authorized", False)),
-            translated_audio_authorized=bool(data.get("translated_audio_authorized", False)),
         )
 
 
@@ -170,16 +155,8 @@ def _stored_configuration_revision(data: Dict[str, Any]) -> str:
     return revision
 
 
-def _stored_retention_hours(data: Dict[str, Any]) -> Optional[int]:
-    """The captured retention; a missing or malformed value reads as None (the short default)."""
-    return valid_retention_hours(data.get("consent_retention_hours"))
-
-
-def _stored_consent_revision(data: Dict[str, Any]) -> Optional[str]:
-    revision = data.get("consent_configuration_revision")
-    if isinstance(revision, str) and _CONFIGURATION_REVISION.fullmatch(revision):
-        return revision
-    return None
+def _stored_count(value: Any) -> Optional[int]:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def _previous_gateway_snapshot(revision: Optional[str]) -> Optional[Dict[str, str]]:
@@ -204,10 +181,6 @@ class Session:
     # the hard-cut routes are migrated. Persistence rejects missing scope.
     tenant_id: Optional[str] = None
     configuration_revision: Optional[str] = None
-    consent_status: ConsentStatus = ConsentStatus.PENDING
-    # Captured from the live read that granted consent and never changed after.
-    consent_retention_hours: Optional[int] = None
-    consent_configuration_revision: Optional[str] = None
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
     status: SessionStatus = SessionStatus.PENDING
@@ -223,6 +196,8 @@ class Session:
     # SHA-256 of the guest token the first activation issued; None until then,
     # and for sessions activated before guest tokens existed.
     guest_token_hash: Optional[str] = None
+    # How many messages the conversation had, kept when termination strips them.
+    ended_message_count: Optional[int] = None
 
     # ✨ Timeout Management Features
     last_activity: datetime = field(default_factory=utc_now)
@@ -241,6 +216,17 @@ class Session:
         if self.tenant_id is None:
             raise ValueError("session has no tenant scope")
         return TenantSessionKey(self.tenant_id, self.id)
+
+    @property
+    def message_count(self) -> int:
+        return (
+            self.ended_message_count if self.ended_message_count is not None else len(self.messages)
+        )
+
+    def strip_content(self) -> None:
+        """Drop every message, keeping their number: a terminal record holds metadata only (§5.5)."""
+        self.ended_message_count = self.message_count
+        self.messages = []
 
     def is_owned_by(self, owner_ref: Optional[str]) -> bool:
         """Whether ``owner_ref`` created this session; an owner-less session is nobody's."""
@@ -274,15 +260,13 @@ class Session:
             "tenant_id": self.tenant_id,
             "configuration_revision": self.configuration_revision,
             "runtime_configuration": _previous_gateway_snapshot(self.configuration_revision),
-            "consent_status": self.consent_status.value,
-            "consent_retention_hours": self.consent_retention_hours,
-            "consent_configuration_revision": self.consent_configuration_revision,
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
             "terminated_at": (self.terminated_at.isoformat() if self.terminated_at else None),
-            "message_count": len(self.messages),
+            "message_count": self.message_count,
+            "ended_message_count": self.ended_message_count,
             "admin_connected": self.admin_connected,
             "customer_connected": self.customer_connected,
             "termination_reason": self.termination_reason,
@@ -308,9 +292,7 @@ class Session:
         }
 
         if include_messages:
-            data["messages"] = [
-                message.to_dict(include_authorization=True) for message in self.messages
-            ]
+            data["messages"] = [message.to_dict() for message in self.messages]
 
         return data
 
@@ -320,8 +302,7 @@ class Session:
         data.pop("tenant_id", None)
         data.pop("configuration_revision", None)
         data.pop("runtime_configuration", None)
-        data.pop("consent_retention_hours", None)
-        data.pop("consent_configuration_revision", None)
+        data.pop("ended_message_count", None)
         data.pop("owner_ref", None)
         data.pop("guest_token_hash", None)
         return data
@@ -364,9 +345,6 @@ class Session:
             id=data["id"],
             tenant_id=data["tenant_id"],
             configuration_revision=_stored_configuration_revision(data),
-            consent_status=ConsentStatus.from_stored(data.get("consent_status")),
-            consent_retention_hours=_stored_retention_hours(data),
-            consent_configuration_revision=_stored_consent_revision(data),
             customer_language=data.get("customer_language"),
             admin_language=data.get("admin_language", "de"),
             status=SessionStatus(data.get("status", SessionStatus.PENDING.value)),
@@ -378,6 +356,7 @@ class Session:
             termination_reason=data.get("termination_reason"),
             owner_ref=data.get("owner_ref"),
             guest_token_hash=data.get("guest_token_hash"),
+            ended_message_count=_stored_count(data.get("ended_message_count")),
             last_activity=_ensure_utc(datetime.fromisoformat(last_activity_raw)),
             timeout_warning_sent=data.get("timeout_warning_sent", False),
             session_timeout_minutes=data.get("session_timeout_minutes", 30),
@@ -395,117 +374,3 @@ class Session:
         )
 
         return session
-
-
-def _mark_translated_audio_gone(metadata: Optional[Dict[str, Any]]) -> None:
-    """Record that a step's translated audio is no longer available.
-
-    `scope_pipeline_audio_urls` rebuilds a translated URL from a step output
-    that carries `audio_url` or `audio_available: True`, so both have to stop
-    saying the audio is there. The key is set to False rather than removed:
-    a step that produced no audio still reports that it produced none.
-    """
-    if not isinstance(metadata, dict):
-        return
-    steps = metadata.get("steps")
-    if not isinstance(steps, list):
-        return
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        output = step.get("output")
-        if not isinstance(output, dict):
-            continue
-        if "audio_url" in output or output.get("audio_available") is True:
-            output.pop("audio_url", None)
-            output["audio_available"] = False
-
-
-def _unprune_messages(
-    previous: list[SessionMessage], pruned: list[SessionMessage], kept: int
-) -> list[SessionMessage]:
-    """The messages a failed sweep write restores.
-
-    The sweep swaps in a pruned list of copies and awaits its write. What
-    changed on that list meanwhile survives the rollback: messages appended
-    after its first `kept`, and the authorization recorded on a copy.
-    """
-    copies = {message.id: message for message in pruned[:kept]}
-    for message in previous:
-        if (copied := copies.get(message.id)) is not None:
-            message.record_authorized = copied.record_authorized
-            message.original_audio_authorized = copied.original_audio_authorized
-            message.translated_audio_authorized = copied.translated_audio_authorized
-    return previous + pruned[kept:]
-
-
-def _settle_refused_content(session: Session) -> tuple[bool, list[tuple[str, Any]]]:
-    """Prune refused messages and report the audio files they leave behind.
-
-    The record is mutated here but no file is touched. Deletion is the
-    caller's to perform once the record write has committed: termination
-    treats a store failure as transient and retryable, and files removed
-    ahead of that commit are gone for a conversation still running.
-
-    Args:
-        session: The session whose content is being settled. Its message
-            list is replaced in place with the messages that may be kept.
-
-    Returns:
-        Whether the record changed, and the artefacts to delete afterwards.
-        An artefact removal that keeps the message leaves the count
-        identical, so the count alone is the wrong predicate for "this
-        needs writing back". A session without a tenant is never settled.
-    """
-    from .audio_storage import AudioVariant
-
-    if session.tenant_id is None:
-        return False, []
-
-    changed = False
-    doomed: list[tuple[str, Any]] = []
-    retained = []
-    for message in session.messages:
-        if not message.record_authorized:
-            doomed.append((message.id, AudioVariant.ORIGINAL))
-            doomed.append((message.id, AudioVariant.TRANSLATED))
-            changed = True
-            continue
-        if _remove_refused_original_audio(message, doomed):
-            changed = True
-        if message.translated_audio_available and (not message.translated_audio_authorized):
-            doomed.append((message.id, AudioVariant.TRANSLATED))
-            # A retained message must not advertise audio it no longer has,
-            # on either marker: `scope_pipeline_audio_urls` rebuilds a
-            # translated URL from the step outputs alone.
-            message.translated_audio_available = False
-            _mark_translated_audio_gone(message.pipeline_metadata)
-            changed = True
-        retained.append(message)
-    session.messages = retained
-    return changed, doomed
-
-
-def _remove_refused_original_audio(message: SessionMessage, doomed: list[tuple[str, Any]]) -> bool:
-    from .audio_storage import AudioVariant
-
-    # An artefact that was never produced reports as unauthorised too,
-    # because no read was taken for it. Only clear markers that
-    # actually describe audio this message had.
-    pipeline_input = (
-        message.pipeline_metadata.get("input")
-        if isinstance(message.pipeline_metadata, dict)
-        else None
-    )
-    had_original = bool(message.original_audio_url) or (
-        isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
-    )
-    if had_original and not message.original_audio_authorized:
-        doomed.append((message.id, AudioVariant.ORIGINAL))
-        # Both markers, or `conversation_service` still derives an
-        # original-audio URL for a file that is gone.
-        message.original_audio_url = None
-        if isinstance(pipeline_input, dict):
-            pipeline_input.pop("type", None)
-        return True
-    return False

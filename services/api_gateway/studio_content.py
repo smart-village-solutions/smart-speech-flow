@@ -1,8 +1,7 @@
 """Studio display content, sanitised once and kept by revision.
 
-The storage mode is not held here and cannot be: it decides persistence and
-consent, so every use reads it live. Nor is the tenant display name, which SSF
-never shows. `TenantContent` has slots and no field for either.
+The tenant display name is not held here: SSF never shows it, and
+`TenantContent` has slots and no field for it.
 """
 
 from __future__ import annotations
@@ -75,11 +74,9 @@ def _staff(staff: StaffContent | None) -> StaffContent | None:
 
 
 def _guest(language: GuestLanguageContent) -> GuestLanguageContent:
-    question = language.storage_question_html
     return language.model_copy(
         update={
             "explanation_html": safe_html(language.explanation_html),
-            "storage_question_html": None if question is None else safe_html(question),
             "feedback": _form(language.feedback),
         }
     )
@@ -203,8 +200,8 @@ class StudioContentCache:
 class ContentRecordingFetcher:
     """Pass every live runtime read on unchanged, refreshing the content cache from it.
 
-    Session create, activation and the persistence gate all read through this,
-    so display content follows each policy read without another Studio request.
+    Session create and activation read through this, so display content
+    follows each policy read without another Studio request.
     """
 
     def __init__(self, inner: RuntimeConfigurationFetcher, cache: StudioContentCache) -> None:

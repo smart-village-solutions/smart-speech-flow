@@ -28,18 +28,6 @@
             "title": "Customer Language",
             "type": "string"
           },
-          "data_retention_consent": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The guest's answer to the conversation-content storage question. Absent is not an answer and does not grant consent.",
-            "title": "Data Retention Consent"
-          },
           "session_id": {
             "description": "Session ID to activate",
             "title": "Session Id",
@@ -634,24 +622,6 @@
           "login"
         ],
         "title": "ContentStartpage",
-        "type": "object"
-      },
-      "ContentStorage": {
-        "properties": {
-          "mode": {
-            "enum": [
-              "ask",
-              "disabled",
-              "unknown"
-            ],
-            "title": "Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "title": "ContentStorage",
         "type": "object"
       },
       "DealingBody": {
@@ -1398,25 +1368,28 @@
         "title": "PaperConfirmationBody",
         "type": "object"
       },
-      "PollingMessage": {
+      "PlaybackBody": {
+        "additionalProperties": false,
         "properties": {
-          "content": {
-            "additionalProperties": true,
-            "title": "Content",
-            "type": "object"
+          "event": {
+            "enum": [
+              "started",
+              "completed"
+            ],
+            "title": "Event",
+            "type": "string"
           },
-          "type": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Type",
+          "message_id": {
+            "format": "uuid",
+            "title": "Message Id",
             "type": "string"
           }
         },
         "required": [
-          "type",
-          "content"
+          "message_id",
+          "event"
         ],
-        "title": "PollingMessage",
+        "title": "PlaybackBody",
         "type": "object"
       },
       "ProvidedGuestContent": {
@@ -1444,28 +1417,12 @@
           "revision": {
             "title": "Revision",
             "type": "string"
-          },
-          "storage": {
-            "$ref": "#/components/schemas/ContentStorage"
-          },
-          "storageQuestionHtml": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storagequestionhtml"
           }
         },
         "required": [
-          "storage",
           "provided",
           "revision",
           "explanationHtml",
-          "storageQuestionHtml",
           "feedback"
         ],
         "title": "ProvidedGuestContent",
@@ -1550,6 +1507,115 @@
           "expires_at"
         ],
         "title": "RealtimeTicketResponse",
+        "type": "object"
+      },
+      "RecordingAnswerBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cannot_sign": {
+            "default": false,
+            "title": "Cannot Sign",
+            "type": "boolean"
+          },
+          "consent": {
+            "title": "Consent",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "signature_png": {
+            "anyOf": [
+              {
+                "maxLength": 349529,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Png"
+          },
+          "text_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Sha256"
+          }
+        },
+        "required": [
+          "request_id",
+          "consent"
+        ],
+        "title": "RecordingAnswerBody",
+        "type": "object"
+      },
+      "RecordingAskBody": {
+        "additionalProperties": false,
+        "properties": {
+          "guest_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Name"
+          },
+          "id_checked": {
+            "default": false,
+            "title": "Id Checked",
+            "type": "boolean"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "RecordingAskBody",
+        "type": "object"
+      },
+      "RecordingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "RecordingRequestBody",
         "type": "object"
       },
       "SessionCreateResponse": {
@@ -1827,13 +1893,9 @@
             "default": false,
             "title": "Provided",
             "type": "boolean"
-          },
-          "storage": {
-            "$ref": "#/components/schemas/ContentStorage"
           }
         },
         "required": [
-          "storage",
           "provided"
         ],
         "title": "UnprovidedGuestContent",
@@ -3023,72 +3085,6 @@
         ]
       }
     },
-    "/api/admin/session/{session_id}/polling/{polling_id}/send": {
-      "post": {
-        "operationId": "admin_send_api_admin_session__session_id__polling__polling_id__send_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "polling_id",
-            "required": true,
-            "schema": {
-              "title": "Polling Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PollingMessage"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Admin Send Api Admin Session  Session Id  Polling  Polling Id  Send Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Admin Send",
-        "tags": [
-          "websocket-polling-fallback",
-          "realtime-polling"
-        ]
-      }
-    },
     "/api/admin/session/{session_id}/polling/{polling_id}/status": {
       "get": {
         "operationId": "admin_polling_status_api_admin_session__session_id__polling__polling_id__status_get",
@@ -3250,6 +3246,247 @@
         "tags": [
           "admin",
           "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/recording": {
+      "get": {
+        "operationId": "admin_recording_state_api_admin_session__session_id__recording_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Recording State Api Admin Session  Session Id  Recording Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Recording State",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/recording/cancel": {
+      "post": {
+        "operationId": "cancel_recording_api_admin_session__session_id__recording_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Recording Api Admin Session  Session Id  Recording Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Recording",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/recording/playback": {
+      "post": {
+        "operationId": "report_playback_as_employee_api_admin_session__session_id__recording_playback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Playback As Employee",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/recording/request": {
+      "post": {
+        "operationId": "request_recording_api_admin_session__session_id__recording_request_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordingAskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Recording Api Admin Session  Session Id  Recording Request Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Recording",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/recording/stop": {
+      "post": {
+        "operationId": "stop_recording_as_employee_api_admin_session__session_id__recording_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Recording As Employee Api Admin Session  Session Id  Recording Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Recording As Employee",
+        "tags": [
+          "recording"
         ]
       }
     },
@@ -4185,72 +4422,6 @@
         ]
       }
     },
-    "/api/customer/session/{session_id}/polling/{polling_id}/send": {
-      "post": {
-        "operationId": "customer_send_api_customer_session__session_id__polling__polling_id__send_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "polling_id",
-            "required": true,
-            "schema": {
-              "title": "Polling Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PollingMessage"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Customer Send Api Customer Session  Session Id  Polling  Polling Id  Send Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Customer Send",
-        "tags": [
-          "websocket-polling-fallback",
-          "realtime-polling"
-        ]
-      }
-    },
     "/api/customer/session/{session_id}/polling/{polling_id}/status": {
       "get": {
         "operationId": "customer_polling_status_api_customer_session__session_id__polling__polling_id__status_get",
@@ -4376,6 +4547,395 @@
         "tags": [
           "customer",
           "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording": {
+      "get": {
+        "operationId": "guest_recording_state_api_customer_session__session_id__recording_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Guest Recording State Api Customer Session  Session Id  Recording Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guest Recording State",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/answer": {
+      "post": {
+        "operationId": "answer_recording_api_customer_session__session_id__recording_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordingAnswerBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Answer Recording Api Customer Session  Session Id  Recording Answer Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Recording",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/consent": {
+      "get": {
+        "description": "The open question's text, sanitised; the screen answers with the hash of this `html`.",
+        "operationId": "guest_consent_text_api_customer_session__session_id__recording_consent_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Guest Consent Text Api Customer Session  Session Id  Recording Consent Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guest Consent Text",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/consent/audio": {
+      "get": {
+        "description": "The same text read aloud by the TTS service in the guest's language (§6).\n\nNamed by its question and the text's hash, so a screen never plays a clip it\nkept for an earlier question or an earlier version of the text.",
+        "operationId": "guest_consent_audio_api_customer_session__session_id__recording_consent_audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "text_sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Text Sha256",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guest Consent Audio",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/playback": {
+      "post": {
+        "operationId": "report_playback_as_guest_api_customer_session__session_id__recording_playback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Playback As Guest",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/stop": {
+      "post": {
+        "operationId": "stop_recording_as_guest_api_customer_session__session_id__recording_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Recording As Guest Api Customer Session  Session Id  Recording Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Recording As Guest",
+        "tags": [
+          "recording"
         ]
       }
     },

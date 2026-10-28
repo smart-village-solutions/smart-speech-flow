@@ -167,27 +167,6 @@ def session_manager(gateway_dependencies):
     return gateway_dependencies.session_manager
 
 
-class AlwaysAuthorized:
-    """A persistence gate that grants every write."""
-
-    async def authorize(self, tenant_id, consent_status, correlation_id):
-        from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
-
-        return PolicyDecision(True, PolicyReason.GRANTED)
-
-
-@pytest.fixture(autouse=True)
-def permissive_runtime_policy(gateway_dependencies):
-    """Authorise persistence by default so suites unrelated to consent pass.
-
-    No gate refuses every write, which is the right production default and
-    the wrong default for suites that assert a message survives. The consent
-    and gate suites set their own gate on the session manager.
-    """
-    gateway_dependencies.session_manager.runtime_policy = AlwaysAuthorized()
-    yield
-
-
 def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercised via pytest hooks
     run_integration = config.getoption("--run-integration")
     run_load = config.getoption("--run-load")

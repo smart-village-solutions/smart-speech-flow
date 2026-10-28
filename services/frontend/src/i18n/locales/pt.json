@@ -24,8 +24,6 @@
     "intro": "$t(app.name) é um serviço automático de tradução em tempo real, criado para apoiar conversas entre pessoas que falam idiomas diferentes. O serviço funciona exclusivamente em um servidor privado dedicado.",
     "howTo": "Para começar a gravar, toque no botão do microfone. Você terá então 20 segundos para falar. Também é possível encerrar a gravação antes, tocando novamente. Como alternativa, você pode digitar o texto.",
     "retention": "Por padrão, os dados de áudio e de transcrição são processados somente durante a sessão ativa e não são guardados depois. Quando a conversa termina, os dados são descartados automaticamente. Você pode relatar problemas ou compartilhar ideias de melhoria a qualquer momento pela função de opinião do aplicativo.",
-    "optIn": "Se quiser nos ajudar a melhorar o $t(app.name), você pode permitir que os dados da sua conversa sejam armazenados por até 180 dias. Esses dados podem ser usados exclusivamente para análise e melhoria da qualidade no âmbito do projeto $t(app.name).",
-    "checkbox": "Concordo com o armazenamento dos dados da minha conversa por até 180 dias para melhorar o $t(app.name).",
     "getStarted": "Começar",
     "loading": "Carregando as informações"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Reconectando…",
     "ended": "Esta conversa foi encerrada.",
     "timeoutWarning": "Esta conversa será encerrada às {{time}}."
+  },
+  "recording": {
+    "label": "Gravando",
+    "starting": "Iniciando a gravação…",
+    "paused": "Gravação pausada",
+    "stop": "Parar a gravação",
+    "error": "Não foi possível alterar a gravação. Tente de novo.",
+    "reason": {
+      "liveness": "conexão interrompida",
+      "unacknowledged": "aguardando as duas telas",
+      "storage": "armazenamento indisponível",
+      "policy": "não permitido no momento"
+    },
+    "ask": {
+      "title": "Esta conversa pode ser gravada?",
+      "resumeTitle": "Continuar a gravação?",
+      "yes": "Sim, gravar",
+      "no": "Não"
+    },
+    "consent": {
+      "readAloud": "Ler em voz alta",
+      "stopReading": "Parar a leitura",
+      "loading": "Carregando o texto…",
+      "unavailable": "Não é possível carregar o texto agora. Fale com o atendente.",
+      "name": "Seu nome",
+      "nameProposed": "Inserido pelo atendente. Verifique, por favor.",
+      "signature": "Sua assinatura",
+      "optional": "opcional",
+      "clear": "Limpar",
+      "cannotSign": "Não consigo assinar e confirmo com um toque.",
+      "nameRequired": "Digite seu nome, por favor.",
+      "signatureRequired": "Assine ou confirme que não consegue assinar, por favor.",
+      "textChanged": "O texto mudou. Leia-o novamente antes de responder, por favor."
+    }
   },
   "feedback": {
     "title": "Dê sua opinião",

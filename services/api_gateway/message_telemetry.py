@@ -18,6 +18,7 @@ import logging
 import time
 from typing import Any, Final, Mapping, Optional
 
+from .quality_telemetry import UNDETERMINED_LANGUAGE
 from .quality_telemetry_schema import (
     InputMode,
     MessageDirection,
@@ -172,10 +173,10 @@ class MessageTelemetryRecorder:
             return
         try:
             key = self._session_id
+            session_id = key.session_id if isinstance(key, TenantSessionKey) else key
+            withheld = self._pseudonymizer.is_recorded(session_id)
             emit(
-                session_ref=self._pseudonymizer.reference(
-                    key.session_id if isinstance(key, TenantSessionKey) else key
-                ),
+                session_ref=self._pseudonymizer.reference(session_id),
                 tenant_ref=(
                     key.tenant_ref
                     if isinstance(key, TenantSessionKey)
@@ -183,8 +184,8 @@ class MessageTelemetryRecorder:
                 ),
                 direction=self._direction,
                 input_mode=self._input_mode,
-                source_lang=self._source_lang,
-                target_lang=self._target_lang,
+                source_lang=UNDETERMINED_LANGUAGE if withheld else self._source_lang,
+                target_lang=UNDETERMINED_LANGUAGE if withheld else self._target_lang,
                 terminal_outcome=self._outcome,
                 failed_stage=self._failed_stage,
                 error_code=self._error_code,

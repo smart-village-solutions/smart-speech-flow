@@ -174,7 +174,6 @@ async def test_mock_backed_flow_resolves_the_tenants_v2_policy() -> None:
     result = await _mock_backed_flow().resolve(_context("tenant-kassel"), "mock-flow-correlation")
 
     assert result.read.policy.tenant_id == "tenant-kassel"
-    assert (result.read.policy.mode, result.read.policy.retention_hours) == ("ask", 4320)
     assert result.read.policy.contract_version == "2.0"
 
 
@@ -208,7 +207,7 @@ async def test_invalid_content_still_resolves_the_policy() -> None:
 
     result = await flow.resolve(_context("tenant-kassel"), "mock-flow-correlation")
 
-    assert result.read.policy.mode == "ask"
+    assert result.read.policy.tenant_id == "tenant-kassel"
     assert result.read.content.staff is None
     assert result.read.content.guest_languages == ()
 

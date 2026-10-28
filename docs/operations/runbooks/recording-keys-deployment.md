@@ -92,6 +92,7 @@ Expected, after the four feedback lines:
 apply.sh: ensuring database ssf_recording
 apply.sh: applying /docker-entrypoint-initdb.d/recording/migrations/001_recording_keys.sql to ssf_recording
 apply.sh: applying /docker-entrypoint-initdb.d/recording/migrations/002_recovery_ceremony.sql to ssf_recording
+apply.sh: applying /docker-entrypoint-initdb.d/recording/migrations/003_recording_archive.sql to ssf_recording
 apply.sh: done
 ```
 

@@ -3,11 +3,11 @@ from scripts.release_check.evidence import Evidence
 from scripts.release_check.scenario import Conversation, next_frame, run_conversation
 from tests.operations.release_check.release_check_fakes import FakeGateway, FakeSocket
 
-TENANT = Tenant("A", "tenant-a", "en", "ask", (Operator("u1", "p1"), Operator("u2", "p2")))
+TENANT = Tenant("A", "tenant-a", "en", (Operator("u1", "p1"), Operator("u2", "p2")))
 
 
 def _conversation() -> Conversation:
-    return Conversation(tenant=TENANT, index=1, token="token-A1", consent=True)
+    return Conversation(tenant=TENANT, index=1, token="token-A1")
 
 
 def _failed(evidence: Evidence) -> list[str]:
@@ -22,7 +22,6 @@ async def test_a_healthy_conversation_passes_every_step():
     assert _failed(evidence) == []
     assert conversation.completed
     assert len(conversation.message_ids) == 4
-    assert gateway.sessions[conversation.session_id].consent is True
     assert [check.name for check in evidence.checks][:3] == [
         "A1 create session",
         "A1 guest reads pending session",

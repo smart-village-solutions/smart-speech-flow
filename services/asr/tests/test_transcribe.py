@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 import tempfile
 from pathlib import Path
@@ -50,7 +51,39 @@ def test_transcribe_success():
     assert response.status_code == 200
     # The model's own words: "any non-empty text" also passed for the error
     # transcript this service used to invent when transcription failed.
-    assert response.json() == {"text": "dummy transcription in de", "fallback": False}
+    assert response.json() == {
+        "text": "dummy transcription in de",
+        "fallback": False,
+        "model": "whisper-large-v3-turbo",
+        "model_version": "unknown",
+        # The stand-in normalisation copies the upload, so its hash is the upload's.
+        "input_sha256": hashlib.sha256(SAMPLE_WAV.read_bytes()).hexdigest(),
+    }
+
+
+def test_model_version_is_the_checkpoint_hash_in_whispers_model_url(monkeypatch):
+    checkpoint = "aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a"
+    monkeypatch.setattr(
+        asr_app.whisper,
+        "_MODELS",
+        {
+            "large-v3-turbo": f"https://example.invalid/whisper/models/{checkpoint}/large-v3-turbo.pt"
+        },
+        raising=False,
+    )
+
+    assert asr_app._model_version() == checkpoint
+
+
+def test_model_version_is_unknown_for_a_url_without_a_checkpoint_hash(monkeypatch):
+    monkeypatch.setattr(
+        asr_app.whisper,
+        "_MODELS",
+        {"large-v3-turbo": "https://example.invalid/large-v3-turbo.pt"},
+        raising=False,
+    )
+
+    assert asr_app._model_version() == "unknown"
 
 
 @pytest.mark.usefixtures("without_ffmpeg")

@@ -24,8 +24,6 @@
     "intro": "$t(app.name), farklı diller konuşan kişiler arasındaki görüşmeleri desteklemek için tasarlanmış otomatik bir gerçek zamanlı çeviri hizmetidir. Hizmet yalnızca ayrılmış, özel bir sunucuda çalışır.",
     "howTo": "Kaydı başlatmak için mikrofon düğmesine dokunun. Konuşmak için 20 saniyeniz olacak. Bir kez daha dokunarak kaydı daha erken sonlandırabilirsiniz. Alternatif olarak metin girişini kullanabilirsiniz.",
     "retention": "Varsayılan olarak ses ve yazıya dökme verileri yalnızca etkin oturum sırasında işlenir ve sonrasında saklanmaz. Görüşme sona erdiğinde veriler otomatik olarak silinir. Uygulama içindeki geri bildirim işlevini kullanarak istediğiniz zaman sorun bildirebilir veya iyileştirme önerileri paylaşabilirsiniz.",
-    "optIn": "$t(app.name)'u geliştirmemize yardımcı olmak isterseniz, görüşme verilerinizin 180 güne kadar saklanmasına izin verebilirsiniz. Bu veriler yalnızca $t(app.name) projesi kapsamında analiz ve kalite iyileştirme amacıyla kullanılır.",
-    "checkbox": "$t(app.name)'un geliştirilmesi amacıyla görüşme verilerimin 180 güne kadar saklanmasını kabul ediyorum.",
     "getStarted": "Başlayın",
     "loading": "Bilgiler yükleniyor"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Yeniden bağlanılıyor…",
     "ended": "Bu görüşme sona erdi.",
     "timeoutWarning": "Bu görüşmenin bitiş saati: {{time}}."
+  },
+  "recording": {
+    "label": "Kayıt yapılıyor",
+    "starting": "Kayıt başlıyor…",
+    "paused": "Kayıt duraklatıldı",
+    "stop": "Kaydı durdur",
+    "error": "Kayıt değiştirilemedi. Lütfen tekrar deneyin.",
+    "reason": {
+      "liveness": "bağlantı kesildi",
+      "unacknowledged": "her iki ekran bekleniyor",
+      "storage": "depolama kullanılamıyor",
+      "policy": "şu anda izin verilmiyor"
+    },
+    "ask": {
+      "title": "Bu görüşme kaydedilebilir mi?",
+      "resumeTitle": "Kayıt devam etsin mi?",
+      "yes": "Evet, kaydet",
+      "no": "Hayır"
+    },
+    "consent": {
+      "readAloud": "Sesli oku",
+      "stopReading": "Okumayı durdur",
+      "loading": "Metin yükleniyor…",
+      "unavailable": "Metin şu anda yüklenemiyor. Lütfen görevliye başvurun.",
+      "name": "Adınız",
+      "nameProposed": "Görevli tarafından girildi. Lütfen kontrol edin.",
+      "signature": "İmzanız",
+      "optional": "isteğe bağlı",
+      "clear": "Temizle",
+      "cannotSign": "İmza atamıyorum, dokunarak onaylıyorum.",
+      "nameRequired": "Lütfen adınızı girin.",
+      "signatureRequired": "Lütfen imzalayın veya imza atamadığınızı onaylayın.",
+      "textChanged": "Metin değişti. Lütfen yanıt vermeden önce yeniden okuyun."
+    }
   },
   "feedback": {
     "title": "Geri bildiriminizi paylaşın",

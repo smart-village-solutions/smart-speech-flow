@@ -24,8 +24,6 @@
     "intro": "$t(app.name) es un servicio automático de traducción en tiempo real diseñado para facilitar las conversaciones entre personas que hablan idiomas distintos. El servicio funciona exclusivamente en un servidor privado dedicado.",
     "howTo": "Para empezar a grabar, toque el botón del micrófono. Tendrá entonces 20 segundos para hablar. También puede terminar la grabación antes tocando de nuevo. Como alternativa, puede escribir el texto.",
     "retention": "De forma predeterminada, los datos de audio y de transcripción solo se procesan durante la sesión activa y no se conservan después. Al terminar la conversación, los datos se eliminan automáticamente. Puede comunicar problemas o compartir ideas de mejora en cualquier momento mediante la función de opinión de la aplicación.",
-    "optIn": "Si desea ayudarnos a mejorar $t(app.name), puede permitir que los datos de su conversación se conserven durante un máximo de 180 días. Estos datos solo podrán utilizarse con fines de análisis y mejora de la calidad dentro del proyecto $t(app.name).",
-    "checkbox": "Acepto que los datos de mi conversación se conserven durante un máximo de 180 días con el fin de mejorar $t(app.name).",
     "getStarted": "Empezar",
     "loading": "Cargando la información"
   },
@@ -44,6 +42,40 @@
     "reconnecting": "Reconectando…",
     "ended": "Esta conversación ha terminado.",
     "timeoutWarning": "Esta conversación terminará a las {{time}}."
+  },
+  "recording": {
+    "label": "Grabando",
+    "starting": "Iniciando la grabación…",
+    "paused": "Grabación en pausa",
+    "stop": "Detener la grabación",
+    "error": "No se pudo cambiar la grabación. Inténtelo de nuevo.",
+    "reason": {
+      "liveness": "conexión interrumpida",
+      "unacknowledged": "esperando a ambas pantallas",
+      "storage": "almacenamiento no disponible",
+      "policy": "no permitido en este momento"
+    },
+    "ask": {
+      "title": "¿Se puede grabar esta conversación?",
+      "resumeTitle": "¿Continuar la grabación?",
+      "yes": "Sí, grabar",
+      "no": "No"
+    },
+    "consent": {
+      "readAloud": "Leer en voz alta",
+      "stopReading": "Detener la lectura",
+      "loading": "Cargando el texto…",
+      "unavailable": "Ahora no se puede cargar el texto. Diríjase a su interlocutor.",
+      "name": "Su nombre",
+      "nameProposed": "Introducido por su interlocutor. Compruébelo, por favor.",
+      "signature": "Su firma",
+      "optional": "opcional",
+      "clear": "Borrar",
+      "cannotSign": "No puedo firmar y confirmo con un toque.",
+      "nameRequired": "Introduzca su nombre, por favor.",
+      "signatureRequired": "Firme o confirme que no puede firmar, por favor.",
+      "textChanged": "El texto ha cambiado. Léalo de nuevo antes de responder, por favor."
+    }
   },
   "feedback": {
     "title": "Comparta su opinión",

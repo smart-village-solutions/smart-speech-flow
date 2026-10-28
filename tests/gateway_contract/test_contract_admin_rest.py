@@ -22,7 +22,6 @@ STATUS_FIELDS = {
 }
 HISTORY_ITEM_FIELDS = {
     "id",
-    "consent_status",
     "customer_language",
     "admin_language",
     "status",
@@ -213,3 +212,18 @@ def test_tenant_selectors_outside_the_token_are_refused(
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Tenant selectors are not accepted in requests"}
+
+
+def test_an_ended_session_still_reports_how_many_messages_it_had(
+    client, conversations, speech_services
+):
+    """Its record keeps no message after the end (spec §5.5), only their number."""
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    for _ in range(2):
+        assert conversations.send_text(session_id).status_code == 200
+    conversations.terminate(session_id)
+
+    status = client.get(f"/api/admin/session/{session_id}/status").json()
+
+    assert (status["status"], status["message_count"]) == ("terminated", 2)

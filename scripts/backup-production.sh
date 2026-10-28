@@ -27,16 +27,16 @@ timestamp="$(date -u +%Y%m%d_%H%M%S)"
 final_dir="$backup_root/$timestamp"
 mkdir -p "$backup_root"
 staging_dir="$(mktemp -d "$backup_root/.staging-${timestamp}.XXXXXX")"
+# Redis and live delivery audio hold nothing worth restoring, and must not be
+# copied: conversations are transient outside a recording (spec §16).
 required=(
   keycloak-postgres.sql.gz
-  redis.rdb
   clickhouse-native-backup.zip
   configuration.tar.gz
   environment.env
   git-revision.txt
   grafana.db
   ollama-models.txt
-  volumes/ssf-backend_audio-data.tar.gz
 )
 
 cleanup() {
@@ -45,8 +45,6 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
-
-mkdir -p "$staging_dir/volumes"
 
 production_compose exec -T keycloak-postgres sh -ec \
   'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
@@ -58,7 +56,7 @@ production_compose exec -T keycloak-postgres sh -ec \
 #
 # A host that has not yet run the feedback deployment runbook has no store at
 # all, and there the dump is skipped rather than fatal: aborting would take the
-# Keycloak, Redis and ClickHouse backups down with it, which is a far worse
+# Keycloak and ClickHouse backups down with it, which is a far worse
 # outcome than not backing up a database that does not exist.
 #
 # The volume decides, not the running container set. A stopped container and a
@@ -76,9 +74,6 @@ if docker volume inspect "${SSF_PROJECT_NAME}_ssf-postgres-data" >/dev/null 2>&1
 else
   printf 'WARNING: the feedback database has never been deployed on this host; skipping its backup\n' >&2
 fi
-
-production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
-production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"
 
 # Ollama model weights are reproducible downloads. Preserve the requested model
 # identifiers for recovery without retaining a large duplicate of their volume.
@@ -127,16 +122,6 @@ tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   "${configuration_paths[@]}"
 install -m 0600 "$SSF_PROJECT_ROOT/.env" "$staging_dir/environment.env"
 git -C "$SSF_PROJECT_ROOT" rev-parse HEAD > "$staging_dir/git-revision.txt"
-
-for volume in \
-  ssf-backend_audio-data; do
-  docker volume inspect "$volume" >/dev/null
-  docker run --rm --pull=never \
-    --volume "$volume:/source:ro" \
-    --volume "$staging_dir:/backup" \
-    ssf-backup-helper:prod-e409a06 \
-    tar -C /source -czf "/backup/volumes/${volume}.tar.gz" .
-done
 
 python3 - "$staging_dir/manifest.json" "${required[@]}" <<'PY'
 import json

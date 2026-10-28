@@ -37,7 +37,7 @@ def test_every_runtime_fixture_is_named_after_its_tenant() -> None:
         assert "authorizationRevision" not in raw
 
 
-def test_the_three_tenants_cover_ask_disabled_and_zero_retention() -> None:
+def test_the_three_tenants_still_send_every_retired_storage_shape() -> None:
     storage = {
         tenant: contract_fixtures.runtime_configuration_v2(tenant, None)[
             "conversationContentStorage"
@@ -125,14 +125,15 @@ def test_every_directory_tenant_has_a_v2_fixture() -> None:
     assert directory_ids <= set(contract_fixtures.RUNTIME_V2_TENANTS)
 
 
-def test_storage_disabled_flips_the_policy_and_every_question() -> None:
+def test_storage_disabled_nulls_every_question_and_keeps_every_language() -> None:
     body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
 
     read = parse_runtime_configuration_v2(body, expected_tenant_id="tenant-kassel")
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("disabled", None)
+    assert all(
+        language["guest"]["storageQuestionHtml"] is None for language in body["guestLanguages"]
+    )
     assert len(read.content.guest_languages) == 5
-    assert all(language.storage_question_html is None for language in read.content.guest_languages)
 
 
 def test_invalid_content_drops_only_the_affected_guest_language() -> None:
@@ -143,7 +144,7 @@ def test_invalid_content_drops_only_the_affected_guest_language() -> None:
     assert (
         contract_fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
     )
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 4320)
+    assert read.policy.tenant_id == "tenant-kassel"
     assert [language.locale for language in read.content.guest_languages] == [
         "tr",
         "ar",
@@ -165,8 +166,7 @@ def test_invalid_content_drops_the_first_guest_language_of_every_tenant(tenant_i
     assert (
         contract_fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
     )
-    assert read.policy.mode == plain.policy.mode
-    assert read.policy.retention_hours == plain.policy.retention_hours
+    assert read.policy.tenant_id == plain.policy.tenant_id
     assert read.content.guest_languages == plain.content.guest_languages[1:]
 
 

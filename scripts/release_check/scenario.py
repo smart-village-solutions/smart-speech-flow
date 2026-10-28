@@ -39,7 +39,6 @@ class Conversation:
     tenant: Tenant
     index: int
     token: str = field(repr=False)
-    consent: bool
     session_id: str | None = field(default=None, repr=False)
     # Handed out by the activation that claimed the session; the guest's credential.
     guest_token: str | None = field(default=None, repr=False)
@@ -160,14 +159,14 @@ async def _activate(
     gateway: Gateway, conversation: Conversation, live: _Live, stack: AsyncExitStack
 ) -> Outcome:
     response = await gateway.activate(
-        conversation.require_session(), conversation.tenant.guest_language, conversation.consent
+        conversation.require_session(), conversation.tenant.guest_language
     )
     body = _body(response, 200)
     token = body.get("guest_token")
     conversation.guest_token = token if isinstance(token, str) and token else None
     state = body.get("status")
     claimed = state == "active" and conversation.guest_token is not None
-    return claimed, f"HTTP {response.status_code}, consent {conversation.consent}"
+    return claimed, f"HTTP {response.status_code}"
 
 
 async def _guest_socket(

@@ -4,6 +4,7 @@ import { isSessionGone } from '@/core/http/AppError';
 import type { ClientRole } from '@/core/roles';
 import type { RealtimeEvent } from '@/core/realtime/realtime.port';
 import { realtimeToChatMessage } from '@/domain/message/message.mapper';
+import { recordingEvents } from '@/features/recording/recordingEvents';
 import type { ConversationAction } from './conversation.reducer';
 import { useSessionRefresh } from './useSessionRefresh';
 
@@ -13,6 +14,8 @@ interface ConversationFeedOptions {
   dispatch: Dispatch<ConversationAction>;
   /** The autoplay hook, read through a ref so a new callback keeps the socket. */
   onPeerAudioRef: RefObject<((id: string, url: string) => void) | undefined>;
+  /** The recording state version on screen, so older frames are not acknowledged. */
+  recordingVersionRef: RefObject<number>;
 }
 
 /** What arrives without being asked for: the history, then the gateway's pushes. */
@@ -21,6 +24,7 @@ export function useConversationFeed({
   role,
   dispatch,
   onPeerAudioRef,
+  recordingVersionRef,
 }: ConversationFeedOptions): void {
   const { message, createRealtime } = useServices();
   const transport = useMemo(() => createRealtime(), [createRealtime]);
@@ -71,6 +75,7 @@ export function useConversationFeed({
       ['timeout_warning', (event) => warning.show(event)],
       ['client_joined', onJoined],
       ['customer_language_changed', refreshSession],
+      ...recordingEvents(dispatch, transport, () => recordingVersionRef.current),
     ]);
 
     const offEvent = transport.onEvent((event) => {
@@ -126,7 +131,16 @@ export function useConversationFeed({
       offStatus();
       transport.disconnect();
     };
-  }, [dispatch, message, onPeerAudioRef, refreshSession, role, sessionId, transport]);
+  }, [
+    dispatch,
+    message,
+    onPeerAudioRef,
+    recordingVersionRef,
+    refreshSession,
+    role,
+    sessionId,
+    transport,
+  ]);
 }
 
 /** The idle-timeout warning on show, taken down at the time it names. */

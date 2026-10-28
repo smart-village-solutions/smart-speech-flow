@@ -220,13 +220,17 @@ class FeedbackService:
             locale=submission.locale,
             correlation_id=correlation_id,
         )
+        # A recorded session's feedback names no language (spec §5.5).
+        recorded = submission.session_id is not None and self._pseudonymizer.is_recorded(
+            submission.session_id
+        )
         return _Draft(
             tenant_id=tenant_id,
             session_ref=reference,
             audience=submission.audience,
             form_source=submission.form_source,
             revision=form.revision,
-            locale=submission.locale,
+            locale=None if recorded else submission.locale,
             rules=form.rules,
             answers=validate_answers(submission.answers, form.rules),
             form_version=V2_FORM_VERSION,

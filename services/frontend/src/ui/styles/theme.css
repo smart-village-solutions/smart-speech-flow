@@ -5,14 +5,14 @@
 
 :root {
   /* Surfaces */
-  --surface-page: #f4f4f5;              /* bg-[#f4f4f5] */
-  --surface-card: #ffffff;              /* bg-white */
-  --surface-panel: #ffffff;             /* feedback sheet */
-  --surface-scrim: rgb(0 0 0 / 0.4);    /* bg-black/40 */
-  --surface-code-box: #ffffff;          /* OTP box */
-  --surface-handle: rgb(0 0 0 / 0.12);  /* bg-black/12 */
-  --surface-field: rgb(0 0 0 / 0.05);   /* bg-black/5 */
-  --surface-nps: rgb(0 0 0 / 0.06);     /* bg-black/6 */
+  --surface-page: #f4f4f5; /* bg-[#f4f4f5] */
+  --surface-card: #ffffff; /* bg-white */
+  --surface-panel: #ffffff; /* feedback sheet */
+  --surface-scrim: rgb(0 0 0 / 0.4); /* bg-black/40 */
+  --surface-code-box: #ffffff; /* OTP box */
+  --surface-handle: rgb(0 0 0 / 0.12); /* bg-black/12 */
+  --surface-field: rgb(0 0 0 / 0.05); /* bg-black/5 */
+  --surface-nps: rgb(0 0 0 / 0.06); /* bg-black/6 */
   --surface-nps-hover: rgb(0 0 0 / 0.12);
   --surface-disabled: rgb(0 0 0 / 0.06);
   --surface-row-hover: rgb(0 0 0 / 0.05);
@@ -25,13 +25,13 @@
   --surface-wave-idle: transparent;
 
   /* Foregrounds */
-  --fg-strong: #1a1a1a;                 /* text-[#1a1a1a] */
+  --fg-strong: #1a1a1a; /* text-[#1a1a1a] */
   --fg-chat: #1a1a1a;
-  --fg-body: rgb(0 0 0 / 0.7);          /* text-black/70 */
+  --fg-body: rgb(0 0 0 / 0.7); /* text-black/70 */
   --fg-consent: rgb(0 0 0 / 0.6);
   --fg-consent-hover: rgb(0 0 0 / 0.8);
-  --fg-muted: rgb(0 0 0 / 0.4);         /* text-black/40 */
-  --fg-subtle: rgb(0 0 0 / 0.4);        /* distinct pair, same light value */
+  --fg-muted: rgb(0 0 0 / 0.4); /* text-black/40 */
+  --fg-subtle: rgb(0 0 0 / 0.4); /* distinct pair, same light value */
   --fg-icon: rgb(0 0 0 / 0.5);
   --fg-icon-close: rgb(0 0 0 / 0.35);
   --fg-link: rgb(0 0 0 / 0.3);
@@ -47,7 +47,7 @@
   --border-play: rgb(0 0 0 / 0.15);
   --border-checkbox: rgb(0 0 0 / 0.3);
   --border-checkbox-hover: rgb(0 0 0 / 0.6);
-  --border-code-empty: #e5e7eb;         /* border-gray-200 */
+  --border-code-empty: #e5e7eb; /* border-gray-200 */
 
   /* Status. Not in the export — it has no error or connection states.
      Added 2026-08-24 for the conversation status pill. */
@@ -56,6 +56,13 @@
   --surface-status: #ffffff;
   --border-status: rgb(0 0 0 / 0.1);
   --border-status-alert: rgb(180 35 24 / 0.35);
+
+  /* Secure recording (#615, own design until Figma): the band and the frame
+     while a conversation is recorded. White text passes 4.5:1 on both. */
+  --recording-live: #b42318;
+  /* A signature is archived as drawn: dark ink on white paper in either theme. */
+  --signature-paper: #ffffff;
+  --signature-ink: #1a1a1a;
 
   /* Admin. The lamp colours are theme-independent: the export uses one hex per
      level in both themes, because a traffic light that changes hue with the
@@ -116,6 +123,7 @@
   --surface-status: #333333;
   --border-status: rgb(255 255 255 / 0.14);
   --border-status-alert: rgb(253 162 155 / 0.4);
+  --recording-live: #d92d20;
 
   /* Only the two that must follow the theme; the lamps deliberately do not. */
   --status-idle: rgb(255 255 255 / 0.25);

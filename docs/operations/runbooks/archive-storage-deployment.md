@@ -330,10 +330,12 @@ design.
 
 - An identity change needs a SeaweedFS restart (Step 5), about half a minute
   without uploads. Once #615 records, its spool holds them meanwhile.
-- One upload queue serves all tenants, in order. A lasting fault for one tenant
-  (no writer credential, no bucket, an identity without its policy) stops
-  uploads for every tenant until it is fixed, and once the spool is full,
-  recording pauses everywhere. That is why `check` runs before a tenant records.
+- Each tenant has its own spool and upload queue on the gateway volume
+  `archive-spool` (`/data/archive-spool/<tenant_ref>/`, #615). A lasting fault
+  for one tenant (no writer credential, no bucket, an identity without its
+  policy) stops that tenant's uploads until it is fixed, and once its spool is
+  full, that tenant's recordings pause. Other tenants are unaffected. `check`
+  still runs before a tenant records.
 - The replica does not survive root on the primary: a version rewritten below
   the S3 API there replaces the replica's copy (see "What protects the
   archive"). The chain still shows the tampering.

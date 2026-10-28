@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Görevli bu görüşmeyi kaydetmek istiyor. Bundan sonra, siz ya da görevli kaydı durdurana kadar her mesaj şifreli olarak saklanacaktır. Kaydı istediğiniz zaman durdurabilirsiniz.</p><p>Kaydı yalnızca yetkili kişiler açabilir. Kayıt, saklama süresi sona erdiğinde silinir.</p><p>Onayınız gönüllüdür. Kabul etmezseniz görüşme kayıt olmadan devam eder. Daha önce saklanan mesajlar, kayıt durdurulduktan sonra da saklı kalır.</p>",
+    "resume": "<p>Kayıt durduruldu. Şu andan itibaren devam edebilir mi? Kaydı istediğiniz zaman yeniden durdurabilirsiniz.</p>"
+  },
+  "statutory": {
+    "first": "<p>Görevli bu görüşmeyi kaydetmek istiyor. Bundan sonra, siz ya da görevli kaydı durdurana kadar her mesaj şifreli olarak saklanacaktır. Kaydı istediğiniz zaman durdurabilirsiniz.</p><p>Kayıt yasal bir dayanağa göre yapılmaktadır. Kaydı yalnızca yetkili kişiler açabilir. Kayıt, saklama süresi sona erdiğinde silinir.</p><p>Lütfen bilgilendirildiğinizi ve kaydın başlayabileceğini onaylayın.</p>",
+    "resume": "<p>Kayıt durduruldu. Şu andan itibaren aynı yasal dayanakla devam etmesi gerekiyor. Kaydı istediğiniz zaman yeniden durdurabilirsiniz.</p>"
+  }
+}

@@ -169,12 +169,8 @@ class Gateway:
             headers=_guest(guest_token),
         )
 
-    async def activate(self, session_id: str, language: str, consent: bool) -> httpx.Response:
-        body = {
-            "session_id": session_id,
-            "customer_language": language,
-            "data_retention_consent": consent,
-        }
+    async def activate(self, session_id: str, language: str) -> httpx.Response:
+        body = {"session_id": session_id, "customer_language": language}
         return await self._http.post("/api/customer/session/activate", json=body)
 
     async def customer_send(
