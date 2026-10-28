@@ -311,3 +311,23 @@ async def test_a_late_message_leaves_no_audio_behind(tmp_path: Path) -> None:
         )
 
     assert list(tmp_path.rglob("*.wav")) == []
+
+
+async def test_a_recording_that_cannot_end_does_not_undo_the_termination(tmp_path):
+    # The termination committed first; recording's own end is retried by its archive.
+    manager = _manager(tmp_path)
+    session = await _conversation(manager, "m1")
+
+    class Recording:
+        async def note_recorded(self, key):
+            return None
+
+        async def session_ended(self, key):
+            raise ConnectionError("redis down")
+
+    manager.recording = Recording()
+    await manager.terminate_session(session.key, "manual_termination")
+
+    stored = await manager.store.load(session.key)
+    assert stored is not None and stored.status is SessionStatus.TERMINATED
+    assert await manager.create_admin_session(session.tenant_id, "rev") is not None

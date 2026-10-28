@@ -8,6 +8,7 @@ routes answer 503.
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import sys
 import uuid
@@ -16,7 +17,7 @@ from typing import Any, Final
 
 from ..dependencies import GatewayDependencies
 from ..realtime_protocol import ConnectionState, Frame
-from ..session_models import ClientType
+from ..session_models import ClientType, SessionStatus
 from ..studio_recording_directory_client import StudioRecordingDirectoryClient
 from ..studio_settings import studio_base_url
 from ..studio_v2 import RecordingPolicy, RuntimeRead
@@ -122,6 +123,7 @@ def _connect_archive(
         session_ref=state.session_manager.pseudonymizer.recording_reference,
         # A tenant without a writer credential would spool forever: it cannot record.
         tenant_ready=lambda tenant_id: tenant_id in settings.writers,
+        live_sessions=functools.partial(_live_sessions, state),
     )
     state.recording_archive = archive
     state.recording_spools = spools
@@ -130,6 +132,12 @@ def _connect_archive(
         archive_repository, TimestampAuthority(), lambda: tuple(settings.writers)
     )
     return archive
+
+
+async def _live_sessions(state: Any, tenant_id: str) -> list[str]:
+    """The tenant's sessions that have not ended: a recorded conversation outlives none."""
+    sessions = await state.session_manager.store.list_for_tenant(tenant_id)
+    return [session.id for session in sessions if session.status is not SessionStatus.TERMINATED]
 
 
 def _recording_sessions(
@@ -174,16 +182,22 @@ async def recording_stamp_task(state: Any) -> None:
     """Timestamp chain heads whose entries have all reached the archive store (§11.2)."""
     while True:
         await asyncio.sleep(STAMP_INTERVAL_SECONDS)
-        stamper, archive = state.recording_stamper, state.recording_archive
-        if stamper is None:
+        if state.recording_stamper is None:
             continue
         try:
-            await archive.retry_pending_ends()
-            await stamper.run_once()
+            await stamp_once(state)
         except asyncio.CancelledError:
             raise
         except Exception as error:
             sys.stderr.write(f"Recording stamping failed ({type(error).__name__})\n")
+
+
+async def stamp_once(state: Any) -> None:
+    archive, stamper = state.recording_archive, state.recording_stamper
+    await archive.retry_pending_ends()
+    # Before stamping, so a conversation whose session is gone is stamped in this pass.
+    await archive.end_orphaned(stamper.tenants())
+    await stamper.run_once()
 
 
 async def connect_recording(state: Any, dsn: str) -> bool:

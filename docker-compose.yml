@@ -101,10 +101,14 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: 2G
+          # 2 GiB for the process plus both tmpfs mounts, whose pages count here:
+          # a full tmpfs then refuses a write instead of costing the gateway.
+          memory: 3328M
         reservations:
           cpus: '1.0'
           memory: 1G
+    # No swap: tmpfs and heap pages hold conversation plaintext (spec §5.5).
+    memswap_limit: 3328M
 
     volumes:
       # Encrypted archive objects waiting for upload (#615): ciphertext only.

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -28,6 +29,7 @@ from services.api_gateway.recording.session_service import RecordingUnavailableE
 from services.api_gateway.recording.session_state import Phase, Reason
 from services.api_gateway.recording.storage.spool import SpoolFullError
 from services.api_gateway.recording.timestamps import Timestamp, TimestampUnavailableError
+from services.api_gateway.studio_v2 import RecordingPolicy
 from tests.recording_archive_fakes import (
     EMPLOYEE_SCALAR,
     RECOVERY_SCALAR,
@@ -36,7 +38,7 @@ from tests.recording_archive_fakes import (
     open_object,
     say_yes,
 )
-from tests.test_recording_session_service import ADMIN, GUEST, KEY, Harness
+from tests.test_recording_session_service import ADMIN, GUEST, KEY, POLICY_FIELDS, Harness
 
 RESULT = {
     "error": False,
@@ -84,6 +86,10 @@ async def _object(h, entry: ChainEntry, object_type: str, *, scalar=RECOVERY_SCA
     return await open_object(h.rig, entry, object_type, scalar=scalar)
 
 
+def _objects(entry: ChainEntry) -> int:
+    return len(json.loads(entry.objects))
+
+
 def _gateway_keys(h) -> dict[str, bytes]:
     return {h.rig.secrets.signing_key_id: h.rig.secrets.signing_public_key}
 
@@ -108,6 +114,15 @@ async def test_a_yes_opens_the_conversation_with_a_signed_consent_entry(h):
     ]
     # Audited once, with the consent entry, not again by the transition.
     assert "recording.arming" not in [e.event_type for e in h.audit]
+
+
+@pytest.mark.parametrize("basis", ["consent", "statutory"])
+async def test_the_conversation_keeps_the_legal_basis_of_the_policy_it_began_under(h, basis):
+    h.policy = RecordingPolicy.model_validate(POLICY_FIELDS | {"legalBasis": basis})
+    await h.on()
+    [conversation] = h.rig.repository.conversations.values()
+    record = json.loads(await _object(h, _chain(h)[0], "consent.json"))
+    assert (conversation.legal_basis, record["legal_basis"]) == (basis, basis)
 
 
 async def test_the_conversation_key_is_wrapped_for_recovery_and_the_enrolled_employee(h):
@@ -224,7 +239,7 @@ async def _pause_and_resume(h):
 
 async def _lose_ack(h):
     h.clocks.advance(11)
-    await h.service.pause(KEY, Reason.UNACKNOWLEDGED)
+    await h.pause(Reason.UNACKNOWLEDGED)
 
 
 async def _lose_liveness(h):
@@ -323,10 +338,49 @@ async def test_recording_resumes_after_a_storage_pause_once_the_archive_recovers
     h.rig.repository.down = False
 
     await h.ack_both()
+    await h.service.tick()
     await h.ack_both()
 
     assert (await h.service.state(KEY)).phase is Phase.ON
     assert await _send(h, "m2") is not None
+
+
+async def test_a_storage_pause_holds_while_the_database_is_still_down(h):
+    # The spool has room throughout: only the database is gone.
+    await h.on()
+    h.rig.repository.down = True
+    await _send(h)
+
+    await h.ack_both()
+    await h.ack_both()
+    await h.service.tick()
+
+    state = await h.service.state(KEY)
+    assert (state.phase, state.reason) == (Phase.PAUSED, Reason.STORAGE)
+    assert h.announcer.states().count("on") == 1
+
+
+async def test_a_storage_pause_probes_the_database_at_most_every_five_seconds(h, monkeypatch):
+    await h.on()
+    h.rig.repository.down = True
+    await _send(h)
+    await h.ack_both()
+    probes = 0
+    ping = h.rig.repository.ping
+
+    async def counted(tenant_id):
+        nonlocal probes
+        probes += 1
+        await ping(tenant_id)
+
+    monkeypatch.setattr(h.rig.repository, "ping", counted)
+    for _ in range(11):
+        h.service.pong(KEY, ADMIN)
+        h.service.pong(KEY, GUEST)
+        await h.service.tick()
+        h.clocks.advance(1)
+
+    assert probes == 3  # at 0, 5 and 10 s
 
 
 async def test_playback_of_an_archived_message_is_its_own_entry(h):
@@ -547,6 +601,7 @@ async def test_an_ambiguous_commit_does_not_wedge_the_conversation(h):
     h.rig.repository.lands_then_fails = True
     assert await _send(h) is None
     await h.ack_both()
+    await h.service.tick()
     await h.ack_both()
 
     assert await _send(h, "m2") is not None
@@ -570,6 +625,67 @@ async def test_a_hung_database_cannot_hold_a_message_for_long(h, monkeypatch):
     assert await asyncio.wait_for(_send(h), 2) is None
     state = await h.service.state(KEY)
     assert (state.phase, state.reason) == (Phase.PAUSED, Reason.STORAGE)
+
+
+async def test_a_deadline_after_the_commit_still_spools_every_object(h, monkeypatch):
+    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
+    await h.on()
+    spool = h.rig.spools.spool(KEY.tenant_id)
+    submit = spool.submit
+
+    def slow(*args):
+        time.sleep(0.15)
+        return submit(*args)
+
+    monkeypatch.setattr(spool, "submit", slow)
+
+    # The entry committed; its three objects take longer to spool than the deadline.
+    assert await _send(h) is None
+    await asyncio.sleep(1)
+
+    consent, message = _chain(h)
+    assert spool.pending == _objects(consent) + _objects(message) == 4
+
+
+async def test_a_failed_message_marks_its_gap_even_past_the_deadline(h, monkeypatch):
+    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
+    await h.on()
+    mark = h.rig.repository.mark_incomplete
+
+    async def slow(tenant_id, conversation_id):
+        await asyncio.sleep(0.4)
+        await mark(tenant_id, conversation_id)
+
+    monkeypatch.setattr(h.rig.repository, "mark_incomplete", slow)
+
+    assert await _send(h, result={"error": True, "error_msg": "asr down"}) is None
+    await asyncio.sleep(1)
+
+    [conversation_id] = h.rig.repository.entries
+    assert conversation_id in h.rig.repository.incomplete
+    assert h.rig.spools.spool(KEY.tenant_id).pending == 1 + _objects(_chain(h)[1])
+
+
+async def test_recorded_messages_read_the_conversation_row_once_per_process(h, monkeypatch):
+    # Each read would be held under the session lock, before the message is delivered.
+    await h.on()
+    reads = 0
+    read = h.rig.repository.conversation
+
+    async def counted(*args):
+        nonlocal reads
+        reads += 1
+        return await read(*args)
+
+    monkeypatch.setattr(h.rig.repository, "conversation", counted)
+    for message_id in ("m1", "m2", "m3"):
+        assert await _send(h, message_id) is not None
+    assert reads == 0
+
+    h.rig.archive._conversations.clear()  # as after a restart
+    for message_id in ("m4", "m5"):
+        assert await _send(h, message_id) is not None
+    assert reads == 1
 
 
 async def test_a_declined_resume_is_its_own_consent_entry(h):
@@ -621,6 +737,57 @@ async def test_an_end_that_could_not_be_written_is_written_later(h):
     h.rig.repository.down = True
     await h.service.session_ended(KEY)
     h.rig.repository.down = False
+
+    await h.rig.archive.retry_pending_ends()
+
+    assert conversation_id in h.rig.repository.ended
+
+
+async def test_a_conversation_whose_session_is_gone_is_ended_and_stamped(h):
+    # A Redis restart forgets the session and its recording state alike.
+    await h.on()
+    [conversation_id] = h.rig.repository.entries
+    h.rig.live_sessions = set()
+
+    await h.rig.archive.end_orphaned([KEY.tenant_id])
+
+    assert conversation_id in h.rig.repository.ended
+    assert all(window["closed"] == "session_ended" for window in h.rig.repository.windows.values())
+    assert h.rig.repository.stamps
+
+
+async def test_a_conversation_of_a_live_session_stays_open(h):
+    await h.on()
+    h.rig.live_sessions = {KEY.session_id}
+
+    await h.rig.archive.end_orphaned([KEY.tenant_id])
+
+    assert not h.rig.repository.ended
+    assert await _send(h) is not None
+
+
+async def test_an_unreadable_session_list_ends_nothing(h):
+    await h.on()
+    h.rig.live_sessions = None
+
+    await h.rig.archive.end_orphaned([KEY.tenant_id])
+
+    assert not h.rig.repository.ended
+
+
+async def test_an_orphan_end_the_database_missed_is_written_later(h, monkeypatch):
+    await h.on()
+    [conversation_id] = h.rig.repository.entries
+    h.rig.live_sessions = set()
+    end = h.rig.repository.end_conversation
+
+    async def lost(*args):
+        raise RecordingStorageUnavailable("connection lost")
+
+    monkeypatch.setattr(h.rig.repository, "end_conversation", lost)
+    await h.rig.archive.end_orphaned([KEY.tenant_id])
+    assert not h.rig.repository.ended
+    monkeypatch.setattr(h.rig.repository, "end_conversation", end)
 
     await h.rig.archive.retry_pending_ends()
 

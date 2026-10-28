@@ -194,6 +194,9 @@ class MemoryArchiveRepository:
         self._check()
         self.incomplete.add(conversation_id)
 
+    async def ping(self, tenant_id) -> None:
+        self._check()
+
     def _request_stamp(self, conversation_id: str, at: datetime) -> None:
         chain = self.entries.get(conversation_id)
         if chain:
@@ -209,6 +212,14 @@ class MemoryArchiveRepository:
         if window["closed"] is None:
             window["closed"] = reason
         self._request_stamp(conversation_id, at)
+
+    async def open_conversations(self, tenant_id) -> list[tuple[str, str]]:
+        self._check()
+        return [
+            (conversation_id, conversation.session_ref)
+            for conversation_id, conversation in self.conversations.items()
+            if conversation.tenant_id == tenant_id and conversation_id not in self.ended
+        ]
 
     async def end_conversation(self, tenant_id, conversation_id, at) -> None:
         self._check()
@@ -259,6 +270,8 @@ class ArchiveRig:
     recovery_present: bool = True
     employee_enrolled: bool = True
     writer_ready: bool = True
+    # Session IDs the session store still lists as not ended; None: it cannot be read.
+    live_sessions: set[str] | None = field(default_factory=set)
 
 
 def archive_rig(
@@ -283,6 +296,11 @@ def archive_rig(
     async def recovery_key(tenant_id: str) -> RecoveryKeyRecord | None:
         return recovery_record(tenant_id) if rig.recovery_present else None
 
+    async def live_sessions(tenant_id: str) -> set[str]:
+        if rig.live_sessions is None:
+            raise ConnectionError("session store down")
+        return rig.live_sessions
+
     async def user_key(tenant_id: str, user_sub: str) -> UserKeyRecord | None:
         return employee_record(tenant_id, user_sub) if rig.employee_enrolled else None
 
@@ -292,8 +310,9 @@ def archive_rig(
         secrets=secrets,
         recovery_key=recovery_key,
         user_key=user_key,
-        session_ref=lambda session_id: f"ref-{len(session_id)}",
+        session_ref=lambda session_id: f"ref-{session_id}",
         tenant_ready=lambda _tenant_id: rig.writer_ready,
+        live_sessions=live_sessions,
         clock=clock,
     )
     rig = ArchiveRig(archive, repository, spools, store, secrets)

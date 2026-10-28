@@ -17,6 +17,8 @@ from .crypto import tags
 from .crypto.encoding import enc
 
 GENESIS: Final[bytes] = bytes(32)
+# The actor of what the guest did: guests have no identity of their own.
+GUEST_ACTOR: Final[str] = "guest"
 
 
 @dataclass(frozen=True)

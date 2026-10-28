@@ -34,7 +34,7 @@ from ..studio_v2 import RecordingPolicy
 from ..tenant_session import TenantSessionKey
 from . import session_state as rs
 from .archive_service import ArchiveUnavailableError, ConversationArchive, MessageArtefacts
-from .audit import AuditEvent
+from .audit import GUEST_ACTOR, AuditEvent
 from .consent_evidence import ConsentEvidenceError, GuestAnswer, evidence
 from .consent_text import ConsentText, consent_text
 from .consent_voice import ConsentVoice
@@ -47,15 +47,16 @@ logger = logging.getLogger(__name__)
 TICK_SECONDS: Final[float] = 1.0
 # How long a tick waits for any one conversation; a slower one finishes on its own.
 TICK_STEP_SECONDS: Final[float] = 2.0
-# A policy read the tick waits for; a slower Studio leaves the pause in place.
+# A policy read or storage probe the tick waits for; a slower one leaves the pause in place.
 POLICY_READ_SECONDS: Final[float] = 1.0
 # The read at a message's acceptance while ON (§14); a slower Studio pauses recording.
 ACCEPT_POLICY_READ_SECONDS: Final[float] = 2.0
 # How long an archive step may hold the session lock: a slower database pauses recording.
 ARCHIVE_SECONDS: Final[float] = 10.0
-GUEST_ACTOR: Final[str] = "guest"
 SYSTEM_ACTOR: Final[str] = "system"
 _ROLES: Final[tuple[ClientType, ClientType]] = (ClientType.ADMIN, ClientType.CUSTOMER)
+# Pauses only a fresh check clears, which the tick makes: a screen's acknowledgement cannot.
+_RECHECKED: Final[frozenset[Reason]] = frozenset({Reason.POLICY, Reason.STORAGE})
 
 PolicyReader = Callable[[str], Awaitable[RecordingPolicy | None]]
 Send = Callable[[Frame], Awaitable[None]]
@@ -121,7 +122,7 @@ class RecordingSessions:
         self._locks: KeyedLocks[TenantSessionKey] = KeyedLocks()
         self._pongs: dict[tuple[TenantSessionKey, ClientType], float] = {}
         self._last_ping: dict[TenantSessionKey, float] = {}
-        self._last_policy_read: dict[TenantSessionKey, float] = {}
+        self._last_recheck: dict[TenantSessionKey, float] = {}
         # A conversation whose last tick step is still running is not started again.
         self._ticking: dict[TenantSessionKey, asyncio.Task[None]] = {}
         # Reads the open question's text aloud for the guest (§6).
@@ -275,8 +276,7 @@ class RecordingSessions:
             acked = rs.acknowledge(state, role=role, version=version)
             if acked == state:
                 return
-            # A policy pause clears only on a fresh read, which the tick makes.
-            ready = self._storage_ready(key) and acked.reason is not Reason.POLICY
+            ready = self._storage_ready(key) and acked.reason not in _RECHECKED
             advanced = rs.advance(acked, now=self._clock(), live=self.live(key), ready=ready)
             await self._commit(key, state, advanced, SYSTEM_ACTOR)
 
@@ -316,10 +316,18 @@ class RecordingSessions:
 
     async def _policy_allows(self, tenant_id: str) -> bool:
         try:
-            policy = await asyncio.wait_for(self._policy(tenant_id), ACCEPT_POLICY_READ_SECONDS)
+            return await asyncio.wait_for(
+                self._policy_enabled(tenant_id), ACCEPT_POLICY_READ_SECONDS
+            )
         except Exception:
             return False
+
+    async def _policy_enabled(self, tenant_id: str) -> bool:
+        policy = await self._policy(tenant_id)
         return policy is not None and policy.enabled
+
+    async def _archive_reachable(self, tenant_id: str) -> bool:
+        return self._archive is None or await self._archive.reachable(tenant_id)
 
     async def archive(
         self, key: TenantSessionKey, accepted: Snapshot, artefacts: MessageArtefacts
@@ -375,11 +383,6 @@ class RecordingSessions:
         paused = rs.pause(state, reason=Reason.STORAGE, now=self._clock())
         if paused != state:
             await self._commit(key, state, paused, SYSTEM_ACTOR)
-
-    async def pause(self, key: TenantSessionKey, reason: Reason) -> None:
-        await self._change(
-            key, SYSTEM_ACTOR, lambda state, now: rs.pause(state, reason=reason, now=now)
-        )
 
     async def greet(self, key: TenantSessionKey, role: ClientType, send: Send) -> None:
         """A screen that (re)connects learns the state, and a guest any open request."""
@@ -461,8 +464,8 @@ class RecordingSessions:
     async def _tick_one(self, key: TenantSessionKey) -> None:
         peeked = await self._store.load(key)
         ready = self._storage_ready(key)
-        if peeked.phase is Phase.PAUSED and peeked.reason is Reason.POLICY:
-            ready = ready and await self._policy_reread(key)
+        if peeked.phase is Phase.PAUSED and peeked.reason in _RECHECKED:
+            ready = ready and await self._recheck(key, peeked.reason)
         if self._watched(key):
             # A state outlives its 24 h only while a screen is still there.
             await self._store.touch(key)
@@ -481,17 +484,18 @@ class RecordingSessions:
     def _watched(self, key: TenantSessionKey) -> bool:
         return any(self._announcer.connected(key, role) for role in _ROLES)
 
-    async def _policy_reread(self, key: TenantSessionKey) -> bool:
-        """A paused-for-policy conversation asks Studio again, at most every 5 s."""
+    async def _recheck(self, key: TenantSessionKey, reason: Reason | None) -> bool:
+        """A conversation paused for policy asks Studio again, one paused for storage
+        the archive's database: at most every 5 s."""
         now = self._monotonic()
-        if now - self._last_policy_read.get(key, float("-inf")) < rs.PING_INTERVAL_SECONDS:
+        if now - self._last_recheck.get(key, float("-inf")) < rs.PING_INTERVAL_SECONDS:
             return False
-        self._last_policy_read[key] = now
+        self._last_recheck[key] = now
+        check = self._policy_enabled if reason is Reason.POLICY else self._archive_reachable
         try:
-            policy = await asyncio.wait_for(self._policy(key.tenant_id), POLICY_READ_SECONDS)
+            return await asyncio.wait_for(check(key.tenant_id), POLICY_READ_SECONDS)
         except Exception:
             return False
-        return policy is not None and policy.enabled
 
     async def _ping_when_due(self, key: TenantSessionKey, *, now: float | None = None) -> None:
         now = self._monotonic() if now is None else now
@@ -502,7 +506,7 @@ class RecordingSessions:
 
     def _forget(self, key: TenantSessionKey) -> None:
         self._last_ping.pop(key, None)
-        self._last_policy_read.pop(key, None)
+        self._last_recheck.pop(key, None)
         for role in _ROLES:
             self._pongs.pop((key, role), None)
 

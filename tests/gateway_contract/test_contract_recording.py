@@ -405,6 +405,29 @@ def test_messages_are_archived_only_while_recording_and_playback_is_reported(
             assert _kinds(recording) == ["consent", "message", "playback", "failed", "failed"]
 
 
+def test_a_busy_pipeline_is_not_archived_as_a_failure(
+    client, conversations, recording, speech_services
+) -> None:
+    # Like a busy rejection at admission: the speaker sends it again, nothing failed.
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    with _admin_socket(client, conversations, session_id) as admin:
+        with open_guest_socket(client, session_id, ORIGIN) as guest:
+            _turn_on(client, conversations, session_id, admin, guest)
+            speech_services.fail("translation", 503, headers={"Retry-After": "7"})
+
+            typed = conversations.send_text(session_id)
+            spoken = client.post(
+                f"/api/admin/session/{session_id}/message",
+                files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
+                data={"source_lang": "de", "target_lang": "en"},
+            )
+
+            assert (typed.status_code, spoken.status_code) == (503, 503)
+            assert _kinds(recording) == ["consent"]
+            assert not recording.rig.repository.incomplete
+
+
 def test_a_playback_report_with_a_malformed_body_is_refused(client, conversations, recording):
     session_id = conversations.create()
     refused = client.post(

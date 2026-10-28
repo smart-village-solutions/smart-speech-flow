@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth import require_ssf_user
 from ..dependencies import get_session_manager, optional_container
+from ..recording.audit import GUEST_ACTOR
 from ..recording.consent_evidence import (
     NAME_MAX_LENGTH,
     SIGNATURE_MAX_BYTES,
@@ -26,11 +27,7 @@ from ..recording.consent_evidence import (
 )
 from ..recording.consent_voice import ReadAloudUnavailableError
 from ..recording.permissions import REQUEST, coded, permissions_of
-from ..recording.session_service import (
-    GUEST_ACTOR,
-    RecordingSessions,
-    RecordingUnavailableError,
-)
+from ..recording.session_service import RecordingSessions, RecordingUnavailableError
 from ..recording.session_state import Phase, RecordingConflictError, RecordingState
 from ..session_access import require_admin_session_key, require_customer_session_key
 from ..session_manager import TenantSessionManager

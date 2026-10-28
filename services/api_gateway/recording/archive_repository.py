@@ -338,6 +338,12 @@ class PostgresArchiveRepository:
 
         await self._run(tenant_id, work)
 
+    async def ping(self, tenant_id: str) -> None:
+        async def work(connection: asyncpg.Connection) -> None:
+            await connection.fetchval("SELECT 1")
+
+        await self._run(tenant_id, work)
+
     async def close_window(
         self, tenant_id: str, conversation_id: str, window_id: str, at: datetime, reason: str
     ) -> None:
@@ -352,6 +358,15 @@ class PostgresArchiveRepository:
             await _request_stamp(connection, conversation_id, at)
 
         await self._run(tenant_id, work)
+
+    async def open_conversations(self, tenant_id: str) -> list[tuple[str, str]]:
+        async def work(connection: asyncpg.Connection) -> Any:
+            return await connection.fetch(
+                "SELECT conversation_id, session_ref FROM conversations WHERE ended_at IS NULL"
+            )
+
+        rows = await self._run(tenant_id, work)
+        return [(str(row["conversation_id"]), row["session_ref"]) for row in rows]
 
     async def end_conversation(self, tenant_id: str, conversation_id: str, at: datetime) -> None:
         async def work(connection: asyncpg.Connection) -> None:

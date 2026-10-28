@@ -551,6 +551,8 @@ async def process_audio_input(
     recorder.record_pipeline_result(result)
 
     if result.get("error", False):
+        # Busy is no failure: like a rejection at admission, it is sent again, unarchived.
+        _raise_if_upstream_busy(result)
         # A failed utterance is archived with its audio and error (spec §5.3).
         await archive_message(
             acceptance,
@@ -562,7 +564,6 @@ async def process_audio_input(
             result=result,
             original_audio=file_bytes,
         )
-        _raise_if_upstream_busy(result)
         _raise_if_no_speech(result)
         raise HTTPException(
             status_code=500,
@@ -675,6 +676,7 @@ async def process_text_input(
 
     # Fehlerbehandlung
     if pipeline_result.get("error"):
+        _raise_if_upstream_busy(pipeline_result)
         await archive_message(
             acceptance,
             message_id=str(uuid.uuid4()),
@@ -685,7 +687,6 @@ async def process_text_input(
             result=pipeline_result,
             original_audio=None,
         )
-        _raise_if_upstream_busy(pipeline_result)
         raise HTTPException(
             status_code=400,
             detail=create_error_response(

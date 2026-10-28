@@ -53,8 +53,12 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/recording/session_service.py", "RecordingSessions.check_available"): [
         "fallback"
     ],
-    # a failed policy read keeps a policy pause in place
-    ("services/api_gateway/recording/session_service.py", "RecordingSessions._policy_reread"): [
+    # a session list that cannot be read ends no conversation
+    ("services/api_gateway/recording/archive_service.py", "ConversationArchive.end_orphaned"): [
+        "fallback"
+    ],
+    # a failed policy read or storage probe keeps its pause in place
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._recheck"): [
         "fallback"
     ],
     # one conversation's failure must not stall the others' liveness checks
@@ -140,7 +144,13 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # records the telemetry failure and session, then re-raises
     ("services/api_gateway/message_processing.py", "send_unified_message"): ["bookkeeping-reraise"],
     # telemetry marking never decides whether a session ends
-    ("services/api_gateway/session_manager.py", "TenantSessionManager._note_recording"): ["fallback"],
+    ("services/api_gateway/session_manager.py", "TenantSessionManager._note_recording"): [
+        "fallback"
+    ],
+    # recording's end never undoes a committed termination
+    ("services/api_gateway/session_manager.py", "TenantSessionManager._end_recording"): [
+        "fallback"
+    ],
     # a stored message is not failed by its broadcast
     ("services/api_gateway/message_delivery.py", "create_session_message"): ["boundary"],
     # no reply audio rather than a failed message

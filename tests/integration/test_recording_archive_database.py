@@ -325,3 +325,20 @@ async def test_pauses_are_kept_in_order_with_their_resumption(archive, owner):
         ("storage", False),
     ]
     assert await owner.fetchval("SELECT incomplete FROM conversations") is True
+
+
+async def test_open_conversations_lists_the_unended_of_one_tenant_with_their_session(archive):
+    ended, _, _, _ = await _opened(archive)
+    still_open, _, _, _ = await _opened(archive)
+    elsewhere, _, _, _ = await _opened(archive, _conversation("tenant-b"))
+    await archive.end_conversation(TENANT, ended.conversation_id, NOW)
+
+    listed = dict(await archive.open_conversations(TENANT))
+
+    assert listed.get(still_open.conversation_id) == still_open.session_ref
+    assert ended.conversation_id not in listed
+    assert elsewhere.conversation_id not in listed
+
+
+async def test_the_probe_reaches_the_database_as_the_application_role(archive):
+    await archive.ping(TENANT)

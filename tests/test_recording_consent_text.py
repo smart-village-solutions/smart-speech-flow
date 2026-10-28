@@ -121,3 +121,17 @@ def test_the_hash_covers_the_served_bytes() -> None:
 def test_read_aloud_text_has_one_paragraph_per_line_and_no_markup() -> None:
     policy = _policy(_studio("en", consent="<p>One &amp; two.</p><ul><li>A</li><li>B</li></ul>"))
     assert consent_text(policy, "en", "first").plain() == "One & two.\nA\nB"
+
+
+
+@pytest.mark.parametrize("language", ["../consent_texts/en", "../../../../etc/x", "xx"])
+def test_a_language_ssf_does_not_offer_never_names_a_file(language) -> None:
+    # The guest's language comes from the activation request, unchecked.
+    ct._bundled.cache_clear()
+    served = consent_text(_policy(), language, "first")
+    assert served == consent_text(_policy(), "de", "first")
+    assert ct._bundled.cache_info().currsize == 1  # German alone, nothing per string sent
+
+
+def test_a_locale_tag_is_served_as_the_language_it_names() -> None:
+    assert consent_text(_policy(), "EN-gb", "first") == consent_text(_policy(), "en", "first")

@@ -82,6 +82,8 @@ def _studio(policy: RecordingPolicy, language: str) -> RecordingTexts | None:
 
 
 def consent_text(policy: RecordingPolicy, language: str, kind: ConsentKind) -> ConsentText:
+    # The guest's language arrives unchecked from activation, and names a file below.
+    language = _language(language) or GERMAN
     studio = _studio(policy, language)
     if studio is not None:
         markup = studio.consent_html if kind == "first" else studio.resume_prompt_html

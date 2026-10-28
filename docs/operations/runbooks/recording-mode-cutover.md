@@ -19,9 +19,11 @@ out under their own tiers, and new backups no longer contain Redis or audio.
   Until #615 they described the `ask` storage question ("up to 180 days"); with
   the question gone that wording is false. Check every guest language's
   explanation in Studio before the deploy.
-- The production host has no swap, or the operator accepts that the gateway's
-  and Redis's memory can be paged to disk: tmpfs and Redis pages are ordinary
-  memory. `swapon --show` printing nothing means no swap.
+- Swap: the gateway never swaps (`memswap_limit` equals its memory limit), so
+  its tmpfs and heap stay in RAM. Redis and ASR have no such limit: on a host
+  with swap (`swapon --show` lists a device; production had 32 GiB in
+  2026-10) their pages can be written to it. Turn swap off, or accept that
+  before the deploy.
 
 ## Every command names its stack
 
@@ -64,13 +66,14 @@ This deletes every conversation stored under `ask`, audio and text alike.
     production_compose exec -T redis redis-cli CONFIG GET save
     production_compose exec -T redis redis-cli CONFIG GET appendonly
     production_compose exec -T api_gateway sh -c 'ulimit -c; df -h /tmp /tmp/audio | tail -2'
+    production_compose exec -T api_gateway cat /sys/fs/cgroup/memory.swap.max
     production_compose exec -T asr sh -c 'df -h /tmp | tail -1'
     swapon --show
     docker volume ls --filter name=ssf-backend_audio-data --filter name=ssf-backend_redis-data -q
 
 Expected: `save` empty, `appendonly no`, `0`, a 256 MiB and a 1 GiB `tmpfs`
-in the gateway, a 256 MiB `tmpfs` in ASR, no swap (or the accepted exception),
-and no volume listed. Then hold one conversation, end it, and check that its
+in the gateway, `0` for the gateway's swap, a 256 MiB `tmpfs` in ASR, no swap
+on the host (or the accepted exception), and no volume listed. Then hold one conversation, end it, and check that its
 audio is gone:
 
     production_compose exec -T api_gateway sh -c "find /tmp/audio/v2 -name '*.wav' | wc -l"

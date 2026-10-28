@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from services.api_gateway.recording import session_service
+from services.api_gateway.recording import session_state as rs
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.session_service import (
     RecordingSessions,
@@ -110,6 +111,12 @@ class Harness:
         version = (await self.service.state(KEY)).state_version
         await self.service.acknowledge(KEY, ADMIN, version)
         await self.service.acknowledge(KEY, GUEST, version)
+
+    async def pause(self, reason: Reason) -> None:
+        """A pause for a reason the test does not stage."""
+        await self.service._change(
+            KEY, "system", lambda state, now: rs.pause(state, reason=reason, now=now)
+        )
 
     async def on(self) -> None:
         await self.service.request(KEY, request_id="r1", requested_by="emp-sub")
@@ -243,7 +250,7 @@ async def test_an_unanswered_request_turns_off_after_two_minutes(h) -> None:
 
 async def test_a_policy_pause_resumes_only_once_the_policy_reads_again(h) -> None:
     await h.on()
-    await h.service.pause(KEY, Reason.POLICY)
+    await h.pause(Reason.POLICY)
     await h.ack_both()
     h.policy_fails = True
     await h.service.tick()
@@ -261,7 +268,7 @@ async def test_a_policy_pause_resumes_only_once_the_policy_reads_again(h) -> Non
 async def test_a_storage_pause_waits_for_the_store(h) -> None:
     await h.on()
     h.storage_ok = False
-    await h.service.pause(KEY, Reason.STORAGE)
+    await h.pause(Reason.STORAGE)
     await h.ack_both()
     assert (await h.service.state(KEY)).phase is Phase.PAUSED
     h.storage_ok = True
@@ -382,7 +389,7 @@ async def test_a_closed_screen_stops_holding_at_once(h) -> None:
 async def test_a_hanging_policy_read_holds_back_no_other_conversation(h) -> None:
     other = TenantSessionKey("tenant-kassel", "OTHER123")
     await h.on()
-    await h.service.pause(KEY, Reason.POLICY)
+    await h.pause(Reason.POLICY)
     await h.ack_both()
     await h.store.save(
         other, RecordingState(phase=Phase.ASKING, state_version=1, since=h.clocks.now)
@@ -405,7 +412,7 @@ async def test_a_hanging_policy_read_holds_back_no_other_conversation(h) -> None
 
 async def test_a_policy_pause_rereads_studio_at_most_every_five_seconds(h) -> None:
     await h.on()
-    await h.service.pause(KEY, Reason.POLICY)
+    await h.pause(Reason.POLICY)
     await h.ack_both()
     reads = 0
 

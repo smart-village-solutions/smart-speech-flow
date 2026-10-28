@@ -16,6 +16,7 @@ from services.api_gateway.recording.ceremony_model import CeremonyError
 from services.api_gateway.recording.secrets import BLOB_KEY_FILE_ENV, SIGNING_KEY_FILE_ENV
 from services.api_gateway.recording.session_service import RecordingUnavailableError
 from services.api_gateway.recording.session_store import MemoryRecordingStateStore
+from services.api_gateway.session_models import SessionStatus
 
 DSN = "postgresql://ssf_recording_app@db/ssf_recording"
 
@@ -188,6 +189,64 @@ async def test_an_archive_store_wires_spools_that_stop_with_recording(
     assert spools._tasks  # an uploader per tenant, running
     await wiring.close_recording(state)
     assert spools._tasks == {} and state.recording_archive is None
+
+
+async def test_the_archive_counts_a_session_live_until_it_ends(
+    secrets_on_disk, monkeypatch, tmp_path
+):
+    async def create(**_):
+        return _Repository()
+
+    writers = tmp_path / "archive-writers.json"
+    writers.write_text(
+        json.dumps({"tenant-test": {"access_key_id": "k", "secret_access_key": "s"}})
+    )
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
+    monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(writers))
+    monkeypatch.setenv("SSF_ARCHIVE_SPOOL_DIR", str(tmp_path / "spool"))
+    state = _state()
+    listed = [
+        SimpleNamespace(id="LIVE0001", status=SessionStatus.ACTIVE),
+        SimpleNamespace(id="WAIT0001", status=SessionStatus.PENDING),
+        SimpleNamespace(id="DONE0001", status=SessionStatus.TERMINATED),
+    ]
+
+    async def list_for_tenant(tenant_id):
+        assert tenant_id == "tenant-test"
+        return listed
+
+    state.session_manager.store = SimpleNamespace(list_for_tenant=list_for_tenant)
+    await wiring.connect_recording(state, DSN)
+
+    live = await state.recording_archive._live_sessions("tenant-test")
+    assert sorted(live) == ["LIVE0001", "WAIT0001"]
+    assert state.recording_stamper.tenants() == ("tenant-test",)
+    await wiring.close_recording(state)
+
+
+async def test_a_stamp_pass_ends_orphans_before_it_stamps():
+    calls = []
+
+    async def retry_pending_ends():
+        calls.append("retry")
+
+    async def end_orphaned(tenant_ids):
+        calls.append(("orphans", tuple(tenant_ids)))
+
+    async def run_once():
+        calls.append("stamp")
+
+    state = SimpleNamespace(
+        recording_archive=SimpleNamespace(
+            retry_pending_ends=retry_pending_ends, end_orphaned=end_orphaned
+        ),
+        recording_stamper=SimpleNamespace(tenants=lambda: ("tenant-test",), run_once=run_once),
+    )
+
+    await wiring.stamp_once(state)
+
+    assert calls == ["retry", ("orphans", ("tenant-test",)), "stamp"]
 
 
 async def test_a_tenant_missing_from_the_writers_file_cannot_record(

@@ -30,7 +30,7 @@ from .archive_repository import (
     PendingStamp,
     WindowOpening,
 )
-from .audit import AuditEvent
+from .audit import GUEST_ACTOR, AuditEvent
 from .ceremony_model import RecoveryKeyRecord
 from .chain import ChainEntry, ChainObject, EntryKind, seal_entry
 from .consent_text import ConsentText
@@ -51,7 +51,6 @@ from .timestamps import TimestampAuthority, TimestampError
 
 logger = logging.getLogger(__name__)
 
-GUEST_ACTOR: Final[str] = "guest"
 STAMP_RETRY_INITIAL: Final[timedelta] = timedelta(seconds=30)
 STAMP_RETRY_CEILING: Final[timedelta] = timedelta(hours=6)
 
@@ -88,9 +87,15 @@ class ArchiveRepository(Protocol):
 
     async def mark_incomplete(self, tenant_id: str, conversation_id: str) -> None: ...
 
+    async def ping(self, tenant_id: str) -> None: ...
+
     async def close_window(
         self, tenant_id: str, conversation_id: str, window_id: str, at: datetime, reason: str
     ) -> None: ...
+
+    async def open_conversations(self, tenant_id: str) -> list[tuple[str, str]]:
+        """(conversation_id, session_ref) of every conversation not yet ended."""
+        ...
 
     async def end_conversation(
         self, tenant_id: str, conversation_id: str, at: datetime
@@ -162,6 +167,7 @@ class ConversationArchive:
         user_key: Callable[[str, str], Awaitable[UserKeyRecord | None]],
         session_ref: Callable[[str], str],
         tenant_ready: Callable[[str], bool] = lambda _tenant_id: True,
+        live_sessions: Callable[[str], Awaitable[Iterable[str]]] | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._repository = repository
@@ -171,16 +177,22 @@ class ConversationArchive:
         self._user_key = user_key
         self._session_ref = session_ref
         self._tenant_ready = tenant_ready
+        # The IDs of a tenant's sessions that have not ended, from the session store.
+        self._live_sessions = live_sessions
         self._clock = clock
         # Memory only (§8.1): a restart loses them, and the next entry starts a new epoch.
         self._keys: dict[tuple[str, str], ConversationKey] = {}
         self._heads: dict[tuple[str, str], _Head] = {}
+        # Conversation rows never change for what recording reads from them.
+        self._conversations: dict[tuple[str, str], ConversationRecord] = {}
         # A conversation chosen at a yes whose state may not have been saved, so a
         # retried yes continues it instead of opening a second one.
         self._opened: dict[TenantSessionKey, str] = {}
         self._entries: dict[TenantSessionKey, dict[str, _Archived]] = {}
         self._played: dict[TenantSessionKey, set[tuple[str, str]]] = {}
         self._pending_ends: dict[tuple[str, str], datetime] = {}
+        # Spool steps of committed entries still running after their caller gave up.
+        self._tails: set[asyncio.Task[None]] = set()
 
     def can_record(self, tenant_id: str) -> bool:
         """Whether this tenant's objects can leave the gateway at all: it has a writer credential."""
@@ -188,6 +200,14 @@ class ConversationArchive:
 
     def ready(self, key: TenantSessionKey) -> bool:
         return self._spools.ready(key.tenant_id)
+
+    async def reachable(self, tenant_id: str) -> bool:
+        """Whether the database takes the tenant's entries again, after a storage pause."""
+        try:
+            await self._repository.ping(tenant_id)
+        except RecordingStorageUnavailable:
+            return False
+        return True
 
     async def open_window(
         self,
@@ -238,6 +258,7 @@ class ConversationArchive:
             audit=AuditEvent(key.tenant_id, GUEST_ACTOR, "recording.arming", window_id, now),
         )
         await self._commit(sealed, self._repository.open_window(opening))
+        self._conversations[(key.tenant_id, conversation.conversation_id)] = conversation
         try:
             await self._spool(key.tenant_id, conversation.conversation_id, sealed.blobs)
         except ArchiveUnavailableError as error:
@@ -308,17 +329,10 @@ class ConversationArchive:
         self._entries.setdefault(key, {})[artefacts.message_id] = _Archived(
             sealed.entry.entry_id, artefacts.sender
         )
-        if artefacts.failed:
-            await _best_effort(
-                "incomplete",
-                self._repository.mark_incomplete(key.tenant_id, conversation.conversation_id),
-            )
-        await self._spool(key.tenant_id, conversation.conversation_id, sealed.blobs)
+        await self._spool(
+            key.tenant_id, conversation.conversation_id, sealed.blobs, gap=artefacts.failed
+        )
         return sealed.entry.entry_id
-
-    def archived_entry(self, key: TenantSessionKey, message_id: str) -> str | None:
-        archived = self._entries.get(key, {}).get(message_id)
-        return None if archived is None else archived.entry_id
 
     async def archive_playback(
         self,
@@ -440,6 +454,29 @@ class ConversationArchive:
         for ending in list(self._pending_ends):
             await self._end(ending)
 
+    async def end_orphaned(self, tenant_ids: Iterable[str]) -> None:
+        """Ends the conversations whose session is gone, which nothing else would end:
+        a Redis restart forgets every session, and an end can fail. Unended, a
+        conversation keeps its windows open and is never stamped (§11.2)."""
+        if self._live_sessions is None:
+            return
+        for tenant_id in tenant_ids:
+            try:
+                live = {
+                    self._session_ref(session_id)
+                    for session_id in await self._live_sessions(tenant_id)
+                }
+                conversations = await self._repository.open_conversations(tenant_id)
+            except Exception as error:  # a list that cannot be read ends nothing
+                logger.warning("recording_orphan_pass_skipped error=%s", type(error).__name__)
+                continue
+            for conversation_id, session_ref in conversations:
+                if session_ref not in live:
+                    self._forget(tenant_id, conversation_id)
+                    ending = (tenant_id, conversation_id)
+                    self._pending_ends.setdefault(ending, self._clock())
+                    await self._end(ending)
+
     async def _end(self, ending: tuple[str, str]) -> None:
         tenant_id, conversation_id = ending
         at = self._pending_ends[ending]
@@ -451,18 +488,23 @@ class ConversationArchive:
     def _forget(self, tenant_id: str, conversation_id: str) -> None:
         self._keys.pop((tenant_id, conversation_id), None)
         self._heads.pop((tenant_id, conversation_id), None)
+        self._conversations.pop((tenant_id, conversation_id), None)
 
     async def _conversation(
         self, tenant_id: str, conversation_id: str | None
     ) -> ConversationRecord:
         if conversation_id is None:
             raise ArchiveUnavailableError("no_conversation")
+        cached = self._conversations.get((tenant_id, conversation_id))
+        if cached is not None:
+            return cached
         try:
             conversation = await self._repository.conversation(tenant_id, conversation_id)
         except RecordingStorageUnavailable:
             raise ArchiveUnavailableError("database") from None
         if conversation is None:
             raise ArchiveUnavailableError("no_conversation")
+        self._conversations[(tenant_id, conversation_id)] = conversation
         return conversation
 
     async def _seal(
@@ -587,8 +629,34 @@ class ConversationArchive:
         self._heads[conversation] = _Head(entry.seq, entry.hash)
 
     async def _spool(
-        self, tenant_id: str, conversation_id: str, blobs: Iterable[tuple[str, bytes]]
+        self,
+        tenant_id: str,
+        conversation_id: str,
+        blobs: Iterable[tuple[str, bytes]],
+        *,
+        gap: bool = False,
     ) -> None:
+        """After a commit, and to its end even when the caller's deadline passes first:
+        a committed entry whose objects never reach the spool would wait for them forever.
+        `gap`: the entry is a failed message, which the incomplete marker lists (§10.5)."""
+        tail = asyncio.create_task(self._spool_committed(tenant_id, conversation_id, blobs, gap))
+        self._tails.add(tail)
+        tail.add_done_callback(self._settled)
+        await asyncio.shield(tail)
+
+    def _settled(self, tail: asyncio.Task[None]) -> None:
+        self._tails.discard(tail)
+        if not tail.cancelled() and tail.exception() is not None:
+            # Seen by its caller too, unless the caller's deadline passed meanwhile.
+            logger.error("recording_spool_step_failed error=%s", type(tail.exception()).__name__)
+
+    async def _spool_committed(
+        self, tenant_id: str, conversation_id: str, blobs: Iterable[tuple[str, bytes]], gap: bool
+    ) -> None:
+        if gap:
+            await _best_effort(
+                "incomplete", self._repository.mark_incomplete(tenant_id, conversation_id)
+            )
         spool = self._spools.spool(tenant_id)
         try:
             for name, data in blobs:
@@ -647,8 +715,11 @@ class ChainStamper:
         self._tenants = tenants
         self._clock = clock
 
+    def tenants(self) -> tuple[str, ...]:
+        return tuple(self._tenants())
+
     async def run_once(self) -> None:
-        for tenant_id in self._tenants():
+        for tenant_id in self.tenants():
             try:
                 due = await self._repository.pending_stamps(tenant_id, self._clock())
             except RecordingStorageUnavailable:

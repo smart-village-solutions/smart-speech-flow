@@ -247,6 +247,19 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         except Exception:  # telemetry must never decide whether a session ends
             logger.warning("recording_mark_unavailable", extra={"tenant_ref": key.tenant_ref})
 
+    async def _end_recording(self, key: TenantSessionKey) -> None:
+        """After the commit: the session has ended whatever recording's own end does.
+
+        A conversation left open here is ended by the archive's pass over
+        conversations whose session is gone.
+        """
+        if self.recording is None:
+            return
+        try:
+            await self.recording.session_ended(key)
+        except Exception:  # the termination already committed
+            logger.error("recording_end_failed", extra={"tenant_ref": key.tenant_ref})
+
     async def rehydrate_tenant_sessions(self) -> None:
         """Restore active v2 sessions and discard process-local presence.
 
@@ -368,8 +381,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             self.polling_store.terminate(session_id, reason)
         if self.websocket_manager:
             await self.websocket_manager.handle_session_termination(session_id, reason)
-        if self.recording is not None:
-            await self.recording.session_ended(session_id)
+        await self._end_recording(session_id)
         # The yield the socket-pool cleanup always took before returning.
         await asyncio.sleep(0)
 
