@@ -267,7 +267,7 @@ Variable groups currently interpolated by Compose include:
 - `ENVIRONMENT` and `DEVELOPMENT_CORS_ORIGINS` for environment-specific CORS behaviour.
 - `GRAFANA_ADMIN_*` for local monitoring access.
 
-In the current Compose stack, `REDIS_URL`, `REDIS_NAMESPACE`, and `CLIENT_BASE_URL` are assigned in `docker-compose.yml` rather than interpolated from `.env`. The gateway reads only `SSF_AUDIO_BASE_DIR` for audio storage (Compose sets it to the `/tmp/audio` tmpfs); an hourly pass deletes any delivery audio that a session's end missed once it is older than `SSF_SESSION_MAX_HOURS` plus an hour. The following values document those settings:
+In the current Compose stack, `REDIS_URL`, `REDIS_NAMESPACE`, and `CLIENT_BASE_URL` are assigned in `docker-compose.yml` rather than interpolated from `.env`. The gateway reads only `SSF_AUDIO_BASE_DIR` for audio storage and does not start without it (Compose sets it to the `/tmp/audio` tmpfs); an hourly pass deletes any delivery audio that a session's end missed once it is older than `SSF_SESSION_MAX_HOURS` plus an hour. The following values document those settings:
 
 - `REDIS_URL` and `REDIS_NAMESPACE` for session storage.
 - `CLIENT_BASE_URL` for generated customer links and one additional exact production browser origin for HTTP CORS and WebSocket connections. For a standalone frontend, set it to an HTTPS origin such as `https://dialog.kassel.de` in the effective API container environment. Credentials, wildcard hosts, paths other than `/`, query strings, and fragments are not accepted as browser origins. Existing production origins remain available; an unset or invalid value adds no origin. Configure the frontend Keycloak URL and the Keycloak client redirect URIs separately.

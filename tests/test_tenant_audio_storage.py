@@ -219,6 +219,26 @@ def test_the_store_deletes_a_session_below_its_own_directory(tmp_path) -> None:
     assert not _session_dir(tmp_path).exists()
 
 
+def test_the_store_from_the_environment_uses_the_configured_directory(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
+
+    assert AudioStore.from_environment().base_dir == tmp_path
+
+
+@pytest.mark.parametrize("configured", [None, ""])
+def test_the_store_from_the_environment_refuses_an_unset_directory(configured, monkeypatch) -> None:
+    """No fallback: a guessed directory could sit on disk or in a shared /tmp."""
+    if configured is None:
+        monkeypatch.delenv("SSF_AUDIO_BASE_DIR", raising=False)
+    else:
+        monkeypatch.setenv("SSF_AUDIO_BASE_DIR", configured)
+
+    with pytest.raises(RuntimeError, match="SSF_AUDIO_BASE_DIR"):
+        AudioStore.from_environment()
+
+
 def test_cleanup_deletes_audio_older_than_any_session_and_keeps_newer(tmp_path) -> None:
     """No session outlives SSF_SESSION_MAX_HOURS (8): its audio cannot either, plus an hour."""
     assert delivery_audio_hours() == 9

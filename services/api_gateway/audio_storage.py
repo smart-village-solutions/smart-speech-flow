@@ -88,8 +88,12 @@ class AudioStorageMetrics:
 
 
 def _configured_base_dir() -> Path:
-    # The deployed stacks point this at the /tmp/audio tmpfs; tests at a temp directory.
-    return Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/tmp/audio"))
+    # No default: the stacks name their tmpfs, and a guessed path could sit on
+    # disk or in a /tmp other users can write to.
+    configured = os.environ.get("SSF_AUDIO_BASE_DIR")
+    if not configured:
+        raise RuntimeError("SSF_AUDIO_BASE_DIR is not set")
+    return Path(configured)
 
 
 _STORAGE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
