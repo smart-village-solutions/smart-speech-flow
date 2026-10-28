@@ -12,9 +12,12 @@ out under their own tiers, and new backups no longer contain Redis or audio.
 
 ## Before you start
 
-- The archive (archive-storage-deployment.md) and the recording keys
-  (recording-keys-deployment.md) are in place, so recording can start right
-  away.
+- **Recording stays off:** leave `SSF_ARCHIVE_ENDPOINT` empty in the
+  production environment until #618 is live. The 14-day `ssf_recording` dump
+  must exist before anything is archived (recording-keys-deployment.md,
+  "Backups"), and the retention workers must exist before anything expires.
+  With the variable empty, the gateway answers every recording request with
+  `ARCHIVE_UNAVAILABLE`; everything else in this cutover still applies.
 - **Studio's guest explanation texts no longer offer to store conversations.**
   Until #615 they described the `ask` storage question ("up to 180 days"); with
   the question gone that wording is false. Check every guest language's
