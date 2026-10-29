@@ -93,7 +93,7 @@ def _conversation(row: Any) -> ConversationRecord:
     )
 
 
-def _entry(row: Any) -> ChainEntry:
+def entry_from_row(row: Any) -> ChainEntry:
     return ChainEntry(
         tenant_id=row["tenant_id"],
         conversation_id=str(row["conversation_id"]),
@@ -138,7 +138,7 @@ async def _insert_key(
         )
 
 
-async def _insert_entry(connection: asyncpg.Connection, entry: ChainEntry) -> None:
+async def insert_entry(connection: asyncpg.Connection, entry: ChainEntry) -> None:
     await connection.execute(
         "INSERT INTO chain_entries (tenant_id, conversation_id, seq, entry_id, kind, window_id,"
         " key_id, objects, prev_hash, hash, signer_key_id, signature, created_at)"
@@ -159,9 +159,7 @@ async def _insert_entry(connection: asyncpg.Connection, entry: ChainEntry) -> No
     )
 
 
-async def _request_stamp(
-    connection: asyncpg.Connection, conversation_id: str, at: datetime
-) -> None:
+async def request_stamp(connection: asyncpg.Connection, conversation_id: str, at: datetime) -> None:
     """Stamp the current head, once; a conversation with no entry has nothing to stamp."""
     await connection.execute(
         "INSERT INTO chain_stamps (tenant_id, conversation_id, head_seq, head_hash,"
@@ -217,7 +215,7 @@ class PostgresArchiveRepository:
                 await _insert_key(
                     connection, conversation.tenant_id, conversation.conversation_id, opening.key
                 )
-            await _insert_entry(connection, opening.consent)
+            await insert_entry(connection, opening.consent)
             await append_audit(connection, opening.audit)
 
         await self._run(conversation.tenant_id, work)
@@ -226,7 +224,7 @@ class PostgresArchiveRepository:
         async def work(connection: asyncpg.Connection) -> None:
             if key is not None:
                 await _insert_key(connection, entry.tenant_id, entry.conversation_id, key)
-            await _insert_entry(connection, entry)
+            await insert_entry(connection, entry)
 
         await self._run(entry.tenant_id, work)
 
@@ -266,7 +264,7 @@ class PostgresArchiveRepository:
                 conversation_id,
             )
 
-        return [_entry(row) for row in await self._run(tenant_id, work)]
+        return [entry_from_row(row) for row in await self._run(tenant_id, work)]
 
     async def record_stored(
         self, tenant_id: str, entry_id: str, object_type: str, version_id: str, at: datetime
@@ -355,7 +353,7 @@ class PostgresArchiveRepository:
                 at,
                 reason,
             )
-            await _request_stamp(connection, conversation_id, at)
+            await request_stamp(connection, conversation_id, at)
 
         await self._run(tenant_id, work)
 
@@ -383,7 +381,7 @@ class PostgresArchiveRepository:
                 conversation_id,
                 at,
             )
-            await _request_stamp(connection, conversation_id, at)
+            await request_stamp(connection, conversation_id, at)
 
         await self._run(tenant_id, work)
 

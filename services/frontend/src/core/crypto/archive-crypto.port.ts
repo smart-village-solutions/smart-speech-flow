@@ -1,3 +1,4 @@
+import type { ObjectAddress } from './aead';
 import type { Bytes } from './bytes';
 
 /** Who a key belongs to; both values are part of its fingerprint and its blob's AAD. */
@@ -24,6 +25,18 @@ export interface NewKeys {
   unlocked: UnlockedKeys;
 }
 
+/** A conversation key's wrap for the caller, as the archive serves it (spec A.4, A.6). */
+export interface WrapToOpen {
+  tenantId: string;
+  conversationId: string;
+  keyId: string;
+  recipientRef: string;
+  blob: string;
+  /** A gateway key ID, or the caller's own sub for a wrap they made (#617). */
+  creatorRef: string;
+  creatorSignature: Bytes;
+}
+
 /** The browser's side of the archive crypto. Features reach it through this port only. */
 export interface ArchiveCrypto {
   createKeys(passphrase: string, owner: Readonly<KeyOwner>): Promise<NewKeys>;
@@ -38,6 +51,20 @@ export interface ArchiveCrypto {
     owner: Readonly<KeyOwner>,
     expected: Readonly<PublicKeys>
   ): Promise<UnlockedKeys>;
+  /**
+   * The conversation key, as a non-extractable AES key. Rejects unless an
+   * accepted signer, or the caller's own signing key, signed the wrap for the
+   * caller's fingerprint (spec A.6).
+   */
+  openWrap(
+    wrap: Readonly<WrapToOpen>,
+    keys: Readonly<UnlockedKeys>,
+    signers: ReadonlyMap<string, Bytes>
+  ): Promise<CryptoKey>;
+  /** Rejects on any envelope that fails A.3 for `address`. */
+  openObject(key: CryptoKey, address: Readonly<ObjectAddress>, envelope: Bytes): Promise<Bytes>;
+  /** A.3 under the conversation key. */
+  sealObject(key: CryptoKey, address: Readonly<ObjectAddress>, plaintext: Bytes): Promise<Bytes>;
 }
 
 /** Holds the unlocked keys for the life of the tab; never persisted. */

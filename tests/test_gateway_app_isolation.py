@@ -71,6 +71,7 @@ RECORDING = (
     "recording_archive",
     "recording_spools",
     "recording_archive_client",
+    "recording_archive_access",
     "recording_stamper",
 )
 

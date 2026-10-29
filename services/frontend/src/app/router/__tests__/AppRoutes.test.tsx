@@ -207,6 +207,42 @@ describe('tenant login routes', () => {
     expect(await screen.findByRole('heading', { name: 'Wiederherstellungsschlüssel' })).toBeInTheDocument();
   });
 
+  it('opens the recording archive for a recording permission, and its unlock comes back to it', async () => {
+    vi.mocked(hasPermission).mockImplementation(
+      (permission) => permission === 'ssf.recording.request'
+    );
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
+    server.use(
+      http.get('*/api/admin/recording/keys/me', () =>
+        HttpResponse.json(
+          { detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } },
+          { status: 404 }
+        )
+      )
+    );
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Aufzeichnungen' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Meine Aufzeichnungen' })
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Schlüssel entsperren' }));
+    expect(await screen.findByRole('heading', { name: 'Archivschlüssel' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Meine Aufzeichnungen' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers no recording archive without a recording permission', async () => {
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.queryByRole('button', { name: 'Meine Aufzeichnungen' })).not.toBeInTheDocument();
+  });
+
   it('does not render the dashboard while Keycloak redirects', async () => {
     vi.mocked(requireKeycloakLogin).mockResolvedValue(false);
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel' });

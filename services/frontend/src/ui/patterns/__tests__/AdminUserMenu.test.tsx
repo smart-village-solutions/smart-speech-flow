@@ -24,6 +24,23 @@ describe('AdminUserMenu', () => {
     expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
   });
 
+  it('offers the recording archive only where a screen can open it', async () => {
+    const onOpenArchive = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, {
+      locale: 'de',
+    });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Meine Aufzeichnungen' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenArchive={onOpenArchive} />, {
+      locale: 'de',
+    });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Aufzeichnungen' }));
+    expect(onOpenArchive).toHaveBeenCalledOnce();
+  });
+
   it('opens and closes on the trigger', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
 

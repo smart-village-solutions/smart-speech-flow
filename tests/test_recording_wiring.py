@@ -40,6 +40,7 @@ def _state() -> SimpleNamespace:
         recording_archive=None,
         recording_spools=None,
         recording_archive_client=None,
+        recording_archive_access=None,
         recording_stamper=None,
         websocket_manager=SimpleNamespace(recording=None),
         session_manager=SimpleNamespace(
@@ -161,6 +162,7 @@ async def test_without_an_archive_store_recording_is_wired_but_unavailable(
     await wiring.connect_recording(state, DSN)
 
     assert state.recording_archive is None and state.recording_stamper is None
+    assert state.recording_archive_access is None
     with pytest.raises(RecordingUnavailableError) as caught:
         await state.recording_sessions.check_available("tenant-test")
     assert caught.value.code == "ARCHIVE_UNAVAILABLE"
@@ -186,12 +188,16 @@ async def test_an_archive_store_wires_spools_that_stop_with_recording(
 
     assert state.recording_archive is not None
     assert state.recording_sessions._archive is state.recording_archive
+    access = state.recording_archive_access
+    assert access is not None
+    assert access._spools is state.recording_spools
     assert (tmp_path / "spool").is_dir()
     spools = state.recording_spools
     spools.spool("tenant-test")
     assert spools._tasks  # an uploader per tenant, running
     await wiring.close_recording(state)
     assert spools._tasks == {} and state.recording_archive is None
+    assert state.recording_archive_access is None
 
 
 async def test_the_archive_counts_a_session_live_until_it_ends(

@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { bytesToBigInt, fromBase64Url } from '@/core/crypto/bytes';
 import type { Ceremony, CeremonyState, CustodianCandidate, ReceivedSubshares } from './recovery.types';
 
-const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/).transform(fromBase64Url);
-const sized = (length: number) => base64Url.refine((value) => value.length === length, `expected ${length} bytes`);
+export const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/).transform(fromBase64Url);
+export const sized = (length: number) => base64Url.refine((value) => value.length === length, `expected ${length} bytes`);
 const point = sized(65);
 const scalar = sized(32).transform(bytesToBigInt);
 
-const participant = z.object({
+export const participant = z.object({
   holder_index: z.number().int().min(1),
   holder_ref: z.string().min(1),
   kind: z.enum(['custodian', 'paper']),
@@ -17,7 +17,7 @@ const participant = z.object({
   fingerprint: sized(32),
 });
 
-const dealing = z.object({
+export const dealing = z.object({
   dealer_index: z.number().int().min(1),
   commitments: z.array(point).min(1),
   c: scalar,

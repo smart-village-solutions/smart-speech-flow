@@ -154,7 +154,8 @@
       "opensInNewTab": "(opens in a new tab)",
       "signOut": "Sign out",
       "keys": "Archive keys",
-      "ceremony": "Recovery key"
+      "ceremony": "Recovery key",
+      "archive": "My recordings"
     },
     "dashboard": {
       "welcome": {
@@ -339,6 +340,143 @@
         "idChecked": "Identity checked with ID document",
         "idRequired": "This organisation requires the ID check before recording.",
         "cancel": "Cancel"
+      }
+    },
+    "archive": {
+      "title": "My recordings",
+      "intro": "Conversations you recorded. Content is decrypted only in this browser, after you unlock your keys.",
+      "locked": "Unlock your keys first.",
+      "unlock": "Unlock keys",
+      "unavailable": "The archive is not reachable right now.",
+      "empty": "No finished recordings yet.",
+      "more": "Load more",
+      "messages": "Messages: {{count}}",
+      "duration": "{{minutes}} min",
+      "incomplete": "Incomplete",
+      "hold": "Legal hold",
+      "retention": "Kept until {{date}}",
+      "verification": {
+        "not_verified": "Not verified"
+      },
+      "checking": "Checking integrity …",
+      "integrity": {
+        "title": "Integrity error",
+        "trust": "The signing keys could not be confirmed. Content is not shown.",
+        "wrap": "A key of this conversation is not signed correctly. Content is not shown.",
+        "chain": "The chain of entries is damaged or altered. Content is not shown.",
+        "stamp": "A timestamp does not match the entries. Content is not shown.",
+        "object": "An entry is damaged."
+      },
+      "field": {
+        "guest": "Guest",
+        "languages": "Languages",
+        "basis": "Legal basis",
+        "retention": "Retention",
+        "verification": "Verification",
+        "stamp": "Timestamp"
+      },
+      "basis": {
+        "consent": "consent",
+        "statutory": "statutory"
+      },
+      "stamp": {
+        "at": "{{time}}",
+        "unverified": "(authority signature not checked)",
+        "pending": "pending"
+      },
+      "gaps": {
+        "title": "Gaps",
+        "pause": "Paused: {{reason}}",
+        "failed": "Message failed",
+        "notStored": "Not stored yet",
+        "noKey": "No key for this part",
+        "damaged": "Damaged"
+      },
+      "kind": {
+        "message": "Message",
+        "failed": "Failed",
+        "consent": "Consent",
+        "playback": "Playback",
+        "amendment": "Amendment"
+      },
+      "sender": {
+        "admin": "Employee",
+        "customer": "Guest"
+      },
+      "entry": {
+        "damaged": "This entry is damaged.",
+        "noKey": "No key for this part.",
+        "notStored": "Not stored yet."
+      },
+      "message": {
+        "asr": "Recognised",
+        "rawMt": "Machine translation",
+        "refined": "Refined",
+        "changed": "(changed)",
+        "final": "Delivered"
+      },
+      "failed": "Error in {{stage}} ({{code}})",
+      "audio": {
+        "original": "Play original",
+        "translated": "Play translation",
+        "loading": "Loading …"
+      },
+      "consent": {
+        "yes": "Agreed",
+        "no": "Declined",
+        "kind": {
+          "first": "First consent",
+          "resume": "Resume"
+        },
+        "signature": "Signature",
+        "idCheck": "ID checked",
+        "idNotChecked": "ID not checked",
+        "citedText": "Text: {{language}}, {{source}}, {{version}}, {{hash}}",
+        "text": "Text shown",
+        "enteredBy": {
+          "employee": "(entered by the employee)",
+          "guest": "(entered by the guest)"
+        }
+      },
+      "playback": {
+        "started": "Playback started {{time}}",
+        "completed": "Playback finished {{time}}"
+      },
+      "window": {
+        "opened": "Recording started {{time}}",
+        "closed": "Recording ended {{time}}: {{reason}}"
+      },
+      "closeReason": {
+        "declined": "declined",
+        "cancelled": "cancelled",
+        "unanswered": "unanswered",
+        "stopped_by_guest": "stopped by the guest",
+        "stopped_by_employee": "stopped by the employee",
+        "session_ended": "conversation ended",
+        "liveness": "connection lost",
+        "unacknowledged": "not acknowledged",
+        "storage": "storage unreachable",
+        "policy": "not allowed"
+      },
+      "amend": "Amend",
+      "amendment": {
+        "label": "Amendment {{time}}",
+        "superseded": "(superseded)",
+        "foreignAuthor": "(other author)",
+        "unattached": "Amendment to an unknown entry",
+        "title": "Add an amendment",
+        "references": "To: {{entries}}",
+        "text": "Amendment",
+        "count": "{{count}} / 4000",
+        "cancel": "Cancel",
+        "submit": "Save amendment",
+        "retry": "Send again",
+        "pending": "An amendment has not been confirmed as saved. Send it again while this page is open.",
+        "error": {
+          "notStored": "Saved in the chain, but not in the archive yet. Please send again.",
+          "failed": "The amendment was not saved.",
+          "noKey": "No key suitable for an amendment."
+        }
       }
     }
   }

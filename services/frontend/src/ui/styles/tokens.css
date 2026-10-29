@@ -105,9 +105,10 @@
   --spacing-composer-lift: 40px;
   --spacing-flag-pill: 16px;
 
-  /* Secure recording (#615, SCREEN_SPECS "Recording"). */
+  /* Secure recording (#615, #616; SCREEN_SPECS "Recording", "Recording archive"). */
   --spacing-recording-band: 40px;
   --spacing-signature-pad: 160px;
+  --spacing-archive-signature: 120px;
   /* The consent dialog stops short of the viewport's edges and scrolls inside. */
   --spacing-consent-dialog: calc(100dvh - 40px);
 

@@ -106,6 +106,34 @@
         "title": "AdminPollingActivation",
         "type": "object"
       },
+      "AmendmentBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ciphertext": {
+            "maxLength": 43691,
+            "minLength": 1,
+            "title": "Ciphertext",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "key_id",
+          "ciphertext"
+        ],
+        "title": "AmendmentBody",
+        "type": "object"
+      },
       "AudioVariant": {
         "enum": [
           "original",
@@ -1343,6 +1371,27 @@
         "title": "InstallationContentResponse",
         "type": "object"
       },
+      "IntegrityBody": {
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "enum": [
+              "trust",
+              "wrap",
+              "chain",
+              "stamp",
+              "object"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "IntegrityBody",
+        "type": "object"
+      },
       "LoginTenantDirectoryResponse": {
         "description": "The public tenant chooser response.",
         "properties": {
@@ -2166,6 +2215,318 @@
         "tags": [
           "admin",
           "admin"
+        ]
+      }
+    },
+    "/api/admin/recording/archive": {
+      "get": {
+        "description": "Newest first; the next page passes the last row's `started_at` and `conversation_id`.",
+        "operationId": "list_own_api_admin_recording_archive_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Started Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Own Api Admin Recording Archive Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Own",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/trust": {
+      "get": {
+        "operationId": "trust_api_admin_recording_archive_trust_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Trust Api Admin Recording Archive Trust Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Trust",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/{conversation_id}": {
+      "get": {
+        "operationId": "open_one_api_admin_recording_archive__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Open One Api Admin Recording Archive  Conversation Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open One",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/{conversation_id}/amendments": {
+      "post": {
+        "description": "201 for a new entry; 200 when the same bytes were posted under that entry before.",
+        "operationId": "amend_api_admin_recording_archive__conversation_id__amendments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Amend Api Admin Recording Archive  Conversation Id  Amendments Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Amend",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/{conversation_id}/integrity-failures": {
+      "post": {
+        "operationId": "integrity_failure_api_admin_recording_archive__conversation_id__integrity_failures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Integrity Failure",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/{conversation_id}/objects/{entry_id}/{object_type}": {
+      "get": {
+        "operationId": "one_object_api_admin_recording_archive__conversation_id__objects__entry_id___object_type__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Entry Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "object_type",
+            "required": true,
+            "schema": {
+              "title": "Object Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One Object",
+        "tags": [
+          "recording"
         ]
       }
     },

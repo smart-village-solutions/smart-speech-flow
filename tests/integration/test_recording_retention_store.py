@@ -325,3 +325,23 @@ async def test_the_gateway_reads_both_sites_heartbeats(archive, stores):
         ("primary", 30.0, True, 2),
         ("replica", 0.0, False, 0),
     ]
+
+
+async def test_a_late_upload_locked_from_its_own_upload_is_no_restore_conflict(
+    archive, owner, stores
+):
+    """An amendment uploaded late is locked from its upload (#616), not from the first yes."""
+    conversation, _, _, consent = await _opened(archive)
+    late = NOW + timedelta(days=20)
+    await archive.record_stored(TENANT, consent.entry_id, "record.json", "v-late", late)
+    store = stores["primary"]
+    await store.discover(TENANT, NOW)
+    [row] = await store.due_versions(TENANT, NOW)
+    own_lock = late + (conversation.retention_until - conversation.started_at) + timedelta(days=1)
+    await store.record(row, LockState(NOW, own_lock, False, None, None), NOW)
+
+    assert await store.restore_conflicts(TENANT) == []
+
+    await owner.execute("UPDATE version_locks SET locked_until = $1", own_lock + timedelta(days=3))
+    [(conversation_id, reason, _)] = await store.restore_conflicts(TENANT)
+    assert (conversation_id, reason) == (conversation.conversation_id, "locked_beyond_date")

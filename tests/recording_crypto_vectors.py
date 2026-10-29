@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.api_gateway.recording.chain import GENESIS, ChainObject, seal_entry
 from services.api_gateway.recording.crypto import aead, ecies, signatures, tags
 from services.api_gateway.recording.crypto.curve import ORDER, decode_point
 from services.api_gateway.recording.crypto.encoding import Field, b64url, enc, from_b64url
@@ -31,6 +34,9 @@ from services.api_gateway.recording.crypto.transcript import (
     paper_device_fingerprint,
     transcript_hash,
 )
+from services.api_gateway.recording.secrets import gateway_key_id
+from services.api_gateway.recording.storage.archive import object_key
+from services.api_gateway.recording.timestamps import _integer, _tlv
 from tests import recording_crypto_reference as ref
 
 FIXTURE = Path(__file__).parent / "fixtures" / "recording" / "crypto_vectors_v1.json"
@@ -39,6 +45,12 @@ CONVERSATION = "6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f"
 KEY_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
 CEREMONY = "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
 REQUEST = "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+WINDOW = "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f"
+_CHAIN_KINDS = (
+    ("consent", "consent.json"),
+    ("message", "record.json"),
+    ("amendment", "amendment.json"),
+)
 
 
 def scalar(label: str) -> int:
@@ -350,9 +362,95 @@ def private_key_blob_vector() -> dict[str, Any]:
     }
 
 
+def _entry_id(seq: int) -> str:
+    return str(uuid.UUID(bytes=label_bytes(f"chain-entry-{seq}", 16), version=4))
+
+
+def chain_vector() -> dict[str, Any]:
+    """Three signed entries; the last, an amendment, has no window (spec A.6, §10.6)."""
+    signer = scalar("chain-signer")
+    signer_public = ref.public_point(signer)
+    signer_id = gateway_key_id(signer_public)
+    entries, previous = [], GENESIS
+    for seq, (kind, object_type) in enumerate(_CHAIN_KINDS, start=1):
+        entry_id = _entry_id(seq)
+        entry = seal_entry(
+            tenant_id=TENANT,
+            conversation_id=CONVERSATION,
+            seq=seq,
+            entry_id=entry_id,
+            kind=kind,  # type: ignore[arg-type]
+            window_id=None if kind == "amendment" else WINDOW,
+            key_id=KEY_ID,
+            objects=(
+                ChainObject(
+                    object_type,
+                    object_key(CONVERSATION, entry_id, object_type),
+                    100 + seq,
+                    label_bytes(f"chain-object-{seq}", 32).hex(),
+                ),
+            ),
+            prev_hash=previous,
+            created_at=datetime(2026, 10, 29, tzinfo=timezone.utc),
+            signing_key=ref.private_key(signer),
+            signer_key_id=signer_id,
+        )
+        previous = entry.hash
+        entries.append(
+            {
+                "seq": entry.seq,
+                "entry_id": entry.entry_id,
+                "kind": entry.kind,
+                "window_id": entry.window_id,
+                "key_id": entry.key_id,
+                "objects": entry.objects,
+                "prev_hash": b64url(entry.prev_hash),
+                "hash": b64url(entry.hash),
+                "signer_key_id": entry.signer_key_id,
+                "signature": b64url(entry.signature),
+            }
+        )
+    return {
+        "tenant_id": TENANT,
+        "conversation_id": CONVERSATION,
+        "signer_key_id": signer_id,
+        "signer": b64url(signer_public),
+        "entries": entries,
+    }
+
+
+def _der_sequence(*items: bytes) -> bytes:
+    return _tlv(0x30, b"".join(items))
+
+
+def timestamp_vector(head: bytes) -> dict[str, Any]:
+    """A TimeStampToken as an authority returns it, minus the signer info (spec §11.2)."""
+    sha256 = _der_sequence(_tlv(0x06, bytes.fromhex("608648016503040201")), _tlv(0x05, b""))
+    info = _der_sequence(
+        _integer(1),
+        _tlv(0x06, bytes.fromhex("2b0601040181b2310203")),
+        _der_sequence(sha256, _tlv(0x04, head)),
+        _integer(42),
+        _tlv(0x18, b"20261029120000.25Z"),
+        _der_sequence(_integer(1)),
+        _integer(0x1234_5678),
+    )
+    encapsulated = _der_sequence(
+        _tlv(0x06, bytes.fromhex("2a864886f70d0109100104")), _tlv(0xA0, _tlv(0x04, info))
+    )
+    signed_data = _der_sequence(_integer(3), _tlv(0x31, b""), encapsulated, _tlv(0x31, b""))
+    token = _der_sequence(_tlv(0x06, bytes.fromhex("2a864886f70d010702")), _tlv(0xA0, signed_data))
+    return {
+        "der": b64url(token),
+        "imprint": b64url(head),
+        "gen_time": "2026-10-29T12:00:00.250Z",
+    }
+
+
 def build_vectors() -> dict[str, Any]:
     ceremony = ceremony_vector()
     recovery = recovery_vector(ceremony)
+    chain = chain_vector()
     for private in ("_shares", "_recovery_key", "_public_shares"):
         ceremony.pop(private)
     return {
@@ -365,6 +463,8 @@ def build_vectors() -> dict[str, Any]:
         "ceremony": ceremony,
         "recovery": recovery,
         "private_key_blob": private_key_blob_vector(),
+        "chain": chain,
+        "timestamp": timestamp_vector(from_b64url(chain["entries"][-1]["hash"])),
     }
 
 

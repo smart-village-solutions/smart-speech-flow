@@ -21,6 +21,8 @@ from ..session_models import ClientType, SessionStatus
 from ..studio_recording_directory_client import StudioRecordingDirectoryClient
 from ..studio_settings import studio_base_url
 from ..studio_v2 import RecordingPolicy, RuntimeRead
+from .archive_access import ArchiveAccess
+from .archive_access_repository import PostgresArchiveAccess
 from .archive_repository import PostgresArchiveRepository
 from .archive_service import ChainStamper, ConversationArchive, stored_recorder
 from .ceremony import CeremonyService
@@ -106,11 +108,8 @@ def _connect_archive(
             return None
         client = S3Client(settings.endpoint)
         archive_repository = PostgresArchiveRepository(repository.pool)
-        spools = TenantSpools(
-            settings.spool_directory,
-            S3ArchiveStore(client, settings.credentials_for),
-            stored_recorder(archive_repository),
-        )
+        store = S3ArchiveStore(client, settings.credentials_for)
+        spools = TenantSpools(settings.spool_directory, store, stored_recorder(archive_repository))
         spools.recover()
     except (ArchiveConfigError, ValueError, OSError) as error:
         # The type only: a configuration error may quote a path or an endpoint.
@@ -129,6 +128,12 @@ def _connect_archive(
         live_sessions=functools.partial(_live_sessions, state),
     )
     state.recording_archive = archive
+    state.recording_archive_access = ArchiveAccess(
+        repository=PostgresArchiveAccess(repository.pool),
+        reader=store,
+        spools=spools,
+        secrets=secrets,
+    )
     state.recording_spools = spools
     state.recording_archive_client = client
     state.recording_stamper = ChainStamper(
@@ -296,6 +301,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
         await sessions.close()
     spools, client = dependencies.recording_spools, dependencies.recording_archive_client
     dependencies.recording_archive = None
+    dependencies.recording_archive_access = None
     dependencies.recording_spools = None
     dependencies.recording_archive_client = None
     dependencies.recording_stamper = None

@@ -99,9 +99,14 @@ _RESTORE_CONFLICTS: Final[str] = (
     "  ELSE 'locked_beyond_date' END AS reason, v.locked_until"
     " FROM version_locks v JOIN conversations c"
     " ON c.tenant_id = v.tenant_id AND c.conversation_id = v.conversation_id"
+    # A version is locked from its own upload, which for an amendment (#616) can
+    # come long after the first yes; the bucket default runs from there.
+    " JOIN stored_objects o ON o.tenant_id = v.tenant_id AND o.entry_id = v.entry_id"
+    "  AND o.object_type = v.object_type"
     " WHERE v.site = $1 AND v.deleted_at IS NULL AND c.shredded_at IS NULL AND ("
     "  v.checked_at IS NULL OR (v.held AND NOT c.legal_hold)"
-    "  OR v.locked_until > c.retention_until + $2::interval)"
+    "  OR v.locked_until > greatest(c.retention_until,"
+    "   o.stored_at + (c.retention_until - c.started_at)) + $2::interval)"
     " ORDER BY v.conversation_id"
 )
 _CLEARABLE: Final[str] = (

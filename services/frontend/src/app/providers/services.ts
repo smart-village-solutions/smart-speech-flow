@@ -25,6 +25,8 @@ import type { LoginTenantRepository } from '@/domain/login-tenant/loginTenant.re
 import { createContentRepository } from '@/domain/content/content.repository';
 import type { ContentSource } from '@/domain/content/content.port';
 import type { ArchiveCrypto, KeyVault, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
+import { createArchiveRepository } from '@/domain/archive/archive.repository';
+import type { ArchiveRepository } from '@/domain/archive/archive.repository';
 import type { CeremonyCrypto, PaperDeviceHolder } from '@/core/crypto/ceremony-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { createPaperDeviceHolder } from '@/core/crypto/paper-device-holder';
@@ -56,6 +58,7 @@ export interface Services {
   createRealtime: () => RealtimeTransport;
   recordingKeys: RecordingKeysRepository;
   recordingSession: RecordingSessionRepository;
+  archive: ArchiveRepository;
   archiveCrypto: ArchiveCrypto;
   keyVault: KeyVault;
   passphraseStrength: PassphraseStrength;
@@ -92,6 +95,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     clips: createBrowserClipLoader(http, audio),
     recordingKeys: createRecordingKeysRepository(http),
     recordingSession: createRecordingSessionRepository(http),
+    archive: createArchiveRepository(http),
     archiveCrypto: createWebArchiveCrypto(),
     // Lives as long as these services: a reload or sign-out locks the keys.
     keyVault: createKeyVault(),
