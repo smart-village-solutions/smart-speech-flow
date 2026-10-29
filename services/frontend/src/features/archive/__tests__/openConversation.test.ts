@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveCrypto, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { type Bytes, fromBuffer, toHex, utf8 } from '@/core/crypto/bytes';
 import type { CeremonyCrypto } from '@/core/crypto/ceremony-crypto.port';
+import { AppError } from '@/core/http/AppError';
 import {
   type ArchiveRepository,
   ConversationNotOpenError,
@@ -188,5 +189,40 @@ describe('openConversation', () => {
     if (result.status !== 'ready') throw new Error(result.status);
     expect(result.view.entries[0].state).toBe('ok');
     expect(d.archive.open).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails the open on a transient fetch error instead of calling an entry damaged', async () => {
+    vi.mocked(verifyConversation).mockResolvedValue({
+      ok: true,
+      keys: new Map([[IDS.key, KEY]]),
+      stamps: [],
+    });
+    const d = deps(await conversation());
+    d.archive.object = vi.fn().mockRejectedValue(new AppError('server', { status: 503 }));
+    await expect(openConversation(d, IDS.conversation, {} as UnlockedKeys)).rejects.toBeInstanceOf(
+      AppError
+    );
+    expect(d.archive.reportIntegrity).not.toHaveBeenCalled();
+  });
+
+  it('fetches a few objects at a time, not all at once', async () => {
+    vi.mocked(verifyConversation).mockResolvedValue({
+      ok: true,
+      keys: new Map([[IDS.key, KEY]]),
+      stamps: [],
+    });
+    const d = deps(await conversation());
+    const served = d.archive.object;
+    let inFlight = 0;
+    let most = 0;
+    d.archive.object = vi.fn(async (...args: Parameters<ArchiveRepository['object']>) => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return served(...args);
+    });
+    await openConversation(d, IDS.conversation, {} as UnlockedKeys);
+    expect(most).toBe(3);
   });
 });

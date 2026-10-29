@@ -298,3 +298,40 @@ async def test_integrity_reports_are_accepted_for_openable_conversations_once_a_
         ("alice", "integrity.chain", CONVERSATION),
         ("alice", "integrity.chain", CONVERSATION),
     ]
+
+
+async def test_a_re_post_before_the_upload_leaves_one_stored_version(rig):
+    """The writer's put refuses a key already written, so a re-spooled copy adds no version."""
+    service, _, store, spools, _ = rig
+    entry_id = str(uuid.uuid4())
+    data = _envelope()
+    await service.amend(TENANT, "alice", CONVERSATION, entry_id, KEY, data)
+    await service.amend(TENANT, "alice", CONVERSATION, entry_id, KEY, data)
+    assert spools.spool(TENANT).pending == 2
+
+    assert await spools.flush()
+    versions = await store.list_versions(TENANT, f"{CONVERSATION}/{entry_id}/")
+    assert len([version for version in versions if not version.is_marker]) == 1
+
+
+async def test_two_identical_posts_at_once_both_answer_the_entry(rig):
+    """The loser of the race finds the winner's entry under the lock's unique key."""
+    service, access, _, _, _ = rig
+    entry_id = str(uuid.uuid4())
+    data = _envelope()
+    winner, _ = await service.amend(TENANT, "alice", CONVERSATION, entry_id, KEY, data)
+    found = access.existing_amendment
+    calls = {"n": 0}
+
+    async def unseen_first(*args):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else await found(*args)
+
+    access.existing_amendment = unseen_first
+
+    async def raced(*args):
+        raise ArchiveAccessRefusedError("entry_exists")
+
+    access.append_amendment = raced
+    loser, created = await service.amend(TENANT, "alice", CONVERSATION, entry_id, KEY, data)
+    assert (loser, created) == (winner, False)

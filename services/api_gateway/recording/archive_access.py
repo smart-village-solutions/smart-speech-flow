@@ -230,11 +230,34 @@ class ArchiveAccess:
         try:
             entry = await self._commit(tenant_id, sub, conversation_id, entry_id, key_id, listed)
         except ArchiveAccessRefusedError as refused:
+            if refused.code == "entry_exists":
+                # Two identical posts at once: the other won the insert; answer as a re-post.
+                return await self._lost_race(
+                    tenant_id, sub, conversation_id, entry_id, listed, ciphertext
+                )
             if refused.code != "no_conversation":
                 raise ArchiveAccessError(refused.code) from None
             raise await self._not_found(tenant_id, sub, conversation_id) from None
         await self._spool(tenant_id, conversation_id, name, ciphertext)
         return entry, True
+
+    async def _lost_race(
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        entry_id: str,
+        listed: ChainObject,
+        ciphertext: bytes,
+    ) -> tuple[ChainEntry, bool]:
+        existing = await _guard(
+            self._repository.existing_amendment(
+                tenant_id, sub, conversation_id, entry_id, self._clock()
+            )
+        )
+        if existing is None:
+            raise ArchiveAccessError("entry_exists")
+        return await self._again(tenant_id, conversation_id, existing, listed, ciphertext), False
 
     async def _again(
         self,

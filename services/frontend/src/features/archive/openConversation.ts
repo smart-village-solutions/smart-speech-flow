@@ -2,6 +2,7 @@ import type { ArchiveCrypto, UnlockedKeys } from '@/core/crypto/archive-crypto.p
 import { type Bytes, fromBuffer, toHex } from '@/core/crypto/bytes';
 import type { CeremonyCrypto } from '@/core/crypto/ceremony-crypto.port';
 import { listedObjects } from '@/core/crypto/chain';
+import { AppError } from '@/core/http/AppError';
 import {
   type ArchiveRepository,
   ConversationNotOpenError,
@@ -81,28 +82,44 @@ export async function openObject(
   return deps.archiveCrypto.openObject(key, address, envelope);
 }
 
+/** A few at a time: each fetch holds one of the gateway's pooled database connections. */
+const LOAD_BATCH = 3;
+
+async function inBatches<T, R>(items: readonly T[], work: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) return [];
+  const head = await Promise.all(items.slice(0, LOAD_BATCH).map(work));
+  return [...head, ...(await inBatches(items.slice(LOAD_BATCH), work))];
+}
+
+/** Damage is what the bytes prove; a fetch that merely failed fails the open instead. */
+function loadedAfter(error: unknown): Loaded {
+  if (error instanceof ObjectNotStoredError) return 'notStored';
+  if (error instanceof ConversationNotOpenError || (error instanceof AppError && error.retryable)) {
+    throw error;
+  }
+  return 'damaged';
+}
+
 async function loadRecords(
   deps: Readonly<OpenDeps>,
   opened: OpenedConversation,
   keys: ReadonlyMap<string, CryptoKey>
 ): Promise<Map<string, Loaded>> {
   const readable = opened.entries.filter((entry) => keys.has(entry.keyId));
-  const records = await Promise.all(
-    readable.map(async (entry): Promise<[string, Loaded]> => {
-      try {
-        const data = await openObject(
-          deps,
-          opened,
-          keys,
-          entry.entryId,
-          JSON_OBJECT[entry.kind] ?? ''
-        );
-        return [entry.entryId, parseRecord(entry.kind, data)];
-      } catch (error) {
-        return [entry.entryId, error instanceof ObjectNotStoredError ? 'notStored' : 'damaged'];
-      }
-    })
-  );
+  const records = await inBatches(readable, async (entry): Promise<[string, Loaded]> => {
+    try {
+      const data = await openObject(
+        deps,
+        opened,
+        keys,
+        entry.entryId,
+        JSON_OBJECT[entry.kind] ?? ''
+      );
+      return [entry.entryId, parseRecord(entry.kind, data)];
+    } catch (error) {
+      return [entry.entryId, loadedAfter(error)];
+    }
+  });
   return new Map(records);
 }
 

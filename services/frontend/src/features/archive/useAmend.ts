@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
+import { AppError } from '@/core/http/AppError';
 import { type AmendmentPost, AmendmentNotStoredError } from '@/domain/archive/archive.repository';
 import type { OpenedConversation } from '@/domain/archive/archive.types';
 import { newAmendment } from './records';
@@ -69,8 +70,12 @@ export function useAmend(
       setUnconfirmed(null);
       onAdded();
     } catch (error) {
-      setUnconfirmed(amendment);
-      setFailure(error instanceof AmendmentNotStoredError ? 'notStored' : 'failed');
+      // A definite refusal stored nothing; only a failure that may have kept it in the chain
+      // (a failed store write, a lost answer, a server error) keeps the bytes for a retry.
+      const notStored = error instanceof AmendmentNotStoredError;
+      const maybeKept = notStored || (error instanceof AppError && error.retryable);
+      setUnconfirmed(maybeKept ? amendment : null);
+      setFailure(notStored ? 'notStored' : 'failed');
     }
   };
 

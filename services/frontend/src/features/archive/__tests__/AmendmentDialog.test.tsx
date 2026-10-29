@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAdminIdentity } from '@/app/auth/keycloak';
 import type { ArchiveCrypto } from '@/core/crypto/archive-crypto.port';
+import { AppError } from '@/core/http/AppError';
 import {
   AmendmentNotStoredError,
   type ArchiveRepository,
@@ -97,8 +98,8 @@ describe('AmendmentDialog', () => {
   it.each([
     ['a failed store write', new AmendmentNotStoredError(), text.error.notStored],
     [
-      'any other failure, since the gateway may hold the entry already',
-      new Error('timeout'),
+      'a lost answer, since the gateway may hold the entry already',
+      new AppError('network'),
       text.error.failed,
     ],
   ])('re-posts the same entry and bytes after %s', async (_case, error, message) => {
@@ -114,6 +115,23 @@ describe('AmendmentDialog', () => {
     const [first, second] = vi.mocked(archive.amend).mock.calls;
     expect(second).toEqual(first);
     expect(archiveCrypto.sealObject).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the bytes after a definite refusal, and seals anew on the next try', async () => {
+    const refusal = new AppError('validation', { status: 409, serverCode: 'KEY_NOT_USABLE' });
+    const amend = vi
+      .fn()
+      .mockRejectedValueOnce(refusal)
+      .mockResolvedValueOnce({ entryId: 'x', seq: 10 });
+    const { archive, archiveCrypto, onAdded } = render(amend);
+    await write('Korrektur');
+    expect(await screen.findByRole('alert')).toHaveTextContent(text.error.failed);
+    expect(screen.queryByRole('button', { name: text.retry })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: text.submit }));
+    await waitFor(() => expect(onAdded).toHaveBeenCalled());
+    const [first, second] = vi.mocked(archive.amend).mock.calls;
+    expect(second[1].entryId).not.toBe(first[1].entryId);
+    expect(archiveCrypto.sealObject).toHaveBeenCalledTimes(2);
   });
 
   it('posts nothing while the text is empty', async () => {
