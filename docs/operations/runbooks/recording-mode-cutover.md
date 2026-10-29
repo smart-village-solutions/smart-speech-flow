@@ -17,7 +17,8 @@ out under their own tiers, and new backups no longer contain Redis or audio.
   must exist before anything is archived (recording-keys-deployment.md,
   "Backups"), and the retention workers must exist before anything expires.
   With the variable empty, the gateway answers every recording request with
-  `ARCHIVE_UNAVAILABLE`; everything else in this cutover still applies.
+  `ARCHIVE_UNAVAILABLE`; everything else in this cutover still applies. Turn
+  recording on with Step 9 of recording-retention-deployment.md.
 - **Studio's guest explanation texts no longer offer to store conversations.**
   Until #615 they described the `ask` storage question ("up to 180 days"); with
   the question gone that wording is false. Check every guest language's

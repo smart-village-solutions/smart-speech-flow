@@ -672,3 +672,137 @@ tests:
       - eval_time: 10m
         alertname: StudioPolicyGateUnbound
         exp_alerts: []
+
+  # Recording retention (#618).
+  # A worker whose last beat was at minute 0: past 30 min at 30m01s, firing ten minutes on.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 41m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: A retention worker has stopped finishing its passes.
+              description: "The primary archive site's retention worker has not finished a pass for over thirty minutes, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+  # Still pending ten minutes after the last beat; and a worker beating every pass never fires.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+60x90"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_failing_seconds{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "86401+60x60"
+    alert_rule_test:
+      - eval_time: 31m
+        alertname: RecordingRetentionWorkerFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: A retention step has been failing or overdue for over a day.
+              description: "A retention step on the primary archive site has failed, or waited, for over a day: a version's lock, hold or deletion, or a whole tenant's pass, is behind. The worker's log names the failure's type. Usually the site's S3 API, its retention credential or a tenant without a bucket: check them. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+  # Exactly a day is not over a day.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_failing_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "86400+0x60"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: RecordingRetentionWorkerFailing
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_halted{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: RecordingRetentionWorkerHalted
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: A retention worker holds deletions back after a database restore.
+              description: "The primary archive site's retention worker found ssf_recording behind the audit position it last saw, as after a restore from a dump. It lifts no hold and deletes nothing until an operator works through the restore procedure and runs acknowledge-restore. See docs/operations/runbooks/recording-retention-deployment.md, 'After restoring ssf_recording'."
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_halted{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: RecordingRetentionWorkerHalted
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_hold_mismatches{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "2+0x90"
+    alert_rule_test:
+      - eval_time: 61m
+        alertname: RecordingRetentionHoldMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: Archive versions are held without a legal hold.
+              description: "2 versions on the primary archive site are held although no legal hold applies, and no hold_off decision later than the hold exists to lift them. After a restore, have a supervisor lift the hold again; otherwise check the audit log for the conversation's decisions. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_hold_mismatches{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x90"
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: RecordingRetentionHoldMismatch
+        exp_alerts: []
+
+  # Under an hour of mismatch is not yet worth a warning.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_hold_mismatches{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "1+0x90"
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: RecordingRetentionHoldMismatch
+        exp_alerts: []

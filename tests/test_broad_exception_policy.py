@@ -94,6 +94,12 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/recording/archive_service.py", "ChainStamper._stamp"): ["fallback"],
     # the stamping loop survives any one pass
     ("services/api_gateway/recording/wiring.py", "recording_stamp_task"): ["boundary"],
+    # the retention status loop survives any one read; the gauges keep their last values
+    ("services/api_gateway/recording/wiring.py", "recording_retention_status_task"): ["boundary"],
+    # the retention worker's loop survives any one pass; the next one retries it
+    ("services/api_gateway/recording/retention/worker.py", "RetentionWorker.run_forever"): [
+        "boundary"
+    ],
     # the recorder's callback failed: the item stays in the spool and is retried
     ("services/api_gateway/recording/storage/spool.py", "ArchiveUploader.flush"): ["boundary"],
     # a daemon-thread target hands its failure back to the loop

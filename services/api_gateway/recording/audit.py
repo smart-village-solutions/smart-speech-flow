@@ -19,6 +19,8 @@ from .crypto.encoding import enc
 GENESIS: Final[bytes] = bytes(32)
 # The actor of what the guest did: guests have no identity of their own.
 GUEST_ACTOR: Final[str] = "guest"
+# The actor of expiry: the primary site's retention worker (#618).
+RETENTION_ACTOR: Final[str] = "retention-worker"
 
 
 @dataclass(frozen=True)

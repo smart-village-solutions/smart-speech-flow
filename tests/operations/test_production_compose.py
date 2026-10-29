@@ -358,3 +358,14 @@ def test_no_compose_file_sets_a_global_content_retention():
         environment = _environment_by_name(load_compose(path)["services"]["api_gateway"])
         assert "SSF_CONTENT_RETENTION_HOURS" not in environment, path
         assert "AUDIO_RETENTION_HOURS" not in environment, path
+
+
+def test_the_recording_database_is_published_on_loopback_unless_the_link_is_set():
+    """The archive VMs' retention workers reach ssf_recording over the link (#618).
+
+    Only the retention runbook sets SSF_RECORDING_DB_PUBLISH, to the gateway
+    host's link address behind a firewall rule; until then nothing outside the
+    host can reach the database.
+    """
+    database = load_production_compose()["services"]["ssf-postgres"]
+    assert database["ports"] == ["${SSF_RECORDING_DB_PUBLISH:-127.0.0.1:55432}:5432"]

@@ -516,6 +516,52 @@ groups:
           summary: Studio display content is being served stale or not at all.
           description: "The {{ $labels.endpoint }} content route has answered from old content or without content, and never from a fresh Studio read, for twenty minutes. Users see the last known Studio texts, or the bundled texts and the bundled feedback form where none are held. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token; StudioPolicyReadsFailing fires as well when policy reads fail too. A code of tenant_suspended, ssf_plugin_inactive or ssf_tenant_not_ready in the gateway's 'Studio content read failed' log line means Studio switched that tenant off on purpose."
 
+  # Recording retention (#618). The workers run on the archive VMs, which
+  # Prometheus does not scrape; the gateway exports their heartbeat rows.
+  # The last beat is a timestamp, so its age grows here even while the
+  # gateway cannot read the rows.
+  - name: ssf-recording-retention
+    rules:
+      - alert: RecordingRetentionWorkerSilent
+        expr: time() - ssf_retention_worker_last_beat_timestamp_seconds > 1800
+        for: 10m
+        labels:
+          severity: critical
+          component: recording
+        annotations:
+          summary: A retention worker has stopped finishing its passes.
+          description: "The {{ $labels.site }} archive site's retention worker has not finished a pass for over thirty minutes, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+      - alert: RecordingRetentionWorkerFailing
+        expr: ssf_retention_worker_failing_seconds > 86400
+        for: 30m
+        labels:
+          severity: warning
+          component: recording
+        annotations:
+          summary: A retention step has been failing or overdue for over a day.
+          description: "A retention step on the {{ $labels.site }} archive site has failed, or waited, for over a day: a version's lock, hold or deletion, or a whole tenant's pass, is behind. The worker's log names the failure's type. Usually the site's S3 API, its retention credential or a tenant without a bucket: check them. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+      - alert: RecordingRetentionWorkerHalted
+        expr: ssf_retention_worker_halted == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: recording
+        annotations:
+          summary: A retention worker holds deletions back after a database restore.
+          description: "The {{ $labels.site }} archive site's retention worker found ssf_recording behind the audit position it last saw, as after a restore from a dump. It lifts no hold and deletes nothing until an operator works through the restore procedure and runs acknowledge-restore. See docs/operations/runbooks/recording-retention-deployment.md, 'After restoring ssf_recording'."
+
+      - alert: RecordingRetentionHoldMismatch
+        expr: ssf_retention_hold_mismatches > 0
+        for: 1h
+        labels:
+          severity: warning
+          component: recording
+        annotations:
+          summary: Archive versions are held without a legal hold.
+          description: "{{ $value }} versions on the {{ $labels.site }} archive site are held although no legal hold applies, and no hold_off decision later than the hold exists to lift them. After a restore, have a supervisor lift the hold again; otherwise check the audit log for the conversation's decisions. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
   # Quality telemetry is optional and must never page: a dead collector or a
   # dead ClickHouse cannot affect translation, sessions or WebSocket delivery.
   # Everything here is a warning by design. Metric names were read from a

@@ -16,8 +16,19 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci-tests.yml").read_text()
+# The job starts its database through this script, which writes the DSNs.
+DATABASE_SCRIPT = "scripts/ci/start-recording-postgres.sh"
+STARTUP = (ROOT / DATABASE_SCRIPT).read_text()
 INTEGRATION_TESTS = sorted(
-    path.name for path in (ROOT / "tests" / "integration").glob("test_feedback_*.py")
+    {
+        path.name
+        for pattern in (
+            "test_feedback_*.py",
+            "test_recording_*database.py",
+            "test_recording_retention_*.py",
+        )
+        for path in (ROOT / "tests" / "integration").glob(pattern)
+    }
 )
 
 
@@ -33,6 +44,10 @@ def test_each_feedback_integration_test_is_named_in_the_workflow(name: str) -> N
     ), f"{name} is never run by CI; add it to the feedback-database job"
 
 
+def test_the_job_starts_its_database_through_the_script() -> None:
+    assert f"run: {DATABASE_SCRIPT}" in WORKFLOW
+
+
 @pytest.mark.parametrize(
     "variable",
     [
@@ -40,17 +55,30 @@ def test_each_feedback_integration_test_is_named_in_the_workflow(name: str) -> N
         "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL",
         "SSF_FEEDBACK_READER_DATABASE_URL",
         "SSF_FEEDBACK_OWNER_DATABASE_URL",
+        "SSF_RECORDING_DATABASE_URL",
+        "SSF_RECORDING_OWNER_DATABASE_URL",
+        "SSF_RECORDING_RETENTION_DATABASE_URL",
+        "SSF_RECORDING_REPLICA_DATABASE_URL",
     ],
 )
 def test_the_job_supplies_every_role_dsn(variable: str) -> None:
     """An absent DSN skips its tests rather than failing them."""
-    assert f"{variable}:" in WORKFLOW
+    assert f'echo "{variable}=' in STARTUP
 
 
 @pytest.mark.parametrize(
     "migration",
-    ["001_feedback", "002_feedback_roles", "003_feedback_reader", "004_feedback_dynamic"],
+    [
+        "migrations/001_feedback",
+        "migrations/002_feedback_roles",
+        "migrations/003_feedback_reader",
+        "migrations/004_feedback_dynamic",
+        "recording/migrations/001_recording_keys",
+        "recording/migrations/002_recovery_ceremony",
+        "recording/migrations/003_recording_archive",
+        "recording/migrations/004_recording_retention",
+    ],
 )
 def test_the_job_checks_each_migration_applied(migration: str) -> None:
     """The roles these tests exercise only exist if their migration ran."""
-    assert f"{migration}.sql" in WORKFLOW
+    assert f"{migration}.sql" in STARTUP

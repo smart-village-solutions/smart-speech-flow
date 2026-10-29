@@ -31,6 +31,29 @@ conversation leaves nothing behind, so Redis keeps nothing on disk and audio
 lives on a tmpfs (#615). Recorded conversations are archived, encrypted, in
 the recording archive, whose database dump and replica are separate.
 
+### 2. Recording Database (Daily, 14 days)
+
+`ssf_recording` holds the key wraps that make each recorded conversation
+readable. Expiry deletes them on the retention date, so no backup may keep
+them much longer: `scripts/backup-recording.sh` dumps the database daily into
+`backups/recording/`, and every run first deletes each dump there older than
+14 days, whether or not its own dump succeeds. It is never part of the daily,
+weekly or monthly tiers. Dumps taken before a migration and copies staged for a
+restore go into the same directory, so the same rule removes them.
+
+```cron
+15 2 * * * /root/projects/ssf-backend/scripts/backup-recording.sh >> /var/log/ssf-backup-recording.log 2>&1
+```
+
+- **Restore** with the procedure in
+  `docs/operations/runbooks/recording-retention-deployment.md`, "After
+  restoring `ssf_recording`": the retention workers hold destructive steps back
+  until the erasures and decisions made since the dump are repeated.
+- **Backups stay on the host.** Losing the host loses every key wrap, and with
+  it every recorded conversation; this risk was accepted on 2026-10-28.
+- The archive's ciphertext has its own copy, the off-site replica
+  (`archive-storage-deployment.md`).
+
 ### 3. ClickHouse Analytics Data (Before Upgrade and Schema Changes)
 - Logical, compressed exports of approved analytics tables only
 - Restore verification into a temporary database before any production restore

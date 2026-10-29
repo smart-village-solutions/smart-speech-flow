@@ -123,6 +123,26 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "Quality telemetry events by outcome",
         frozenset({"outcome"}),
     ),
+    "ssf_retention_hold_mismatches": (
+        "gauge",
+        "Versions held on a site although no hold applies, awaiting a hold_off decision",
+        frozenset({"site"}),
+    ),
+    "ssf_retention_worker_failing_seconds": (
+        "gauge",
+        "How long the oldest overdue or failing retention step on each site has waited",
+        frozenset({"site"}),
+    ),
+    "ssf_retention_worker_halted": (
+        "gauge",
+        "1 while a site's worker holds destructive steps back after a database restore",
+        frozenset({"site"}),
+    ),
+    "ssf_retention_worker_last_beat_timestamp_seconds": (
+        "gauge",
+        "When each site's retention worker last finished a pass",
+        frozenset({"site"}),
+    ),
     "ssf_studio_content_fetch_total": (
         "counter",
         "Content route answers, by route and by where their content came from",

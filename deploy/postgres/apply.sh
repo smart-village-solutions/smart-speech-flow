@@ -53,6 +53,8 @@ SQL
              --set ON_ERROR_STOP=1 \
              --set database="$recording_db" \
              --set app_password="$SSF_RECORDING_APP_PASSWORD" \
+             --set retention_password="${SSF_RECORDING_RETENTION_PASSWORD:-}" \
+             --set replica_password="${SSF_RECORDING_REPLICA_PASSWORD:-}" \
              --file "$migration"
     done
 else

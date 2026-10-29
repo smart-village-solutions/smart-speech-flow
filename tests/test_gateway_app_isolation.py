@@ -47,7 +47,7 @@ CONTAINER_BUILT = (
     "recording_state_store",
 )
 # Built once per app by create_app(), so every lifespan of that app reuses it.
-APP_BUILT = ("prometheus_registry",)
+APP_BUILT = ("prometheus_registry", "retention_worker_metrics")
 # Values read from the environment, not collaborators.
 SETTINGS = ("guest_grace_window",)
 # None without a feedback database, as tests/gateway_contract/test_contract_lifespan.py pins.
@@ -65,6 +65,7 @@ RECORDING = (
     "recording_secrets",
     "recording_keys",
     "recording_ceremony",
+    "recording_retention",
     "recording_sessions",
     # ...and without an archive store (#615).
     "recording_archive",
