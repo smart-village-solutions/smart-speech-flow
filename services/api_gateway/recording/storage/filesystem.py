@@ -22,6 +22,7 @@ from .archive import (
     ArchiveNotFoundError,
     ArchiveRefusedError,
     StoredVersion,
+    VersionEntry,
     VersionRetention,
     bucket_for,
 )
@@ -124,3 +125,13 @@ class FilesystemArchiveStore:
         directory = self._key_dir(tenant_id, key)
         (directory / f"{version_id}.bin").unlink()
         self._meta_path(tenant_id, key, version_id).unlink()
+
+    async def list_versions(self, tenant_id: str, prefix: str) -> list[VersionEntry]:
+        bucket = self._root / bucket_for(tenant_id)
+        # Each key is a directory of `<version>.json` files; keys themselves may end in .json.
+        found = (
+            VersionEntry(meta.parent.relative_to(bucket).as_posix(), meta.stem)
+            for meta in bucket.rglob("*.json")
+            if meta.is_file()
+        )
+        return sorted(entry for entry in found if entry.key.startswith(prefix))

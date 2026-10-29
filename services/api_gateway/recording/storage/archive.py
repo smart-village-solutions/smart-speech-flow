@@ -62,6 +62,14 @@ class StoredVersion:
     sha256: str  # hex of the bytes as stored, recorded when they were put
 
 
+@dataclass(frozen=True, order=True)
+class VersionEntry:
+    key: str
+    version_id: str
+    # A delete marker hides nothing a version ID reads, but keeps the prefix non-empty.
+    is_marker: bool = False
+
+
 @dataclass(frozen=True)
 class VersionRetention:
     mode: str | None
@@ -106,4 +114,8 @@ class ArchiveRetention(Protocol):
 
     async def delete_version(self, tenant_id: str, key: str, version_id: str) -> None:
         """Refused while the version is locked or held."""
+        ...
+
+    async def list_versions(self, tenant_id: str, prefix: str) -> list[VersionEntry]:
+        """Every version and delete marker under prefix, all pages."""
         ...

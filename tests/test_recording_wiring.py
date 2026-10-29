@@ -32,6 +32,7 @@ def _state() -> SimpleNamespace:
         recording_repository=None,
         recording_secrets=None,
         recording_ceremony=None,
+        recording_retention=None,
         studio_token_provider=None,
         studio_runtime_flow=None,
         recording_state_store=MemoryRecordingStateStore(),
@@ -122,6 +123,7 @@ async def test_a_connected_gateway_registers_its_signing_key(secrets_on_disk, mo
     assert await wiring.connect_recording(state, DSN) is True
     assert state.recording_keys is not None
     assert state.recording_ceremony is not None
+    assert state.recording_retention is not None
     assert repository.registered == [state.recording_secrets.signing_key_id]
     sessions = state.recording_sessions
     assert sessions is not None
@@ -129,6 +131,7 @@ async def test_a_connected_gateway_registers_its_signing_key(secrets_on_disk, mo
     assert state.session_manager.recording is sessions
     await wiring.close_recording(state)
     assert state.recording_sessions is None
+    assert state.recording_retention is None
     assert state.websocket_manager.recording is None
     assert state.session_manager.recording is None
 

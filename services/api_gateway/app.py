@@ -47,6 +47,7 @@ from .recording.wiring import (
     connect_recording,
     recording_connect_task,
     recording_dsn,
+    recording_retention_status_task,
     recording_stamp_task,
     recording_tick_task,
 )
@@ -174,6 +175,7 @@ def _build_dependencies(
         polling_messages_dropped=metrics.polling_messages_dropped,
         websocket_metrics=metrics.websocket,
         audio_storage_metrics=metrics.audio_storage,
+        retention_worker_metrics=metrics.retention_workers,
         translation_refiner=pipeline.refiner,
         pipeline_admission=pipeline.admission,
         quality_telemetry=pipeline.quality_telemetry,
@@ -315,6 +317,7 @@ def _start_background_tasks(
         asyncio.create_task(recording_connect_task(dependencies, recording_dsn())),
         asyncio.create_task(recording_tick_task(dependencies)),
         asyncio.create_task(recording_stamp_task(dependencies)),
+        asyncio.create_task(recording_retention_status_task(dependencies)),
     ]
 
 
@@ -536,6 +539,7 @@ from .routes import (
     login,
     recording,
     recording_ceremony,
+    recording_retention,
     recording_session,
     session,
 )
@@ -563,6 +567,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(recording.router)
     app.include_router(recording_ceremony.router)
     app.include_router(recording_session.router)
+    app.include_router(recording_retention.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)

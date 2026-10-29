@@ -69,7 +69,9 @@ SSF_RECORDING_SECRETS_DIR=/etc/ssf/recording-secrets
 ## Step 3 — Create the database on the existing volume
 
 The init scripts run only on a fresh volume, so `apply.sh` is run by hand. First
-take the same safety dump as for any migration:
+take the same safety dump as for any migration. It holds the feedback database,
+not `ssf_recording`; dumps of `ssf_recording` go to `backups/recording/` only,
+where they are pruned at 14 days (recording-retention-deployment.md, Step 7):
 
 ```bash
 production_compose exec -T ssf-postgres sh -ec \
@@ -230,11 +232,11 @@ archived: `DROP DATABASE ssf_recording` as the owner, then
 
 ## Backups
 
-`backup-production.sh` does not dump `ssf_recording` yet. Its own dump with a
-14-day retention arrives with #618, and it must exist before #615 archives
-anything. Until then the database holds key enrolments, recovery keys and their
-audit trail. If it is lost, staff enrol again and every tenant repeats its
-ceremony; nothing has been archived under the old keys yet.
+`backup-production.sh` never dumps `ssf_recording`: its tiers keep copies for
+up to twelve months, longer than a shredded conversation may survive in any
+backup. `scripts/backup-recording.sh` dumps it daily into `backups/recording/`
+and deletes dumps older than 14 days (recording-retention-deployment.md,
+Step 7). It must run before anything is archived.
 
 ## Known limits
 

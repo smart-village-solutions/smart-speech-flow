@@ -244,3 +244,50 @@ async def test_the_transport_never_follows_a_redirect():
         finally:
             await client.close()
     assert refused.value.code == "status_307"
+
+
+def _listing(entries: str, *, truncated: bool, markers: str = "") -> S3Response:
+    return _ok(
+        body=(
+            "<ListVersionsResult><Name>b</Name><Prefix>c/</Prefix>"
+            f"<IsTruncated>{'true' if truncated else 'false'}</IsTruncated>{markers}{entries}"
+            "</ListVersionsResult>"
+        ).encode()
+    )
+
+
+async def test_versions_and_delete_markers_are_listed_across_pages():
+    transport = RecordingTransport(
+        _listing(
+            "<Version><Key>c/e/record.json</Key><VersionId>v1</VersionId>"
+            "<IsLatest>false</IsLatest></Version>"
+            "<DeleteMarker><IsLatest>true</IsLatest><Key>c/e/record.json</Key>"
+            "<VersionId>m1</VersionId></DeleteMarker>",
+            truncated=True,
+            markers="<NextKeyMarker>c/e/record.json</NextKeyMarker>"
+            "<NextVersionIdMarker>m1</NextVersionIdMarker>",
+        ),
+        _listing(
+            "<Version><Key>c/e/original.wav</Key><VersionId>v2</VersionId></Version>",
+            truncated=False,
+        ),
+    )
+
+    listed = await _store(transport).list_versions(TENANT, "c/")
+
+    assert [(e.key, e.version_id, e.is_marker) for e in listed] == [
+        ("c/e/record.json", "v1", False),
+        ("c/e/record.json", "m1", True),
+        ("c/e/original.wav", "v2", False),
+    ]
+    first, second = (sent[1] for sent in transport.sent)
+    assert first.startswith(f"{ENDPOINT}/{bucket_for(TENANT)}?")
+    assert "versions=" in first and "prefix=c%2F" in first
+    assert "key-marker=c%2Fe%2Frecord.json" in second and "version-id-marker=m1" in second
+
+
+async def test_a_truncated_listing_without_a_marker_fails_instead_of_looping():
+    transport = RecordingTransport(_listing("", truncated=True))
+    with pytest.raises(ArchiveUnavailableError):
+        await _store(transport).list_versions(TENANT, "")
+    assert len(transport.sent) == 1

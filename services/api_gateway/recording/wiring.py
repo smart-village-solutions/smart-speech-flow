@@ -27,6 +27,8 @@ from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
+from .retention.decisions_repository import PostgresRetentionDecisions
+from .retention.metrics import SITES as RETENTION_SITES
 from .secrets import MissingRecordingSecrets, RecordingSecrets
 from .session_service import TICK_SECONDS, RecordingSessions
 from .storage.s3 import S3ArchiveStore, S3Client
@@ -39,6 +41,7 @@ RECORDING_PASSWORD_ENV: Final[str] = "SSF_RECORDING_DATABASE_PASSWORD"
 RECORDING_CONNECT_RETRY_SECONDS: Final[int] = 5
 RECORDING_CONNECT_RETRY_CEILING_SECONDS: Final[int] = 60
 STAMP_INTERVAL_SECONDS: Final[float] = 30.0
+RETENTION_STATUS_INTERVAL_SECONDS: Final[float] = 60.0
 
 
 def recording_dsn() -> str:
@@ -192,6 +195,27 @@ async def recording_stamp_task(state: Any) -> None:
             sys.stderr.write(f"Recording stamping failed ({type(error).__name__})\n")
 
 
+async def recording_retention_status_task(state: Any) -> None:
+    """Export the archive sites' retention heartbeats; a failed read keeps the last values.
+
+    With an archive, recording can store, so both sites' workers must run
+    (recording-retention-deployment.md): a site without a heartbeat counts as silent.
+    """
+    while True:
+        await asyncio.sleep(RETENTION_STATUS_INTERVAL_SECONDS)
+        if state.recording_retention is None:
+            continue
+        expected = RETENTION_SITES if state.recording_archive is not None else ()
+        try:
+            statuses = await state.recording_retention.worker_statuses()
+            state.retention_worker_metrics.update(statuses, expected)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            state.retention_worker_metrics.expect(expected)
+            sys.stderr.write(f"Retention status read failed ({type(error).__name__})\n")
+
+
 async def stamp_once(state: Any) -> None:
     archive, stamper = state.recording_archive, state.recording_stamper
     await archive.retry_pending_ends()
@@ -235,6 +259,7 @@ async def connect_recording(state: Any, dsn: str) -> bool:
     state.recording_ceremony = CeremonyService(
         repository=repository, directory=_custodian_directory(state), secrets=secrets
     )
+    state.recording_retention = PostgresRetentionDecisions(repository.pool)
     archive = _connect_archive(state, repository, secrets)
     _attach_sessions(state, _recording_sessions(state, repository, archive))
     sys.stderr.write("Recording keys ready\n")
@@ -263,6 +288,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_repository = None
     dependencies.recording_keys = None
     dependencies.recording_ceremony = None
+    dependencies.recording_retention = None
     dependencies.recording_secrets = None
     sessions = dependencies.recording_sessions
     _attach_sessions(dependencies, None)

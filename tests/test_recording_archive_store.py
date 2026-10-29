@@ -113,3 +113,29 @@ async def test_tenants_have_separate_buckets(world):
     with pytest.raises(ArchiveNotFoundError):
         await store.get("tenant-other", KEY, stored.version_id)
     assert other.version_id != stored.version_id
+
+
+async def test_versions_are_listed_by_prefix_until_deleted(world):
+    store, clock = world
+    other = "2f8e4d3c-1a0b-4f9e-b8c7-6b5a4f3e2d1c"
+    first = await store.put(TENANT, KEY, b"a")
+    second = await store.put(TENANT, object_key(CONVERSATION, ENTRY, "original.wav"), b"b")
+    third = await store.put(TENANT, object_key(other, ENTRY, "record.json"), b"c")
+
+    listed = await store.list_versions(TENANT, f"{CONVERSATION}/")
+    everything = await store.list_versions(TENANT, "")
+
+    assert {(entry.key, entry.version_id) for entry in listed} == {
+        (KEY, first.version_id),
+        (object_key(CONVERSATION, ENTRY, "original.wav"), second.version_id),
+    }
+    assert {entry.version_id for entry in everything} == {
+        first.version_id,
+        second.version_id,
+        third.version_id,
+    }
+    assert not any(entry.is_marker for entry in everything)
+    clock.now = START + timedelta(days=4)
+    await store.delete_version(TENANT, KEY, first.version_id)
+    assert first.version_id not in {e.version_id for e in await store.list_versions(TENANT, "")}
+    assert await store.list_versions("tenant-without-bucket", "") == []

@@ -31,7 +31,7 @@ differs should stop the rollout rather than be repeated.
   | Identity | Held by | May |
   |---|---|---|
   | `admin` | the operator, typed in for one command at a time | create buckets, set their default retention |
-  | `retention` | the retention worker (#618), one per site | read and extend retention, set legal holds, list and delete versions whose lock has lapsed |
+  | `retention` | each site's own retention worker (#618), from `/etc/ssf-archive/retention/` on that VM | read and extend retention, set legal holds, list and delete versions whose lock has lapsed |
   | `writer-<tenant_ref>` | the gateway, one per tenant | put and read objects, list, and read the lock configuration, in that tenant's bucket only |
 
   `retention` and the writers are confined by policies that name each S3
@@ -76,16 +76,20 @@ Copy `deploy/archive-storage/` from this repository to both VMs, for example to
 
 **Firewall.** Docker publishes ports through its own NAT rules, which
 ufw and firewalld do not see. Restrict them in the `DOCKER-USER` chain, and make
-the rules persistent the way the host keeps its others:
+the rules persistent the way the host keeps its others. Each rule names the
+interface the traffic arrives on (below `eth0` for the private network and
+`wg0` for the link; use the VM's real names): a host that filters bridged
+traffic would otherwise also drop the retention worker's own connections to
+`seaweedfs:8333` (recording-retention-deployment.md).
 
 ```bash
 # On the archive VM: S3 from the gateway host only, the filer from the replica only.
-sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 8333 --ctdir ORIGINAL ! -s <gateway host address> -j DROP
-sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 8888 --ctdir ORIGINAL ! -s 10.8.0.2 -j DROP
-sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 18888 --ctdir ORIGINAL ! -s 10.8.0.2 -j DROP
+sudo iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 8333 --ctdir ORIGINAL ! -s <gateway host address> -j DROP
+sudo iptables -I DOCKER-USER -i wg0 -p tcp -m conntrack --ctorigdstport 8888 --ctdir ORIGINAL ! -s 10.8.0.2 -j DROP
+sudo iptables -I DOCKER-USER -i wg0 -p tcp -m conntrack --ctorigdstport 18888 --ctdir ORIGINAL ! -s 10.8.0.2 -j DROP
 
 # On the replica VM: S3 from the address restores are run from only.
-sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 8333 --ctdir ORIGINAL ! -s <restore host address> -j DROP
+sudo iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 8333 --ctdir ORIGINAL ! -s <restore host address> -j DROP
 ```
 
 ## Step 2 — Configuration on each VM
@@ -106,12 +110,14 @@ and fill both keys with `openssl rand -hex 32`. Each VM gets its own.
 **Identities.** Copy `s3.example.json` to `/etc/ssf-archive/seaweedfs/s3.json`.
 Replace each `REPLACE` with a fresh value: access keys with
 `openssl rand -hex 10`, secret keys with `openssl rand -base64 30`. Store each
-VM's admin pair in the operator's password manager, and its retention pair for
-#618. None of them goes onto the gateway host.
+VM's admin pair and its retention pair in the operator's password manager. The
+retention pair also goes to that VM's own retention worker
+(recording-retention-deployment.md, Step 5). None of them goes onto the gateway
+host.
 
 ```bash
-sudo chown 1000:1000 /etc/ssf-archive/seaweedfs/*
-sudo chmod 0400 /etc/ssf-archive/seaweedfs/*
+# In a root shell: an unprivileged one cannot expand the glob under /etc/ssf-archive.
+sudo sh -c 'chown 1000:1000 /etc/ssf-archive/seaweedfs/* && chmod 0400 /etc/ssf-archive/seaweedfs/*'
 ```
 
 **Addresses.** On the archive VM, `/etc/ssf-archive/archive.env`:
@@ -129,7 +135,7 @@ SSF_ARCHIVE_PRIMARY_FILER=10.8.0.1:8888
 ```
 
 ```bash
-sudo chmod 0600 /etc/ssf-archive/*.env
+sudo sh -c 'chmod 0600 /etc/ssf-archive/*.env'
 ```
 
 ## Step 3 — Start and verify the primary

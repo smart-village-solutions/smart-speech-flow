@@ -8,6 +8,7 @@
 # unsigned writes.
 #
 #   archive_compose up -d                     (defined in the runbook)
+#   archive_compose --profile retention up -d retention   (recording-retention-deployment.md)
 #
 # SSF_ARCHIVE_CONFIG_DIR exists for a local check of this file; on the VM the
 # configuration lives in /etc/ssf-archive.
@@ -29,5 +30,28 @@ services:
       - ${SSF_ARCHIVE_CONFIG_DIR:-/etc/ssf-archive}/seaweedfs:/etc/seaweedfs:ro
     restart: unless-stopped
 
+  # The retention worker (#618), from the gateway image. It holds this site's
+  # retention pair only and reaches ssf_recording over the link; the profile
+  # keeps it off until the retention runbook turns it on.
+  retention:
+    profiles: [retention]
+    image: ${SSF_RETENTION_IMAGE:-ssf-retention-image-unset}
+    command: ["python", "-m", "services.api_gateway.recording.retention", "run"]
+    read_only: true
+    depends_on:
+      - seaweedfs
+    environment:
+      SSF_RETENTION_SITE: primary
+      SSF_RETENTION_ENDPOINT: http://seaweedfs:8333
+      SSF_RETENTION_DATABASE_URL: ${SSF_RETENTION_DATABASE_URL:-}
+    volumes:
+      - /etc/ssf-archive/retention:/run/secrets/ssf-retention:ro
+      - retention-state:/var/lib/ssf-retention
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
 volumes:
   seaweedfs-data:
+  # The worker's audit high-water mark, last sweep and erasure log.
+  retention-state:

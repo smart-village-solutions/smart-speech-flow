@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .pipeline_logic import SpeechPipeline
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
+    from .recording.retention.metrics import RetentionWorkerMetrics
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -89,6 +90,8 @@ class GatewayDependencies:
     recording_secrets: Any = None
     recording_keys: Any = None
     recording_ceremony: Any = None
+    # Supervisors' retention decisions (#618).
+    recording_retention: Any = None
     # Where each conversation's recording state lives; always built, used once wired.
     recording_state_store: Any = None
     recording_sessions: Any = None
@@ -97,6 +100,8 @@ class GatewayDependencies:
     recording_spools: Any = None
     recording_archive_client: Any = None
     recording_stamper: Any = None
+    # The archive sites' retention workers, as the gateway exports them (#618).
+    retention_worker_metrics: Any = None
 
 
 def build_gateway_dependencies(
@@ -115,6 +120,7 @@ def build_gateway_dependencies(
     quality_telemetry_exporter: Any = None,
     audio_store: AudioStore | None = None,
     audio_storage_metrics: AudioStorageMetrics | None = None,
+    retention_worker_metrics: RetentionWorkerMetrics | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -133,7 +139,7 @@ def build_gateway_dependencies(
     Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
     it is set when this runs, counting into `audio_storage_metrics`. The app's
     series (`polling_messages_dropped`, `websocket_metrics`,
-    `audio_storage_metrics`) come from create_app(); without them this
+    `audio_storage_metrics`, `retention_worker_metrics`) come from create_app(); without them this
     container counts into a registry of its own that no /metrics serves.
     """
     # Imported here: every module below imports its provider from this one.
@@ -151,6 +157,7 @@ def build_gateway_dependencies(
         RealtimeTicketStore,
         RedisRealtimeTicketBackend,
     )
+    from .recording.retention.metrics import RetentionWorkerMetrics
     from .recording.session_store import MemoryRecordingStateStore, RedisRecordingStateStore
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
@@ -240,6 +247,9 @@ def build_gateway_dependencies(
             RedisRecordingStateStore(redis, namespace=redis_namespace)
             if redis is not None
             else MemoryRecordingStateStore()
+        ),
+        retention_worker_metrics=(
+            retention_worker_metrics or RetentionWorkerMetrics(CollectorRegistry())
         ),
     )
 

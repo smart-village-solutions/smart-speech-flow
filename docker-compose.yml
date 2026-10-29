@@ -405,6 +405,9 @@ services:
       SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
       # Optional: apply.sh creates the ssf_recording database only when set.
       SSF_RECORDING_APP_PASSWORD: ${SSF_RECORDING_APP_PASSWORD:-}
+      # Optional: the retention workers' roles (#618) log in only once these are set.
+      SSF_RECORDING_RETENTION_PASSWORD: ${SSF_RECORDING_RETENTION_PASSWORD:-}
+      SSF_RECORDING_REPLICA_PASSWORD: ${SSF_RECORDING_REPLICA_PASSWORD:-}
     volumes:
       - ssf-postgres-data:/var/lib/postgresql/data
       # The entrypoint ignores subdirectories, so the migrations live in one

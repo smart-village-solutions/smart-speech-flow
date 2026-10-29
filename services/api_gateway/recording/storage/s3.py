@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from .archive import (
     ArchiveRefusedError,
     ArchiveUnavailableError,
     StoredVersion,
+    VersionEntry,
     VersionRetention,
     bucket_for,
 )
@@ -37,6 +39,8 @@ _MODE = re.compile(rb"<Mode>(GOVERNANCE|COMPLIANCE)</Mode>")
 _UNTIL = re.compile(rb"<RetainUntilDate>([0-9T:.\-+Z]{10,40})</RetainUntilDate>")
 _HOLD = re.compile(rb"<Status>(ON|OFF)</Status>")
 _DAYS = re.compile(rb"<Days>([0-9]{1,6})</Days>")
+_TRUNCATED: Final[bytes] = b"<IsTruncated>true</IsTruncated>"
+_LISTED: Final[tuple[tuple[bytes, bool], ...]] = ((b"Version", False), (b"DeleteMarker", True))
 # What the store answers for a version that has no retention, or no legal hold, set.
 _NOT_SET: Final[frozenset[str]] = frozenset(
     {"NoSuchObjectLockConfiguration", "NoSuchObjectRetention", "NoSuchObjectLegalHold"}
@@ -152,6 +156,27 @@ def _checksum(body: bytes) -> str:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _element(body: bytes, name: bytes) -> str | None:
+    """The text of the first `<name>` element; found by position, not by a backtracking regex."""
+    start = body.find(b"<" + name + b">")
+    if start < 0:
+        return None
+    start += len(name) + 2
+    end = body.find(b"</" + name + b">", start)
+    return None if end < 0 else html.unescape(body[start:end].decode())
+
+
+def _entries(body: bytes) -> list[VersionEntry]:
+    found = []
+    for tag, is_marker in _LISTED:
+        for chunk in body.split(b"<" + tag + b">")[1:]:
+            item = chunk.split(b"</" + tag + b">", 1)[0]
+            key, version = _element(item, b"Key"), _element(item, b"VersionId")
+            if key is not None and version is not None:
+                found.append(VersionEntry(key, version, is_marker))
+    return found
 
 
 class S3Client:
@@ -327,6 +352,24 @@ class S3ArchiveStore:
 
     async def delete_version(self, tenant_id: str, key: str, version_id: str) -> None:
         await self._send(tenant_id, "DELETE", key, query={"versionId": version_id})
+
+    async def list_versions(self, tenant_id: str, prefix: str) -> list[VersionEntry]:
+        found: list[VersionEntry] = []
+        query = {"versions": "", "prefix": prefix, "max-keys": "1000"}
+        while True:
+            body = (await self._send(tenant_id, "GET", "", query=query)).body
+            found.extend(_entries(body))
+            if _TRUNCATED not in body:
+                return found
+            key_marker = _element(body, b"NextKeyMarker")
+            if not key_marker:
+                # Asking again without it would return the same page for ever.
+                raise ArchiveUnavailableError("truncated_without_marker")
+            query = {
+                **query,
+                "key-marker": key_marker,
+                "version-id-marker": _element(body, b"NextVersionIdMarker") or "",
+            }
 
 
 class S3ArchiveAdmin:

@@ -81,10 +81,11 @@ up() {
     admin_key=ciadmin$(random); admin_secret=$(random)
     keeper_key=ciretention$(random); keeper_secret=$(random)
     replica_key=cireplica$(random); replica_secret=$(random)
+    replica_keeper_key=cireplicaretention$(random); replica_keeper_secret=$(random)
 
     PYTHONPATH="$REPO" "$PYTHON" -m services.api_gateway.recording.storage.admin new-writer "$TENANT" > "$dir/writer.json"
     identities "$dir/primary/s3.json" "$admin_key:$admin_secret" "$keeper_key:$keeper_secret" "$dir/writer.json"
-    identities "$dir/replica/s3.json" "$replica_key:$replica_secret" "cireplicaretention$(random):$(random)"
+    identities "$dir/replica/s3.json" "$replica_key:$replica_secret" "$replica_keeper_key:$replica_keeper_secret"
     for site in primary replica; do
         printf '[jwt.signing]\nkey = "%s"\n[jwt.filer_signing]\nkey = "%s"\n' "$(random)" "$(random)" > "$dir/$site/security.toml"
     done
@@ -118,6 +119,7 @@ SSF_ARCHIVE_TEST_ADMIN=$admin_key:$admin_secret
 SSF_ARCHIVE_TEST_WRITER=$writer
 SSF_ARCHIVE_TEST_RETENTION=$keeper_key:$keeper_secret
 SSF_ARCHIVE_TEST_REPLICA_ADMIN=$replica_key:$replica_secret
+SSF_ARCHIVE_TEST_REPLICA_RETENTION=$replica_keeper_key:$replica_keeper_secret
 EOF
     echo "archive-test-stack.sh: up; source $dir/archive-test.env"
 }
