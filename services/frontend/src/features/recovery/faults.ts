@@ -21,6 +21,7 @@ const REFUSALS = new Set([
   'REQUEST_CLOSED',
   'NOT_ENOUGH_APPROVALS',
   'SCOPE_NOT_COVERED',
+  'SCOPE_TOO_LARGE',
 ]);
 
 /** The message for a step's failure: a check of ours, a known refusal, or "unavailable". */

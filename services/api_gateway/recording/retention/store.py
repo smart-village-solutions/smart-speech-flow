@@ -18,6 +18,7 @@ import asyncpg
 
 from ..audit import RETENTION_ACTOR, AuditEvent
 from ..recovery_requests_model import SYSTEM_ACTOR
+from ..recovery_requests_repository import close_request
 from ..repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
@@ -138,10 +139,6 @@ _SPENT_REQUESTS: Final[str] = (
 _LAPSED_REQUESTS: Final[str] = (
     "SELECT request_id FROM recovery_requests WHERE status = 'open' AND expires_at <= $1"
     " ORDER BY request_id FOR UPDATE"
-)
-_EXPIRE_REQUEST: Final[str] = (
-    "UPDATE recovery_requests SET status = 'expired', closed_at = $2"
-    " WHERE request_id = $1 AND status = 'open'"
 )
 # The partials first: closing a request deletes its key material (§9.5).
 _FORGET_REQUEST: Final[tuple[str, ...]] = (
@@ -504,14 +501,9 @@ class PostgresRetentionStore:
 
         async def work(connection: asyncpg.Connection) -> None:
             for row in await connection.fetch(_LAPSED_REQUESTS, now):
-                request_id = row["request_id"]
-                await connection.execute(_EXPIRE_REQUEST, request_id, now)
-                await connection.execute(_FORGET_REQUEST[0], request_id)
-                await append_audit(
-                    connection,
-                    AuditEvent(
-                        tenant_id, SYSTEM_ACTOR, "recovery.request.expired", str(request_id), now
-                    ),
+                # The one closing step the gateway's lazy expiry uses too.
+                await close_request(
+                    connection, tenant_id, str(row["request_id"]), "expired", SYSTEM_ACTOR, now
                 )
             await _forget_spent_requests(connection, tenant_id, now)
 

@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Mapping
+from typing import Protocol
 
 from ..studio_recording_directory_client import StudioRecordingDirectoryClient
 from ..studio_runtime_token import StudioTokenError
 from ..studio_v1 import StudioV1ClientError
 from .permissions import CUSTODIAN
+
+
+class NameSource(Protocol):
+    """Display names for subs, from the directory; empty when it cannot answer."""
+
+    async def names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]: ...
 
 
 class StudioCustodianDirectory:

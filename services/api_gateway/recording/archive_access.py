@@ -25,6 +25,7 @@ from .archive_access_repository import (
     OwnConversation,
 )
 from .chain import ChainEntry, ChainObject, objects_json, seal_entry
+from .directory import NameSource
 from .repository import RecordingStorageUnavailable
 from .secrets import RecordingSecrets
 from .storage.archive import ArchiveError, ArchiveNotFoundError, ArchiveWriter, object_key
@@ -117,10 +118,6 @@ class AccessRepository(Protocol):
     ) -> None: ...
 
     async def mark_incomplete(self, tenant_id: str, conversation_id: str) -> None: ...
-
-
-class NameSource(Protocol):
-    async def names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]: ...
 
 
 def _sha256(data: bytes) -> str:

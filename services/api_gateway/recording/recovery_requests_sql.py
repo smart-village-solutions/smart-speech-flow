@@ -93,6 +93,9 @@ APPROVABLE = (
     f"SELECT r.*, {CONVERSATION_COUNT} FROM recovery_requests r"
     " JOIN recovery_shares s ON s.tenant_id = r.tenant_id AND s.key_id = r.recovery_key_id"
     "  AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
+    # The same holder rule as HOLDER, so a listed request always opens.
+    " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id"
+    "  AND p.holder_index = s.holder_index AND p.kind = 'custodian'"
     " WHERE r.recovery_key_id = $1 AND r.status = 'open' AND r.expires_at > $3"
     " AND r.requester_sub <> $2"
     " AND NOT EXISTS (SELECT 1 FROM recovery_decisions d"

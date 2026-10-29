@@ -102,7 +102,7 @@ class FakeService:
     async def progress(self, tenant_id, sub, request_id, correlation_id):
         self._call("progress")
         decision = DecisionRow(1, 1, "carol", "approved", None, (), bytes(64), NOW, True)
-        return Progress(_row(), 2, (decision,), (ScopeKey(CONVERSATION, KEY),)), {"carol": "C"}
+        return Progress(_row(), 2, (decision,), (ScopeKey(CONVERSATION, KEY),), 3), {"carol": "C"}
 
     async def partials(self, tenant_id, sub, request_id):
         self._call("partials")
@@ -303,7 +303,7 @@ def test_progress_and_partials_bodies(client_for):
     client = client_for(_claims(SUPERVISE), FakeService())
     progress = client.get(f"{BASE}/requests/{REQUEST}").json()
     partials = client.get(f"{BASE}/requests/{REQUEST}/partials").json()
-    assert progress["k"] == 2
+    assert (progress["k"], progress["conversations"]) == (2, 3)
     assert progress["decisions"][0] | {"decided_at": None} == {
         "holder_index": 1,
         "attempt": 1,

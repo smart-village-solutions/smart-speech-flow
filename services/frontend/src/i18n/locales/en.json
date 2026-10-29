@@ -579,7 +579,8 @@
         "ALREADY_DECIDED": "You have already decided on this request.",
         "REQUEST_CLOSED": "This request is closed.",
         "NOT_ENOUGH_APPROVALS": "Not enough custodians have approved yet.",
-        "SCOPE_NOT_COVERED": "Not every conversation of the request was covered. Try again."
+        "SCOPE_NOT_COVERED": "Not every conversation of the request was covered. Try again.",
+        "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer."
       },
       "retry": "Try again"
     }

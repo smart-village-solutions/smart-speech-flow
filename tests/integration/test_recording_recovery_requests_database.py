@@ -504,6 +504,7 @@ async def test_storing_wraps_short_of_the_scope_or_badly_signed_stores_nothing(
 ):
     conversation, _, _ = await _ended(archive, owner)
     request, scope = await _filed(requests, owner, [conversation])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
     short = await requests.store_wraps(TENANT, "sam", request.request_id, [], 1, _always, NOW)
     unsigned = await requests.store_wraps(
@@ -527,6 +528,7 @@ async def test_storing_waits_for_a_shred_in_progress_and_then_drops_its_key(
     first, first_key, _ = await _ended(archive, owner)
     second, _, _ = await _ended(archive, owner)
     request, scope = await _filed(requests, owner, [first, second])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
     shred = owner.transaction()
     await shred.start()
     await owner.execute(
@@ -645,6 +647,7 @@ async def test_wraps_for_part_of_the_scope_store_nothing(archive, owner, request
     first, _, _ = await _ended(archive, owner)
     second, _, _ = await _ended(archive, owner)
     request, scope = await _filed(requests, owner, [first, second])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
     partial = await requests.store_wraps(
         TENANT, "sam", request.request_id, [_wrap(scope[0])], 1, _always, NOW
@@ -709,6 +712,7 @@ async def test_a_wrap_verified_wrong_halfway_stores_none(archive, owner, request
     first, _, _ = await _ended(archive, owner)
     second, _, _ = await _ended(archive, owner)
     request, scope = await _filed(requests, owner, [first, second])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
     seen: list[str] = []
 
     def second_fails(wrap) -> bool:
@@ -727,6 +731,7 @@ async def test_a_wrap_already_held_is_kept_and_not_audited_again(archive, owner,
     conversation, key_id, _ = await _ended(archive, owner)
     second_key = await _second_key(owner, conversation)
     request, scope = await _filed(requests, owner, [conversation])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
     await owner.execute(
         "INSERT INTO key_wraps (tenant_id, key_id, recipient_kind, recipient_ref, blob,"
         " creator_ref, creator_signature, granted_at) VALUES ($1, $2, 'user', 'sam', 'held',"
@@ -771,3 +776,56 @@ async def _second_key(owner, conversation) -> str:
         NOW,
     )
     return str(key_id)
+
+
+async def test_wraps_without_k_approvals_complete_nothing(archive, owner, requests):
+    """Self-made wraps would list the conversation and block every later request."""
+    conversation, _, _ = await _ended(archive, owner)
+    request, scope = await _filed(requests, owner, [conversation])
+
+    refused = await requests.store_wraps(
+        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW
+    )
+
+    assert refused == Refused("not_enough_approvals")
+    assert await owner.fetchval("SELECT status FROM recovery_requests") == "open"
+    assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref = 'sam'") == 0
+
+
+async def test_a_closed_request_still_counts_its_conversations(archive, owner, requests):
+    conversation, _, _ = await _ended(archive, owner)
+    request, _ = await _filed(requests, owner, [conversation])
+    await requests.cancel(TENANT, "sam", request.request_id, NOW)
+
+    progress = await requests.progress(TENANT, "sam", request.request_id, NOW)
+
+    assert (progress.request.status, progress.remaining, progress.conversations) == (
+        "cancelled",
+        (),
+        1,
+    )
+
+
+async def test_only_custodians_see_requests_they_can_open(archive, owner, requests):
+    conversation, _, _ = await _ended(archive, owner)
+    await _filed(requests, owner, [conversation])
+    recovery = uuid.UUID(await recovery_key(owner))
+    await owner.execute(
+        "INSERT INTO ceremony_participants (tenant_id, ceremony_id, holder_index, holder_ref,"
+        " kind, enc_pub, fingerprint) VALUES ($1, $2, 9, 'paula', 'paper', $3, $4)"
+        " ON CONFLICT DO NOTHING",
+        TENANT,
+        recovery,
+        ref.public_point(109),
+        bytes([9]) * 32,
+    )
+    await owner.execute(
+        "INSERT INTO recovery_shares (tenant_id, key_id, holder_index, holder_ref,"
+        " holder_public_share, encrypted_share) VALUES ($1, $2, 9, 'paula', $3, '{}')"
+        " ON CONFLICT DO NOTHING",
+        TENANT,
+        recovery,
+        ref.public_point(309),
+    )
+
+    assert await requests.approvals(TENANT, "paula", str(recovery), NOW) == []

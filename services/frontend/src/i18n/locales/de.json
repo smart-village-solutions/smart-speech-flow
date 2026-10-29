@@ -579,7 +579,8 @@
         "ALREADY_DECIDED": "Sie haben über diesen Antrag bereits entschieden.",
         "REQUEST_CLOSED": "Dieser Antrag ist abgeschlossen.",
         "NOT_ENOUGH_APPROVALS": "Noch haben nicht genug Verwahrende zugestimmt.",
-        "SCOPE_NOT_COVERED": "Nicht jedes Gespräch des Antrags war abgedeckt. Bitte erneut versuchen."
+        "SCOPE_NOT_COVERED": "Nicht jedes Gespräch des Antrags war abgedeckt. Bitte erneut versuchen.",
+        "SCOPE_TOO_LARGE": "Diese Gespräche haben mehr Schlüssel, als ein Antrag tragen kann. Wählen Sie weniger aus."
       },
       "retry": "Erneut versuchen"
     }

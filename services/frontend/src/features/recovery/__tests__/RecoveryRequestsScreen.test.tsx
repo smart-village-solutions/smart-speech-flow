@@ -192,4 +192,28 @@ describe('RecoveryRequestsScreen', () => {
     const [filed] = vi.mocked(recoveryRequests.file).mock.calls[0];
     expect(filed.conversationIds).toEqual([C2]);
   });
+
+  it('a step-up that lapsed while filling the form asks again instead of filing', async () => {
+    const { recoveryRequests } = render();
+    await userEvent.click(await screen.findByRole('button', { name: r.new.action }));
+    await userEvent.selectOptions(await screen.findByLabelText(r.new.employee), 'alice');
+    await userEvent.click((await screen.findAllByRole('checkbox'))[0]);
+    await userEvent.type(screen.getByLabelText(r.new.reason), 'Employee left.');
+    vi.mocked(hasFreshStepUp).mockReturnValue(false);
+    await userEvent.click(screen.getByRole('button', { name: r.new.submit }));
+    expect(await screen.findByText(r.stepUpBody)).toBeInTheDocument();
+    expect(recoveryRequests.file).not.toHaveBeenCalled();
+  });
+
+  it('switching employee drops the earlier ticks', async () => {
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: r.new.action }));
+    const employee = await screen.findByLabelText(r.new.employee);
+    await userEvent.selectOptions(employee, 'alice');
+    await userEvent.click((await screen.findAllByRole('checkbox'))[0]);
+    await userEvent.selectOptions(employee, '');
+    await userEvent.selectOptions(employee, 'alice');
+    const boxes = await screen.findAllByRole('checkbox');
+    expect(boxes.every((box) => !(box as HTMLInputElement).checked)).toBe(true);
+  });
 });

@@ -18,6 +18,7 @@ from .ceremony_model import RecoveryKeyRecord
 from .crypto import tags
 from .crypto.ecies import Sealed, SealedPayloadError
 from .crypto.signatures import approval_fields, request_fields, verify_fields, wrap_fields
+from .directory import NameSource
 from .recovery_requests_model import (
     Approval,
     ApprovalContext,
@@ -132,10 +133,6 @@ class KeySource(Protocol):
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None: ...
 
     async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None: ...
-
-
-class NameSource(Protocol):
-    async def names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]: ...
 
 
 @dataclass(frozen=True)

@@ -374,7 +374,15 @@ async def test_filing_closes_the_requesters_lapsed_requests_first():
 
 
 async def test_a_wrap_already_held_is_not_audited_again():
-    requests, connection = repository({LOCK: _row(), REMAINING: SCOPE, "RETURNING key_id": None})
+    requests, connection = repository(
+        {
+            LOCK: _row(),
+            REMAINING: SCOPE,
+            K: 1,
+            VALID: [{"holder_index": 1}],
+            "RETURNING key_id": None,
+        }
+    )
     await requests.store_wraps(TENANT, "sam", REQUEST, [_wrap()], 1, _always, NOW)
     # Only the completion is audited, not a wrap that was not inserted.
     assert len(audited(connection)) == 1
@@ -389,7 +397,8 @@ async def test_settling_closes_lapsed_requests_and_forgets_spent_ones():
     )
     store = PostgresRetentionStore(ScriptedPool(connection), "primary")
     await store.settle_requests(TENANT, NOW)
-    assert any("SET status = 'expired'" in c for c in connection.calls)
+    closing = [c for c in connection.calls if "SET status = $2" in c]
+    assert len(closing) == 1
     assert any(c.startswith("DELETE FROM recovery_partials") for c in connection.calls)
     assert len(audited(connection)) == 1
 
@@ -403,9 +412,20 @@ def _wrap(key_id=KEY, conversation_id=CONVERSATION) -> NewWrap:
     [
         ({LOCK: _row(status="expired")}, [_wrap()], 1, "closed"),
         ({LOCK: _row(), REMAINING: SCOPE}, [_wrap()], 2, "signature_invalid"),
-        ({LOCK: _row(), REMAINING: SCOPE}, [], 1, "scope_not_covered"),
         (
-            {LOCK: _row(), REMAINING: SCOPE},
+            {LOCK: _row(), REMAINING: SCOPE, K: 2, VALID: [{"holder_index": 1}]},
+            [_wrap()],
+            1,
+            "not_enough_approvals",
+        ),
+        (
+            {LOCK: _row(), REMAINING: SCOPE, K: 1, VALID: [{"holder_index": 1}]},
+            [],
+            1,
+            "scope_not_covered",
+        ),
+        (
+            {LOCK: _row(), REMAINING: SCOPE, K: 1, VALID: [{"holder_index": 1}]},
             [_wrap(conversation_id="other")],
             1,
             "signature_invalid",
@@ -421,7 +441,9 @@ async def test_wraps_are_refused_whole(answers, wraps, version, refused):
 
 
 async def test_storing_wraps_completes_and_lists_the_dropped_keys():
-    requests, connection = repository({LOCK: _row(), REMAINING: SCOPE})
+    requests, connection = repository(
+        {LOCK: _row(), REMAINING: SCOPE, K: 1, VALID: [{"holder_index": 1}]}
+    )
     dropped = await requests.store_wraps(
         TENANT, "sam", REQUEST, [_wrap(), _wrap(key_id="gone")], 1, _always, NOW
     )
@@ -448,3 +470,12 @@ async def test_spent_requests_go_with_their_history_and_an_audit_event():
     deletes = [call for call in connection.calls if call.startswith("DELETE FROM recovery_")]
     assert len(deletes) == 4
     assert len(audited(connection)) == 1
+
+
+async def test_a_scope_larger_than_one_approval_can_carry_is_refused():
+    keys = [
+        {"conversation_id": uuid.UUID(CONVERSATION), "key_id": uuid.uuid4()} for _ in range(501)
+    ]
+    requests, connection = repository({"AS requested": [_check()], "FROM conversation_keys": keys})
+    assert await requests.file(_new_request(), _always) == Refused("scope_too_large")
+    assert not any("INSERT INTO recovery_requests" in call for call in connection.calls)

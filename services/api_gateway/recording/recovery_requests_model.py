@@ -14,6 +14,8 @@ from typing import Final
 
 REQUEST_LIFETIME: Final[timedelta] = timedelta(days=7)
 MAX_CONVERSATIONS: Final[int] = 50
+# What one approval or one wrap post may carry; a larger scope could never complete.
+MAX_SCOPE_KEYS: Final[int] = 500
 SYSTEM_ACTOR: Final[str] = "system"
 REJECTION_FAULTS: Final[frozenset[str]] = frozenset({"partial_unreadable", "proof_invalid"})
 INTEGRITY_STAGES: Final[frozenset[str]] = frozenset(
@@ -118,6 +120,8 @@ class Progress:
     k: int
     decisions: tuple[DecisionRow, ...]
     remaining: tuple[ScopeKey, ...]
+    # Every conversation the request named, as the list counts them, open or closed.
+    conversations: int
 
 
 @dataclass(frozen=True)

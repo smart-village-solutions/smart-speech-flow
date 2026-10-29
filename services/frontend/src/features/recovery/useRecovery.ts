@@ -74,7 +74,7 @@ export function useCandidates(employee: string, from: string, to: string) {
   return useQuery({
     queryKey: [...RECOVERY_QUERY, 'candidates', employee, from, to],
     queryFn: () => recoveryRequests.candidates(employee, from, to),
-    enabled: employee !== '' && from < to,
+    enabled: employee !== '' && from !== '' && from < to,
   });
 }
 
@@ -109,14 +109,20 @@ function useStep() {
 export function useFileRequest(keys: UnlockedKeys) {
   const deps = useDeps();
   const step = useStep();
+  const [stale, setStale] = useState(false);
   const file = (input: Readonly<{ reason: string; candidates: readonly RecoveryCandidate[] }>) => {
     const identity = getAdminIdentity();
+    // The form may have taken longer than the step-up lasts; filing would only answer 403.
+    if (!hasFreshStepUp()) {
+      setStale(true);
+      return Promise.resolve(false);
+    }
     return step.run(async () => {
       if (identity === null) throw new Error('not signed in');
       await fileOnce(deps, identity, keys, input);
     });
   };
-  return { file, pending: step.pending, fault: step.fault };
+  return { file, pending: step.pending, fault: stale ? 'step_up' : step.fault };
 }
 
 export function useCancel(requestId: string) {

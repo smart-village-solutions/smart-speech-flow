@@ -322,13 +322,20 @@ async def test_a_reused_entry_id_is_refused(archive, owner, access):
     assert refused.value.code == "entry_exists"
 
 
-async def _recovered(owner, conversation, key_id, *, requester="sam", status="completed"):
-    """A request of `requester` covering the conversation, and their own user wrap."""
-    from tests.integration.test_recording_recovery_requests_database import file_directly
+async def _recovered(
+    owner, conversation, key_id, *, requester="sam", status="completed", approved=True
+):
+    """A request of `requester` covering the conversation, approved by k = 1, and their wrap."""
+    from tests.integration.test_recording_recovery_requests_database import (
+        file_directly,
+        partial_directly,
+    )
 
     request_id = await file_directly(
         owner, conversation.conversation_id, key_id, requester=requester
     )
+    if approved:
+        await partial_directly(owner, request_id, conversation.conversation_id, key_id)
     await owner.execute(
         "UPDATE recovery_requests SET status = $2, closed_at = $3 WHERE request_id = $1",
         request_id,
@@ -418,5 +425,13 @@ async def test_another_supervisors_completed_request_opens_nothing_for_the_calle
         bytes(64),
         NOW,
     )
+    cid = conversation.conversation_id
+    assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None
+
+
+async def test_a_completed_request_without_k_approvals_opens_nothing(archive, owner, access):
+    """`completed` is a status the requester's own call sets; the approvals are not (§9.5)."""
+    conversation, key_id, _ = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id, approved=False)
     cid = conversation.conversation_id
     assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None

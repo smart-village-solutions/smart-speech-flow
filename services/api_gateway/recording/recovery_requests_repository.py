@@ -19,6 +19,7 @@ from .audit import AuditEvent
 from .crypto.encoding import b64url
 from .crypto.signatures import partial_hash
 from .recovery_requests_model import (
+    MAX_SCOPE_KEYS,
     REQUEST_LIFETIME,
     SYSTEM_ACTOR,
     Approval,
@@ -66,7 +67,7 @@ from .repository import (
 T = TypeVar("T")
 
 
-async def _close(
+async def close_request(
     connection: asyncpg.Connection,
     tenant_id: str,
     request_id: str,
@@ -99,11 +100,11 @@ async def _locked(
     if request.status != "open":
         return request, ()
     if request.expires_at <= now:
-        await _close(connection, tenant_id, request_id, "expired", SYSTEM_ACTOR, now)
+        await close_request(connection, tenant_id, request_id, "expired", SYSTEM_ACTOR, now)
         return replaced(request, "expired", now), ()
     remaining = scope_of(await connection.fetch(REMAINING_LOCKED, request_id, now))
     if not remaining:
-        await _close(connection, tenant_id, request_id, "scope_gone", SYSTEM_ACTOR, now)
+        await close_request(connection, tenant_id, request_id, "scope_gone", SYSTEM_ACTOR, now)
         return replaced(request, "scope_gone", now), ()
     return request, remaining
 
@@ -293,6 +294,13 @@ async def _served(
     )
 
 
+async def _approved(connection: asyncpg.Connection, request: RequestRow) -> bool:
+    """k approvals that count: approved, not since rejected, one per custodian."""
+    k = await _recovery_k(connection, request.recovery_key_id)
+    approvals = await connection.fetch(VALID_APPROVALS, request.request_id)
+    return len({row["holder_index"] for row in approvals}) >= k
+
+
 async def _recovery_k(connection: asyncpg.Connection, recovery_key_id: str) -> int:
     k: int = await connection.fetchval(
         "SELECT k FROM recovery_keys WHERE key_id = $1", recovery_key_id
@@ -375,6 +383,8 @@ class PostgresRecoveryRequests:
                     list(request.conversation_ids),
                 )
             )
+            if len(scope) > MAX_SCOPE_KEYS:
+                return Refused("scope_too_large")
             if not verify(scope):
                 return Refused("signature_invalid")
             try:
@@ -517,6 +527,11 @@ class PostgresRecoveryRequests:
                 k=await _recovery_k(connection, request.recovery_key_id),
                 decisions=await _decisions(connection, request_id),
                 remaining=remaining,
+                conversations=await connection.fetchval(
+                    "SELECT count(DISTINCT conversation_id) FROM recovery_request_keys"
+                    " WHERE request_id = $1",
+                    request_id,
+                ),
             )
 
         return await self._run(tenant_id, work)
@@ -531,10 +546,9 @@ class PostgresRecoveryRequests:
             request, remaining = owned
             if request.status != "open":
                 return Refused("closed")
-            k = await _recovery_k(connection, request.recovery_key_id)
-            approvals = await connection.fetch(VALID_APPROVALS, request_id)
-            if len({row["holder_index"] for row in approvals}) < k:
+            if not await _approved(connection, request):
                 return Refused("not_enough_approvals")
+            approvals = await connection.fetch(VALID_APPROVALS, request_id)
             served = await _served(connection, request, remaining, approvals)
             await append_audit(
                 connection, AuditEvent(tenant_id, sub, "recovery.partials.served", request_id, now)
@@ -631,6 +645,10 @@ class PostgresRecoveryRequests:
             # The partials were sealed to the key the request names; a newer key cannot sign for it.
             if request.requester_key_version != key_version:
                 return Refused("signature_invalid")
+            # Wraps the requester made without k approvals open nothing, but would
+            # complete the request and list the conversation: refuse them (§9.5).
+            if not await _approved(connection, request):
+                return Refused("not_enough_approvals")
             posted = {wrap.key_id: wrap for wrap in wraps}
             refused = _wraps_refusal(posted, remaining, verify)
             if refused is not None:
@@ -655,7 +673,7 @@ class PostgresRecoveryRequests:
                     await append_audit(
                         connection, AuditEvent(tenant_id, sub, "recovery.wrap.stored", key_id, now)
                     )
-            await _close(connection, tenant_id, request_id, "completed", sub, now)
+            await close_request(connection, tenant_id, request_id, "completed", sub, now)
             return tuple(sorted(posted.keys() - set(wanted)))
 
         return await self._run(tenant_id, work)
@@ -669,7 +687,7 @@ class PostgresRecoveryRequests:
                 return owned
             if owned[0].status != "open":
                 return Refused("closed")
-            await _close(connection, tenant_id, request_id, "cancelled", sub, now)
+            await close_request(connection, tenant_id, request_id, "cancelled", sub, now)
             return None
 
         return await self._run(tenant_id, work)
@@ -700,7 +718,7 @@ async def _close_lapsed(connection: asyncpg.Connection, request: NewRequest) -> 
         request.created_at,
     )
     for row in rows:
-        await _close(
+        await close_request(
             connection,
             request.tenant_id,
             str(row["request_id"]),

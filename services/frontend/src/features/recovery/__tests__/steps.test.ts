@@ -182,6 +182,7 @@ describe('approving', () => {
     expect(faultOf(new RecoveryCheckError('self_approval'))).toBe('self_approval');
     expect(faultOf(new CeremonyCheckError('signature_invalid'))).toBe('trust');
     expect(faultOf(new RecoveryRefusedError('ALREADY_DECIDED'))).toBe('refused.ALREADY_DECIDED');
+    expect(faultOf(new RecoveryRefusedError('STEP_UP_REQUIRED'))).toBe('step_up');
     expect(faultOf(new Error('x'))).toBe('unavailable');
   });
 });

@@ -19,7 +19,13 @@ from ..dependencies import optional_container
 from ..recording.crypto.encoding import b64url, from_b64url
 from ..recording.permissions import CUSTODIAN, SUPERVISE, coded, require_permission, require_step_up
 from ..recording.recovery_requests import ApprovalView, RecoveryRequestError, RecoveryRequests
-from ..recording.recovery_requests_model import NewWrap, Progress, RequestRow, ServedPartials
+from ..recording.recovery_requests_model import (
+    MAX_SCOPE_KEYS,
+    NewWrap,
+    Progress,
+    RequestRow,
+    ServedPartials,
+)
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
@@ -51,6 +57,7 @@ _ANSWERS: Final[dict[str, tuple[int, str]]] = {
     "signature_invalid": (422, "SIGNATURE_INVALID"),
     "bad_partial": (422, "BAD_PARTIAL"),
     "scope_not_covered": (422, "SCOPE_NOT_COVERED"),
+    "scope_too_large": (422, "SCOPE_TOO_LARGE"),
     "unavailable": (503, "RECORDING_UNAVAILABLE"),
 }
 
@@ -89,7 +96,7 @@ class FileBody(BaseModel):
 class ApproveBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    partials: dict[uuid.UUID, SealedText] = Field(min_length=1, max_length=500)
+    partials: dict[uuid.UUID, SealedText] = Field(min_length=1, max_length=MAX_SCOPE_KEYS)
     signature: Signature
 
 
@@ -125,7 +132,7 @@ class WrapItem(BaseModel):
 class WrapsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    wraps: list[WrapItem] = Field(min_length=1, max_length=500)
+    wraps: list[WrapItem] = Field(min_length=1, max_length=MAX_SCOPE_KEYS)
 
 
 def _answer(error: RecoveryRequestError, *, not_found: str = "not_found") -> HTTPException:
@@ -157,8 +164,7 @@ def _summary(row: RequestRow, conversations: int) -> dict[str, Any]:
 
 
 def _progress_body(progress: Progress, names: Mapping[str, str]) -> dict[str, Any]:
-    conversations = len({key.conversation_id for key in progress.remaining})
-    return _summary(progress.request, conversations) | {
+    return _summary(progress.request, progress.conversations) | {
         "k": progress.k,
         "decisions": [
             {

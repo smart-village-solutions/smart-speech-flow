@@ -40,6 +40,18 @@ def _readable(sub: str, now: str) -> str:
     )
 
 
+# The status alone is a string the requester's own call sets; k approvals are not (§9.5).
+_APPROVED = (
+    "(SELECT count(DISTINCT d.holder_index) FROM recovery_decisions d"
+    "  WHERE d.tenant_id = r.tenant_id AND d.request_id = r.request_id"
+    "  AND d.decision = 'approved' AND NOT EXISTS (SELECT 1 FROM recovery_rejections j"
+    "   WHERE j.tenant_id = d.tenant_id AND j.request_id = d.request_id"
+    "   AND j.holder_index = d.holder_index AND j.attempt = d.attempt))"
+    " >= (SELECT rkey.k FROM recovery_keys rkey"
+    "  WHERE rkey.tenant_id = r.tenant_id AND rkey.key_id = r.recovery_key_id)"
+)
+
+
 def _own(sub: str, now: str) -> str:
     """The employee-only rule: amendments stay the employee's own (spec §10.4)."""
     return f"c.employee_sub = {sub} AND {_readable(sub, now)}"
@@ -53,7 +65,7 @@ def _openable(sub: str, now: str, supervisor: str) -> str:
         " FROM recovery_request_keys rk JOIN recovery_requests r"
         "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
         f"  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = {sub}"
-        f"  AND r.status = 'completed'))) AND {_readable(sub, now)}"
+        f"  AND r.status = 'completed' AND {_APPROVED}))) AND {_readable(sub, now)}"
     )
 
 

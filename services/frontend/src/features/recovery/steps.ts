@@ -173,6 +173,8 @@ export async function approveOnce(
 export function faultOf(error: unknown): string {
   if (error instanceof RecoveryCheckError) return error.fault;
   if (error instanceof CeremonyCheckError) return 'trust';
+  // The gateway's own step-up check: shown as the prompt, not as a refusal.
+  if (error instanceof RecoveryRefusedError && error.code === 'STEP_UP_REQUIRED') return 'step_up';
   if (error instanceof RecoveryRefusedError) return `refused.${error.code}`;
   return 'unavailable';
 }
