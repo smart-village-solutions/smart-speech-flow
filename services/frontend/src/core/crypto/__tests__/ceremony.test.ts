@@ -9,6 +9,7 @@ import {
 } from '@/core/crypto/ceremony-crypto.port';
 import { GENERATOR, ORDER, decodePoint, encodePoint, mod, multiply, publicPoint } from '@/core/crypto/curve';
 import { combinePartials, holderPublicShare, recoveryPublicKey } from '@/core/crypto/proofs';
+import { signFields } from '@/core/crypto/signatures';
 import { fingerprint, transcriptHash } from '@/core/crypto/transcript';
 import { createWebCeremonyCrypto } from '@/core/crypto/web-ceremony-crypto';
 
@@ -198,5 +199,81 @@ describe('recovery-key ceremony in the browser', () => {
     await expect(
       ceremonyCrypto.receive(world.published, { privateKey: c.encPrivate, publicKey: c.participant.encPub }, world.subsharesFor(1), new Uint8Array(32))
     ).rejects.toMatchObject({ fault: 'transcript_mismatch' });
+  });
+});
+
+/** A closed ceremony as the archive serves it: every custodian signed its transcript. */
+async function signedCeremony() {
+  const world = await setUp();
+  const hash = await transcriptOf(world);
+  const signatures = new Map<number, Bytes>();
+  for (const c of world.custodians) {
+    signatures.set(
+      c.participant.holderIndex,
+      await signFields(c.sigPrivate, TAGS.transcript, [hash])
+    );
+  }
+  return { facts: world.published, hash, signatures };
+}
+
+describe('certify', () => {
+  it('returns the gateway keys a fully signed transcript lists', async () => {
+    const { facts, hash, signatures } = await signedCeremony();
+    const keys = await ceremonyCrypto.certify(facts, hash, signatures);
+    expect([...keys.keys()]).toEqual(['gk-1']);
+    expect(equalBytes(keys.get('gk-1') ?? new Uint8Array(0), publicPoint(99n))).toBe(true);
+  });
+
+  it('refuses a custodian whose signing key does not match its fingerprint', async () => {
+    const { facts, hash, signatures } = await signedCeremony();
+    const [first, second, ...rest] = facts.participants;
+    const swapped = {
+      ...facts,
+      participants: [{ ...first, sigPub: second.sigPub }, second, ...rest],
+    };
+    await expect(ceremonyCrypto.certify(swapped, hash, signatures)).rejects.toMatchObject({
+      fault: 'fingerprint_mismatch',
+    });
+  });
+
+  it('refuses a missing or foreign custodian signature', async () => {
+    const { facts, hash, signatures } = await signedCeremony();
+    const missing = new Map(signatures);
+    missing.delete(2);
+    await expect(ceremonyCrypto.certify(facts, hash, missing)).rejects.toMatchObject({
+      fault: 'signature_invalid',
+    });
+    const foreign = new Map(signatures);
+    foreign.set(2, signatures.get(1) ?? new Uint8Array(64));
+    await expect(ceremonyCrypto.certify(facts, hash, foreign)).rejects.toMatchObject({
+      fault: 'signature_invalid',
+    });
+  });
+
+  it('refuses custodians relabelled as paper holders, whose signatures would then be skipped', async () => {
+    const { facts, hash } = await signedCeremony();
+    const relabelled = {
+      ...facts,
+      participants: facts.participants.map((p) => ({ ...p, kind: 'paper' as const })),
+    };
+    await expect(ceremonyCrypto.certify(relabelled, hash, new Map())).rejects.toMatchObject({
+      fault: 'signature_invalid',
+    });
+  });
+
+  it('refuses a transcript other than the recovery key’s', async () => {
+    const { facts, hash, signatures } = await signedCeremony();
+    await expect(
+      ceremonyCrypto.certify(facts, new Uint8Array(32), signatures)
+    ).rejects.toMatchObject({
+      fault: 'transcript_mismatch',
+    });
+    const moreKeys = {
+      ...facts,
+      gatewayKeys: [...facts.gatewayKeys, { keyId: 'gk-2', publicKey: publicPoint(7n) }],
+    };
+    await expect(ceremonyCrypto.certify(moreKeys, hash, signatures)).rejects.toMatchObject({
+      fault: 'transcript_mismatch',
+    });
   });
 });

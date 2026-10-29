@@ -34,6 +34,7 @@ from .ceremony_model import (
 )
 from .crypto.encoding import b64url, from_b64url, scalar_from_bytes, scalar_to_bytes
 from .repository import (
+    COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
     PostgresRecordingRepository,
     UserKeyRecord,
@@ -168,6 +169,21 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None:
         rows = await self._read(tenant_id, "SELECT * FROM recovery_keys WHERE status = 'active'")
         return _recovery_key(rows[0]) if rows else None
+
+    async def ceremony(self, tenant_id: str, ceremony_id: str) -> CeremonySnapshot | None:
+        """A ceremony's public record, for browsers checking its transcript (spec §10.6)."""
+        try:
+            async with (
+                self._pool.acquire(timeout=COMMAND_TIMEOUT_SECONDS) as connection,
+                connection.transaction(),
+            ):
+                await bind_tenant(connection, tenant_id)
+                row = await connection.fetchrow(
+                    "SELECT * FROM recovery_ceremonies WHERE ceremony_id = $1", ceremony_id
+                )
+                return None if row is None else await _snapshot(connection, row)
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
 
     async def recovery_shares(self, tenant_id: str, key_id: str) -> list[RecoveryShareRecord]:
         rows = await self._read(

@@ -154,7 +154,8 @@
       "opensInNewTab": "(öffnet in neuem Tab)",
       "signOut": "Abmelden",
       "keys": "Archivschlüssel",
-      "ceremony": "Wiederherstellungsschlüssel"
+      "ceremony": "Wiederherstellungsschlüssel",
+      "archive": "Meine Aufzeichnungen"
     },
     "dashboard": {
       "welcome": {
@@ -339,6 +340,143 @@
         "idChecked": "Identität mit Ausweisdokument geprüft",
         "idRequired": "Diese Organisation verlangt vor der Aufnahme die Ausweisprüfung.",
         "cancel": "Abbrechen"
+      }
+    },
+    "archive": {
+      "title": "Meine Aufzeichnungen",
+      "intro": "Gespräche, die Sie aufgezeichnet haben. Inhalte werden erst nach dem Entsperren Ihrer Schlüssel in diesem Browser entschlüsselt.",
+      "locked": "Entsperren Sie zuerst Ihre Schlüssel.",
+      "unlock": "Schlüssel entsperren",
+      "unavailable": "Das Archiv ist gerade nicht erreichbar.",
+      "empty": "Noch keine abgeschlossenen Aufzeichnungen.",
+      "more": "Weitere laden",
+      "messages": "Nachrichten: {{count}}",
+      "duration": "{{minutes}} Min.",
+      "incomplete": "Unvollständig",
+      "hold": "Aufbewahrungspflicht",
+      "retention": "Aufbewahrt bis {{date}}",
+      "verification": {
+        "not_verified": "Nicht geprüft"
+      },
+      "checking": "Integrität wird geprüft …",
+      "integrity": {
+        "title": "Integritätsfehler",
+        "trust": "Die Signaturschlüssel konnten nicht bestätigt werden. Inhalte werden nicht angezeigt.",
+        "wrap": "Ein Schlüssel dieses Gesprächs ist nicht korrekt signiert. Inhalte werden nicht angezeigt.",
+        "chain": "Die Kette der Einträge ist beschädigt oder verändert. Inhalte werden nicht angezeigt.",
+        "stamp": "Ein Zeitstempel passt nicht zu den Einträgen. Inhalte werden nicht angezeigt.",
+        "object": "Ein Eintrag ist beschädigt."
+      },
+      "field": {
+        "guest": "Gast",
+        "languages": "Sprachen",
+        "basis": "Rechtsgrundlage",
+        "retention": "Aufbewahrung",
+        "verification": "Prüfung",
+        "stamp": "Zeitstempel"
+      },
+      "basis": {
+        "consent": "Einwilligung",
+        "statutory": "gesetzlich"
+      },
+      "stamp": {
+        "at": "{{time}}",
+        "unverified": "(Signatur der Zeitstempelstelle nicht geprüft)",
+        "pending": "ausstehend"
+      },
+      "gaps": {
+        "title": "Lücken",
+        "pause": "Pausiert: {{reason}}",
+        "failed": "Nachricht fehlgeschlagen",
+        "notStored": "Noch nicht gespeichert",
+        "noKey": "Kein Schlüssel für diesen Teil",
+        "damaged": "Beschädigt"
+      },
+      "kind": {
+        "message": "Nachricht",
+        "failed": "Fehlgeschlagen",
+        "consent": "Einwilligung",
+        "playback": "Wiedergabe",
+        "amendment": "Ergänzung"
+      },
+      "sender": {
+        "admin": "Mitarbeitende",
+        "customer": "Gast"
+      },
+      "entry": {
+        "damaged": "Dieser Eintrag ist beschädigt.",
+        "noKey": "Kein Schlüssel für diesen Teil.",
+        "notStored": "Noch nicht gespeichert."
+      },
+      "message": {
+        "asr": "Erkannt",
+        "rawMt": "Maschinelle Übersetzung",
+        "refined": "Überarbeitet",
+        "changed": "(geändert)",
+        "final": "Ausgegeben"
+      },
+      "failed": "Fehler in {{stage}} ({{code}})",
+      "audio": {
+        "original": "Original anhören",
+        "translated": "Übersetzung anhören",
+        "loading": "Wird geladen …"
+      },
+      "consent": {
+        "yes": "Zugestimmt",
+        "no": "Abgelehnt",
+        "kind": {
+          "first": "Erste Einwilligung",
+          "resume": "Fortsetzung"
+        },
+        "signature": "Unterschrift",
+        "idCheck": "Ausweis geprüft",
+        "idNotChecked": "Ausweis nicht geprüft",
+        "citedText": "Text: {{language}}, {{source}}, {{version}}, {{hash}}",
+        "text": "Gezeigter Text",
+        "enteredBy": {
+          "employee": "(von Mitarbeitenden eingetragen)",
+          "guest": "(vom Gast eingetragen)"
+        }
+      },
+      "playback": {
+        "started": "Wiedergabe gestartet {{time}}",
+        "completed": "Wiedergabe beendet {{time}}"
+      },
+      "window": {
+        "opened": "Aufzeichnung gestartet {{time}}",
+        "closed": "Aufzeichnung beendet {{time}}: {{reason}}"
+      },
+      "closeReason": {
+        "declined": "abgelehnt",
+        "cancelled": "abgebrochen",
+        "unanswered": "unbeantwortet",
+        "stopped_by_guest": "vom Gast beendet",
+        "stopped_by_employee": "von Mitarbeitenden beendet",
+        "session_ended": "Gespräch beendet",
+        "liveness": "Verbindung unterbrochen",
+        "unacknowledged": "nicht bestätigt",
+        "storage": "Speicher nicht erreichbar",
+        "policy": "nicht erlaubt"
+      },
+      "amend": "Ergänzen",
+      "amendment": {
+        "label": "Ergänzung {{time}}",
+        "superseded": "(ersetzt)",
+        "foreignAuthor": "(anderer Verfasser)",
+        "unattached": "Ergänzung zu unbekanntem Eintrag",
+        "title": "Ergänzung hinzufügen",
+        "references": "Zu: {{entries}}",
+        "text": "Ergänzung",
+        "count": "{{count}} / 4000",
+        "cancel": "Abbrechen",
+        "submit": "Ergänzung speichern",
+        "retry": "Erneut senden",
+        "pending": "Eine Ergänzung ist noch nicht bestätigt gespeichert. Bitte erneut senden, solange diese Seite offen ist.",
+        "error": {
+          "notStored": "In der Kette gespeichert, aber noch nicht im Archiv. Bitte erneut senden.",
+          "failed": "Die Ergänzung wurde nicht gespeichert.",
+          "noKey": "Kein geeigneter Schlüssel für eine Ergänzung."
+        }
       }
     }
   }

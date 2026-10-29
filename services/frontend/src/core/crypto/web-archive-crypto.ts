@@ -1,6 +1,10 @@
-import type { ArchiveCrypto, KeyOwner, NewKeys, PublicKeys, UnlockedKeys } from './archive-crypto.port';
+import { aesKey, objectAad, openEnvelope, sealEnvelope } from './aead';
+import type { ArchiveCrypto, KeyOwner, NewKeys, PublicKeys, UnlockedKeys, WrapToOpen } from './archive-crypto.port';
 import { type Bytes, concat, equalBytes, fromBase64Url, fromBuffer } from './bytes';
+import { contexts, openWithPrivateKey, parseSealed } from './ecies';
 import { ENROLMENT_KDF, openPrivateKeys, sealPrivateKeys } from './private-key-blob';
+import { verifyFields, wrapFields } from './signatures';
+import { TAGS } from './tags';
 import { fingerprint } from './transcript';
 
 const ECDH = { name: 'ECDH', namedCurve: 'P-256' } as const;
@@ -34,6 +38,34 @@ async function unlocked(owner: Readonly<KeyOwner>, keys: { enc: Bytes; sig: Byte
   };
 }
 
+class WrapRefusedError extends Error {
+  constructor() {
+    super('wrap refused');
+    this.name = 'WrapRefusedError';
+  }
+}
+
+/** A gateway key the ceremony certified, or the caller's own key for a wrap they made. */
+function wrapSigned(
+  wrap: Readonly<WrapToOpen>,
+  keys: Readonly<UnlockedKeys>,
+  ephemeral: Bytes,
+  signers: ReadonlyMap<string, Bytes>
+): Promise<boolean> {
+  const signer = wrap.creatorRef === wrap.recipientRef ? keys.sigPub : signers.get(wrap.creatorRef);
+  if (signer === undefined) return Promise.resolve(false);
+  const signed = wrapFields({
+    tenantId: wrap.tenantId,
+    conversationId: wrap.conversationId,
+    keyId: wrap.keyId,
+    ephemeral,
+    recipientKind: 'user',
+    recipientRef: wrap.recipientRef,
+    recipientFingerprint: keys.fingerprint,
+  });
+  return verifyFields(signer, wrap.creatorSignature, TAGS.wrapSig, signed);
+}
+
 export function createWebArchiveCrypto(): ArchiveCrypto {
   return {
     async createKeys(passphrase, owner): Promise<NewKeys> {
@@ -53,5 +85,27 @@ export function createWebArchiveCrypto(): ArchiveCrypto {
       if (!matches) throw new Error('the sealed keys do not match the enrolled public keys');
       return unlocked(owner, keys, expected);
     },
+
+    async openWrap(wrap, keys, signers) {
+      const sealed = parseSealed(wrap.blob, TAGS.ckWrap);
+      if (!(await wrapSigned(wrap, keys, sealed.ephemeral, signers))) throw new WrapRefusedError();
+      const context = contexts.ckWrap(
+        wrap.tenantId,
+        wrap.conversationId,
+        wrap.keyId,
+        'user',
+        wrap.recipientRef
+      );
+      const raw = await openWithPrivateKey(sealed, keys.encPrivate, keys.encPub, context);
+      try {
+        return await aesKey(raw);
+      } finally {
+        raw.fill(0);
+      }
+    },
+
+    openObject: (key, address, envelope) => openEnvelope(key, envelope, objectAad(address)),
+
+    sealObject: (key, address, plaintext) => sealEnvelope(key, plaintext, objectAad(address)),
   };
 }

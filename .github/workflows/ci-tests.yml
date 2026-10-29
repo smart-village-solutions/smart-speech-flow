@@ -123,6 +123,7 @@ jobs:
             tests/integration/test_recording_database.py \
             tests/integration/test_recording_ceremony_database.py \
             tests/integration/test_recording_archive_database.py \
+            tests/integration/test_recording_archive_access_database.py \
             tests/integration/test_recording_retention_database.py \
             tests/integration/test_recording_retention_store.py \
             tests/integration/test_recording_retention_expiry_database.py

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ExternalLink, KeyRound, LogOut, ShieldCheck, User } from 'lucide-react';
+import { Archive, ExternalLink, KeyRound, LogOut, ShieldCheck, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
@@ -58,6 +58,8 @@ interface AdminUserMenuProps {
   onOpenKeys?: () => void;
   /** The recovery-key ceremony; offered to tenant administrators and custodians. */
   onOpenCeremony?: () => void;
+  /** The employee's own recordings; offered to holders of a recording permission. */
+  onOpenArchive?: () => void;
 }
 
 /** Credentials are Keycloak's concern (#396): SSF only links to its account console. */
@@ -67,6 +69,7 @@ export function AdminUserMenu({
   studioUrl,
   onOpenKeys,
   onOpenCeremony,
+  onOpenArchive,
 }: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -95,6 +98,19 @@ export function AdminUserMenu({
 
           {studioUrl && (
             <MenuLink label={t('admin.menu.openStudio')} href={studioUrl} onClick={close} />
+          )}
+
+          {onOpenArchive && (
+            <MenuRow
+              label={t('admin.menu.archive')}
+              onClick={() => {
+                close();
+                onOpenArchive();
+              }}
+              className="text-fg-body hover:bg-surface-row-hover"
+            >
+              <Archive aria-hidden size={16} strokeWidth={2} />
+            </MenuRow>
           )}
 
           {onOpenKeys && (

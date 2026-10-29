@@ -126,6 +126,21 @@ function transcriptOf(facts: Readonly<CeremonyFacts>): TranscriptInput {
   };
 }
 
+/**
+ * `kind` is not in the transcript; a signing key is, through the fingerprint. So a
+ * holder with a signing key must have signed, and must be listed as a custodian.
+ */
+async function participantVouches(
+  participant: Readonly<CeremonyParticipant>,
+  signature: Bytes | undefined,
+  transcript: Bytes
+): Promise<boolean> {
+  const custodian = participant.kind === 'custodian';
+  if (participant.sigPub === null) return !custodian;
+  if (!custodian || signature === undefined) return false;
+  return verifyFields(participant.sigPub, signature, TAGS.transcript, [transcript]);
+}
+
 export function createWebCeremonyCrypto(): CeremonyCrypto {
   return {
     fingerprints,
@@ -164,6 +179,17 @@ export function createWebCeremonyCrypto(): CeremonyCrypto {
       const sealed = await seal(TAGS.share, holder.encPub, scalarToBytes(share), context);
       const transcriptSignature = await signFields(signingKey, TAGS.transcript, [hash]);
       return { transcriptSignature, encryptedShare: sealedToJson(sealed) };
+    },
+
+    async certify(facts, expectedTranscript, signatures) {
+      await fingerprints(facts);
+      const hash = await transcriptHash(transcriptOf(facts));
+      if (!equalBytes(hash, expectedTranscript)) fail('transcript_mismatch');
+      const vouched = await Promise.all(
+        facts.participants.map((p) => participantVouches(p, signatures.get(p.holderIndex), hash))
+      );
+      if (vouched.includes(false)) fail('signature_invalid');
+      return new Map(facts.gatewayKeys.map((key) => [key.keyId, key.publicKey]));
     },
 
     async createPaperDevice(tenantId) {

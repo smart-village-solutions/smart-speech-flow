@@ -80,8 +80,8 @@ async def _start(service, paper: bool = True):
     return await service.start(TENANT, ORG_ADMIN, request, "corr")
 
 
-async def test_a_whole_ceremony_lands_in_its_tables_with_an_intact_audit_chain(repository, owner):
-    service = _service(repository)
+async def _run_to_active(service) -> str:
+    """A whole ceremony with paper holders, from start to an active key; its ID."""
     snapshot = await _start(service)
     ceremony_id = snapshot.ceremony.ceremony_id
     for holder in CUSTODIANS:
@@ -104,6 +104,11 @@ async def test_a_whole_ceremony_lands_in_its_tables_with_an_intact_audit_chain(r
         TENANT, ORG_ADMIN, ceremony_id, snapshot.ceremony.transcript_hash
     )
     assert status == "active"
+    return ceremony_id
+
+
+async def test_a_whole_ceremony_lands_in_its_tables_with_an_intact_audit_chain(repository, owner):
+    await _run_to_active(_service(repository))
 
     key = await repository.active_recovery_key(TENANT)
     shares = await repository.recovery_shares(TENANT, key.key_id)
@@ -111,6 +116,22 @@ async def test_a_whole_ceremony_lands_in_its_tables_with_an_intact_audit_chain(r
     rows = await repository.audit_rows(TENANT)
     assert chain_is_intact(rows)
     assert rows[-1].event.event_type == "recovery_key_activated"
+
+
+async def test_a_closed_ceremony_is_read_without_sub_shares(repository):
+    """What browsers check gateway keys against (#616, spec §10.6)."""
+    ceremony_id = await _run_to_active(_service(repository))
+    key = await repository.active_recovery_key(TENANT)
+    read = await repository.ceremony(TENANT, ceremony_id)
+
+    assert key.key_id == ceremony_id
+    assert read.ceremony.status == "active"
+    assert read.ceremony.transcript_hash == key.transcript_hash
+    assert all(dealing.subshares == {} for dealing in read.dealings)
+    assert {c.holder_index for c in read.confirmations} == {
+        p.holder_index for p in read.participants if p.kind == "custodian"
+    }
+    assert await repository.ceremony("tenant-other", ceremony_id) is None
 
 
 async def test_the_last_dealing_and_the_move_to_signing_commit_together(repository, monkeypatch):

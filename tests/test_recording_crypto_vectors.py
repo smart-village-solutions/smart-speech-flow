@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from services.api_gateway.recording.chain import ChainEntry, chain_is_intact
 from services.api_gateway.recording.crypto import aead, ecies, signatures
 from services.api_gateway.recording.crypto.curve import decode_point
 from services.api_gateway.recording.crypto.encoding import Field, enc, from_b64url
@@ -30,6 +31,7 @@ from services.api_gateway.recording.crypto.transcript import (
     paper_device_fingerprint,
     transcript_hash,
 )
+from services.api_gateway.recording.timestamps import _tst_info
 from tests import recording_crypto_reference as ref
 from tests.recording_crypto_vectors import FIXTURE, render
 
@@ -178,3 +180,36 @@ def test_private_key_blob_opens_with_the_passphrase():
         case["blob"], case["passphrase"], case["tenant_id"], case["user_sub"]
     )
     assert opened == {"enc": b(case["enc_pkcs8"]), "sig": b(case["sig_pkcs8"])}
+
+
+def test_the_chain_vector_is_an_intact_signed_chain():
+    v = VECTORS["chain"]
+    entries = [
+        ChainEntry(
+            tenant_id=v["tenant_id"],
+            conversation_id=v["conversation_id"],
+            seq=e["seq"],
+            entry_id=e["entry_id"],
+            kind=e["kind"],
+            window_id=e["window_id"],
+            key_id=e["key_id"],
+            objects=e["objects"],
+            prev_hash=b(e["prev_hash"]),
+            hash=b(e["hash"]),
+            signer_key_id=e["signer_key_id"],
+            signature=b(e["signature"]),
+            created_at=None,  # type: ignore[arg-type]  # not signed
+        )
+        for e in v["entries"]
+    ]
+    assert [e.kind for e in entries] == ["consent", "message", "amendment"]
+    assert entries[-1].window_id is None
+    assert chain_is_intact(entries, {v["signer_key_id"]: b(v["signer"])})
+
+
+def test_the_timestamp_vector_names_the_chain_head():
+    v = VECTORS["timestamp"]
+    fields_ = _tst_info(b(v["der"]))
+    head = b(VECTORS["chain"]["entries"][-1]["hash"])
+    assert b(v["imprint"]) == head
+    assert head in fields_[2][2]

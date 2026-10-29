@@ -104,6 +104,16 @@ export interface CeremonyCrypto {
     signingKey: CryptoKey
   ): Promise<Confirmation>;
   createPaperDevice(tenantId: string): Promise<PaperDevice>;
+  /**
+   * The gateway keys a closed ceremony vouches for (spec A.6, §10.6): every
+   * fingerprint matches its keys, the transcript is `transcriptHash`, and every
+   * custodian signed it. Rejects with CeremonyCheckError otherwise.
+   */
+  certify(
+    facts: Readonly<CeremonyFacts>,
+    transcriptHash: Bytes,
+    signatures: ReadonlyMap<number, Bytes>
+  ): Promise<Map<string, Bytes>>;
 }
 
 /** The ceremony device's key, in memory for as long as this tab lives. */

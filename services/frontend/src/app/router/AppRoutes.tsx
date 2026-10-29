@@ -11,6 +11,8 @@ import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import NotFoundPage from '@/pages/NotFoundPage';
 import { useServices } from '@/app/providers/services';
+import { ArchiveScreen } from '@/features/archive/ArchiveScreen';
+import { ARCHIVE_PERMISSIONS, ARCHIVE_VIEW } from '@/features/archive/useArchive';
 import { CeremonyScreen } from '@/features/ceremony/CeremonyScreen';
 import { CEREMONY_VIEW, CUSTODIAN, TENANT_MANAGE } from '@/features/ceremony/useCeremony';
 import { KeysScreen } from '@/features/keys/KeysScreen';
@@ -81,11 +83,14 @@ interface StaffScreensProps {
   studioUrl?: string;
 }
 
-type StaffView = 'dashboard' | typeof KEYS_VIEW | typeof CEREMONY_VIEW;
+type StaffView = 'dashboard' | typeof KEYS_VIEW | typeof CEREMONY_VIEW | typeof ARCHIVE_VIEW;
+const RESUMABLE: ReadonlySet<string> = new Set([KEYS_VIEW, CEREMONY_VIEW, ARCHIVE_VIEW]);
 
 /** A step-up redirect reloads the app; it asked to come back to the view it left. */
 function resumedView(remembered: string | null): StaffView {
-  return remembered === KEYS_VIEW || remembered === CEREMONY_VIEW ? remembered : 'dashboard';
+  return remembered !== null && RESUMABLE.has(remembered)
+    ? (remembered as StaffView)
+    : 'dashboard';
 }
 
 /** The signed-in staff screens; switched by state, since Keycloak returns to one URL. */
@@ -97,6 +102,7 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
   const [keysReturn, setKeysReturn] = useState<StaffView>('dashboard');
   const accountUrl = getAccountConsoleUrl() ?? undefined;
   const ceremonyAllowed = hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN);
+  const archiveAllowed = ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission));
   const out = () => {
     setSessionId(null);
     onSignOut();
@@ -108,6 +114,15 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
   const shared = { onSignOut: out, accountUrl, studioUrl };
 
   if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView(keysReturn)} {...shared} />;
+  if (view === ARCHIVE_VIEW) {
+    return (
+      <ArchiveScreen
+        onBack={() => setView('dashboard')}
+        onOpenKeys={() => openKeys(ARCHIVE_VIEW)}
+        {...shared}
+      />
+    );
+  }
   if (view === CEREMONY_VIEW) {
     return <CeremonyScreen onBack={() => setView('dashboard')} onOpenKeys={() => openKeys(CEREMONY_VIEW)} {...shared} />;
   }
@@ -117,6 +132,7 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
         onEnterSession={setSessionId}
         onOpenKeys={() => openKeys('dashboard')}
         onOpenCeremony={ceremonyAllowed ? () => setView(CEREMONY_VIEW) : undefined}
+        onOpenArchive={archiveAllowed ? () => setView(ARCHIVE_VIEW) : undefined}
         {...shared}
       />
     );

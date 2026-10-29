@@ -10,6 +10,7 @@ interface AdminHeaderProps {
   studioUrl?: string;
   onOpenKeys?: () => void;
   onOpenCeremony?: () => void;
+  onOpenArchive?: () => void;
 }
 
 /** The customer header plus the account menu: same 72px bar, same 800px column. */
@@ -22,6 +23,7 @@ export function AdminHeader({
   studioUrl,
   onOpenKeys,
   onOpenCeremony,
+  onOpenArchive,
 }: Readonly<AdminHeaderProps>) {
   return (
     <AppHeader
@@ -35,6 +37,7 @@ export function AdminHeader({
           studioUrl={studioUrl}
           onOpenKeys={onOpenKeys}
           onOpenCeremony={onOpenCeremony}
+          onOpenArchive={onOpenArchive}
         />
       }
     />
