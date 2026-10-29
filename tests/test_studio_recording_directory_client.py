@@ -132,3 +132,15 @@ async def test_custodians_are_unavailable_on_any_studio_failure_including_the_to
         TENANT, "corr-1"
     )
     assert sorted(names.values()) == ["Anna Becker", "Bernd Schulz", "Carla Weber"]
+
+
+@pytest.mark.asyncio
+async def test_names_cover_every_recording_user_and_are_empty_when_studio_cannot_answer():
+    refused = _client(FixedTransport(200, _body(tenantId="tenant-other")))
+    assert await StudioCustodianDirectory(refused).names(TENANT, "corr-1") == {}
+    assert await StudioCustodianDirectory(None).names(TENANT, "corr-1") == {}
+    body = _body()
+    names = await StudioCustodianDirectory(_client(FixedTransport(200, body))).names(
+        TENANT, "corr-1"
+    )
+    assert names == {user["sub"]: user["displayName"] for user in body["users"]}

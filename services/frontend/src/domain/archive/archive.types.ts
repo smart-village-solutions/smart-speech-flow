@@ -5,9 +5,14 @@ import type { SignedEntry } from '@/core/crypto/chain';
 /** Derived until verification records exist (#619, spec §10.5). */
 export type VerificationSummary = 'not_verified';
 
-/** A row of the employee's own archive: clear metadata only (spec §10.6). */
+/** A row of the caller's archive: clear metadata only (spec §10.6, §9.5). */
 export interface OwnConversation {
   conversationId: string;
+  employeeSub: string;
+  /** The directory's name for a recovered row's employee; null for one's own or when unknown. */
+  employeeName: string | null;
+  /** Someone else's conversation, opened through a completed recovery request. */
+  recovered: boolean;
   startedAt: string;
   endedAt: string;
   retentionUntil: string;

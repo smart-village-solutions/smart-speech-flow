@@ -3,7 +3,7 @@ import path from 'node:path';
 import { p256 } from '@noble/curves/nist.js';
 import { describe, expect, it } from 'vitest';
 import { aesKey, objectAad, openEnvelope, sealEnvelope } from '@/core/crypto/aead';
-import { type Bytes, bytesToBigInt, fromBase64Url, toBase64Url, toHex } from '@/core/crypto/bytes';
+import { type Bytes, bytesToBigInt, fromBase64Url, toBase64Url, toHex, utf8 } from '@/core/crypto/bytes';
 import { publicPoint } from '@/core/crypto/curve';
 import { type Field, enc } from '@/core/crypto/encoding';
 import { openWithSharedX, parseSealed, seal, sealedToJson } from '@/core/crypto/ecies';
@@ -20,7 +20,15 @@ import {
   verifySchnorr,
   verifySubshare,
 } from '@/core/crypto/proofs';
-import { dealingFields, signedDigest, verifyFields, wrapFields } from '@/core/crypto/signatures';
+import {
+  approvalFields,
+  dealingFields,
+  requestFields,
+  sha256,
+  signedDigest,
+  verifyFields,
+  wrapFields,
+} from '@/core/crypto/signatures';
 import { type SealedType, TAGS } from '@/core/crypto/tags';
 import { displayFingerprint, fingerprint, paperDeviceFingerprint, transcriptHash } from '@/core/crypto/transcript';
 
@@ -109,6 +117,48 @@ describe('shared crypto vectors', () => {
       recipientFingerprint: recipientFingerprint as Bytes,
     });
     expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...fields(wrap.fields))));
+  });
+
+  it('orders request-signature fields as the gateway does', async () => {
+    const v = vectors.signatures.find((item: { tag: string }) => item.tag === TAGS.requestSig);
+    const f = fields(v.fields);
+    const pairs: { conversationId: string; keyId: string }[] = [];
+    for (let i = 7; i < f.length; i += 2) pairs.push({ conversationId: f[i] as string, keyId: f[i + 1] as string });
+    const rebuilt = requestFields({
+      tenantId: f[0] as string,
+      requestId: f[1] as string,
+      kind: 'access',
+      recoveryKeyId: f[3] as string,
+      requesterSub: f[4] as string,
+      reasonHash: await sha256(utf8('Employee left; the authority needs the record.')),
+      scope: [...pairs].reverse(),
+    });
+    expect(pairs).toHaveLength(2);
+    expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...f)));
+  });
+
+  it('orders approval-signature fields as the gateway does', () => {
+    const v = vectors.signatures.find((item: { tag: string }) => item.tag === TAGS.approvalSig);
+    const f = fields(v.fields);
+    const rebuilt = approvalFields({
+      tenantId: f[0] as string,
+      requestId: f[1] as string,
+      holderIndex: f[2] as number,
+      attempt: f[3] as number,
+      partials: [
+        { keyId: f[7] as string, hash: f[8] as Bytes },
+        { keyId: f[5] as string, hash: f[6] as Bytes },
+      ],
+    });
+    expect(f[4]).toBe(2);
+    expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...f)));
+  });
+
+  it('hashes a partial blob over its exact text', async () => {
+    const v = vectors.signatures.find((item: { tag: string }) => item.tag === TAGS.approvalSig);
+    const f = fields(v.fields);
+    const at = f.indexOf('9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d');
+    same(await sha256(utf8('{"v":1}')), f[at + 1] as Bytes);
   });
 
   it('orders dealing-signature fields as the gateway does', () => {

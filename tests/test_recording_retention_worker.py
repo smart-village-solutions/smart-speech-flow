@@ -258,7 +258,13 @@ async def test_the_primary_shreds_clears_deletes_rows_and_sweeps(tmp_path):
 
     assert (report.shredded, report.cleared, report.rows_deleted, report.swept) == (1, 1, 1, True)
     assert store.rows_deleted == ["due"]
-    assert store.steps == ["due_expiries", "clearable", "deletable", "known_conversations"]
+    assert store.steps == [
+        "due_expiries",
+        "clearable",
+        "deletable",
+        "settle_requests",
+        "known_conversations",
+    ]
 
 
 async def test_the_replica_never_shreds_or_deletes_rows(tmp_path):

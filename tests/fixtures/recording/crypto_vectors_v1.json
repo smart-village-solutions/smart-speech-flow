@@ -257,6 +257,86 @@
       "signer": "BCOeribm-0uecM-w4cgbu7wPGXXhCAzCQe6gy3PvZ0CP_lF3zRG83xh0vbuvUfXDM6shtt432ZgUn9iUwL6BNS0",
       "digest": "Fx2e6dCoRjUhgyAsntsE46DMGN-0A31AuvTEpW9TouQ",
       "signature": "I3PKrjW1tKihOpBciYki_F3kjk9pitHQAURu6Na7OsltR42rboIZeNp8N_ad3GKiJO5QhxlUWPW-ioquMxRVww"
+    },
+    {
+      "tag": "ssf-rec/request-sig/v1",
+      "fields": [
+        {
+          "s": "tenant-kassel"
+        },
+        {
+          "s": "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+        },
+        {
+          "s": "access"
+        },
+        {
+          "s": "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+        },
+        {
+          "s": "sam"
+        },
+        {
+          "b": "PnJLXchAdrewikMMTR6RU608kuwOD56c6xQ2Xnt4SRU"
+        },
+        {
+          "i": 2
+        },
+        {
+          "s": "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+        },
+        {
+          "s": "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+        },
+        {
+          "s": "6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f"
+        },
+        {
+          "s": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+        }
+      ],
+      "signer_scalar": "81e576331be24c84a4636d173dfbe236f61cab4c7d43d1a110188b770637f6d2",
+      "signer_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQggeV2MxviTISkY20XPfviNvYcq0x9Q9GhEBiLdwY39tKhRANCAATgJATs2qpb2hJZxAAT4F90TQ1XuyegPgVuhi5oAyhlRC51RoLxa4dmbCC5jlKtNvf-t1eJUg0L7oD2Ry5QJQdp",
+      "signer": "BOAkBOzaqlvaElnEABPgX3RNDVe7J6A-BW6GLmgDKGVELnVGgvFrh2ZsILmOUq029_63V4lSDQvugPZHLlAlB2k",
+      "digest": "Q0Z6Gb_xoNiUPNzoM9z3kz7FjVULpdctESvVbykgwWw",
+      "signature": "3k32iEzzoILYACIlw0lSfVt-6fiHr0tojK3yvb3-Sfq7FuHLFoqqX2aSCQRCzbRja-PTJQIV-mL7HzEvFRUa9A"
+    },
+    {
+      "tag": "ssf-rec/approval-sig/v1",
+      "fields": [
+        {
+          "s": "tenant-kassel"
+        },
+        {
+          "s": "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+        },
+        {
+          "i": 3
+        },
+        {
+          "i": 1
+        },
+        {
+          "i": 2
+        },
+        {
+          "s": "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+        },
+        {
+          "b": "K1RCeZ_Mw68ufnkAF2lzc5E7evyskz1y-1h23plPZZo"
+        },
+        {
+          "s": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+        },
+        {
+          "b": "r7-dDzVgsP13legcQqCnnua2_GfgZPd4Jq7mQsrSjZE"
+        }
+      ],
+      "signer_scalar": "400757d9e283676630a95aa6765303f2e8ff2aa6267677cda25745601e6fda13",
+      "signer_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgQAdX2eKDZ2YwqVqmdlMD8uj_KqYmdnfNoldFYB5v2hOhRANCAASOuEkI5X1-38rntsWI6lC7bglAaNKafD_vfWy4mb7ZVv6Qf5GQDJKlMSynf1W3RXgIIE5I_JG-l8vJ4xnPotaj",
+      "signer": "BI64SQjlfX7fyue2xYjqULtuCUBo0pp8P-99bLiZvtlW_pB_kZAMkqUxLKd_VbdFeAggTkj8kb6Xy8njGc-i1qM",
+      "digest": "ajpgND6fhKT_7TVLVCLmxIHRPz6x8yFF_z8spDAhFFI",
+      "signature": "TBfPTkg9oL81xDOcsEpiXXYXV-YEFgiIkK7rxsG0dTYRKSD2D27VAWkM6aSXp0aYJikwfN7Ji6l0YBwhrQOMvw"
     }
   ],
   "ceremony": {

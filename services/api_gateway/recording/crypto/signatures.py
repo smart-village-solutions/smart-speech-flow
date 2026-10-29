@@ -9,7 +9,7 @@ produces, so the DER that `cryptography` speaks is converted at this edge.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from cryptography.exceptions import InvalidSignature
@@ -94,4 +94,47 @@ def dealing_fields(
         *commitments,
         scalar_to_bytes(proof_c),
         scalar_to_bytes(proof_s),
+    )
+
+
+def request_fields(
+    tenant_id: str,
+    request_id: str,
+    kind: str,
+    recovery_key_id: str,
+    requester_sub: str,
+    reason: str,
+    scope: Sequence[tuple[str, str]],
+) -> tuple[Field, ...]:
+    """What a requester signs, so nobody can widen the scope custodians approve (§9.5)."""
+    pairs = sorted(scope)
+    return (
+        tenant_id,
+        request_id,
+        kind,
+        recovery_key_id,
+        requester_sub,
+        hashlib.sha256(reason.encode("utf-8")).digest(),
+        len(pairs),
+        *(field for pair in pairs for field in pair),
+    )
+
+
+def partial_hash(blob: str) -> bytes:
+    """Over the JSON text exactly as posted and stored, not a re-serialisation."""
+    return hashlib.sha256(blob.encode("utf-8")).digest()
+
+
+def approval_fields(
+    tenant_id: str, request_id: str, holder_index: int, attempt: int, partials: Mapping[str, str]
+) -> tuple[Field, ...]:
+    """What a custodian signs: a bad partial under a good signature is theirs (§9.5)."""
+    keys = sorted(partials)
+    return (
+        tenant_id,
+        request_id,
+        holder_index,
+        attempt,
+        len(keys),
+        *(field for key_id in keys for field in (key_id, partial_hash(partials[key_id]))),
     )

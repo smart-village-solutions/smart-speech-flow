@@ -320,3 +320,103 @@ async def test_a_reused_entry_id_is_refused(archive, owner, access):
             TENANT, "alice", conversation.conversation_id, key_id, NOW, seal, NOW
         )
     assert refused.value.code == "entry_exists"
+
+
+async def _recovered(owner, conversation, key_id, *, requester="sam", status="completed"):
+    """A request of `requester` covering the conversation, and their own user wrap."""
+    from tests.integration.test_recording_recovery_requests_database import file_directly
+
+    request_id = await file_directly(
+        owner, conversation.conversation_id, key_id, requester=requester
+    )
+    await owner.execute(
+        "UPDATE recovery_requests SET status = $2, closed_at = $3 WHERE request_id = $1",
+        request_id,
+        status,
+        None if status == "open" else NOW,
+    )
+    await owner.execute(
+        "INSERT INTO key_wraps (tenant_id, key_id, recipient_kind, recipient_ref, blob,"
+        " creator_ref, creator_signature, granted_at)"
+        " VALUES ($1, $2, 'user', $3, '{}', $3, $4, $5)",
+        TENANT,
+        uuid.UUID(key_id),
+        requester,
+        bytes(64),
+        NOW,
+    )
+
+
+async def test_a_supervisor_with_a_completed_request_opens_the_conversation(archive, owner, access):
+    conversation, key_id, _ = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id)
+
+    opened = await access.open(TENANT, "sam", conversation.conversation_id, NOW, supervisor=True)
+
+    assert opened is not None and opened.employee_sub == "alice"
+    assert await access.openable(TENANT, "sam", conversation.conversation_id, NOW, supervisor=True)
+
+
+async def test_without_supervise_or_a_completed_request_it_stays_closed(archive, owner, access):
+    conversation, key_id, _ = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id, status="cancelled")
+    cid = conversation.conversation_id
+    assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None
+    await owner.execute("UPDATE recovery_requests SET status = 'completed'")
+    assert await access.open(TENANT, "sam", cid, NOW, supervisor=False) is None
+    assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is not None
+
+
+async def test_a_supervisor_cannot_amend_a_recovered_conversation(archive, owner, access):
+    conversation, key_id, _ = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id)
+    with pytest.raises(ArchiveAccessRefusedError, match="no_conversation"):
+        await access.append_amendment(
+            TENANT,
+            "sam",
+            conversation.conversation_id,
+            key_id,
+            NOW,
+            _sealer(conversation, key_id, str(uuid.uuid4())),
+            NOW,
+        )
+
+
+async def test_the_list_carries_each_rows_employee(archive, owner, access):
+    conversation, key_id, _ = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id)
+    rows = await access.own_conversations(
+        TENANT, "sam", NOW, limit=50, started_before=None, before_id=None, supervisor=True
+    )
+    assert [(r.conversation_id, r.employee_sub) for r in rows] == [
+        (conversation.conversation_id, "alice")
+    ]
+    assert rows[0].public("sam")["recovered"] is True
+
+
+async def test_a_supervisor_fetches_objects_of_a_recovered_conversation_only(
+    archive, owner, access
+):
+    conversation, key_id, consent = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id)
+    args = (TENANT, "sam", conversation.conversation_id, consent.entry_id, "record.json", NOW)
+    assert await access.object_location(*args, supervisor=True) is not None
+    assert await access.object_location(*args, supervisor=False) is None
+
+
+async def test_another_supervisors_completed_request_opens_nothing_for_the_caller(
+    archive, owner, access
+):
+    conversation, key_id, _ = await _ended(archive, owner)
+    await _recovered(owner, conversation, key_id, requester="zoe")
+    await owner.execute(
+        "INSERT INTO key_wraps (tenant_id, key_id, recipient_kind, recipient_ref, blob,"
+        " creator_ref, creator_signature, granted_at) VALUES ($1, $2, 'user', 'sam', '{}',"
+        " 'sam', $3, $4)",
+        TENANT,
+        uuid.UUID(key_id),
+        bytes(64),
+        NOW,
+    )
+    cid = conversation.conversation_id
+    assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None

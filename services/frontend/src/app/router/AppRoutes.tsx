@@ -17,6 +17,13 @@ import { CeremonyScreen } from '@/features/ceremony/CeremonyScreen';
 import { CEREMONY_VIEW, CUSTODIAN, TENANT_MANAGE } from '@/features/ceremony/useCeremony';
 import { KeysScreen } from '@/features/keys/KeysScreen';
 import { KEYS_VIEW } from '@/features/keys/useKeys';
+import { RecoveryApprovalsScreen } from '@/features/recovery/RecoveryApprovalsScreen';
+import { RecoveryRequestsScreen } from '@/features/recovery/RecoveryRequestsScreen';
+import {
+  RECOVERY_APPROVALS_VIEW,
+  RECOVERY_REQUESTS_VIEW,
+  SUPERVISE,
+} from '@/features/recovery/useRecovery';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import {
@@ -83,14 +90,33 @@ interface StaffScreensProps {
   studioUrl?: string;
 }
 
-type StaffView = 'dashboard' | typeof KEYS_VIEW | typeof CEREMONY_VIEW | typeof ARCHIVE_VIEW;
-const RESUMABLE: ReadonlySet<string> = new Set([KEYS_VIEW, CEREMONY_VIEW, ARCHIVE_VIEW]);
+/** Staff screens that share one shape: back to the dashboard, keys on the way. */
+const STAFF_SCREENS = {
+  [CEREMONY_VIEW]: CeremonyScreen,
+  [ARCHIVE_VIEW]: ArchiveScreen,
+  [RECOVERY_REQUESTS_VIEW]: RecoveryRequestsScreen,
+  [RECOVERY_APPROVALS_VIEW]: RecoveryApprovalsScreen,
+} as const;
+type StaffView = 'dashboard' | typeof KEYS_VIEW | keyof typeof STAFF_SCREENS;
+const RESUMABLE: ReadonlySet<string> = new Set([KEYS_VIEW, ...Object.keys(STAFF_SCREENS)]);
 
 /** A step-up redirect reloads the app; it asked to come back to the view it left. */
 function resumedView(remembered: string | null): StaffView {
   return remembered !== null && RESUMABLE.has(remembered)
     ? (remembered as StaffView)
     : 'dashboard';
+}
+
+/** Which staff screens the menu offers: a navigation hint, the gateway checks each itself. */
+const OFFERED: Record<keyof typeof STAFF_SCREENS, () => boolean> = {
+  [CEREMONY_VIEW]: () => hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN),
+  [ARCHIVE_VIEW]: () => ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission)),
+  [RECOVERY_REQUESTS_VIEW]: () => hasPermission(SUPERVISE),
+  [RECOVERY_APPROVALS_VIEW]: () => hasPermission(CUSTODIAN),
+};
+
+function opener(view: keyof typeof STAFF_SCREENS, setView: (view: StaffView) => void) {
+  return OFFERED[view]() ? () => setView(view) : undefined;
 }
 
 /** The signed-in staff screens; switched by state, since Keycloak returns to one URL. */
@@ -101,8 +127,6 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
   // A custodian sent from the ceremony to unlock their keys goes back to the ceremony.
   const [keysReturn, setKeysReturn] = useState<StaffView>('dashboard');
   const accountUrl = getAccountConsoleUrl() ?? undefined;
-  const ceremonyAllowed = hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN);
-  const archiveAllowed = ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission));
   const out = () => {
     setSessionId(null);
     onSignOut();
@@ -114,25 +138,19 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
   const shared = { onSignOut: out, accountUrl, studioUrl };
 
   if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView(keysReturn)} {...shared} />;
-  if (view === ARCHIVE_VIEW) {
-    return (
-      <ArchiveScreen
-        onBack={() => setView('dashboard')}
-        onOpenKeys={() => openKeys(ARCHIVE_VIEW)}
-        {...shared}
-      />
-    );
-  }
-  if (view === CEREMONY_VIEW) {
-    return <CeremonyScreen onBack={() => setView('dashboard')} onOpenKeys={() => openKeys(CEREMONY_VIEW)} {...shared} />;
+  if (view !== 'dashboard') {
+    const Screen = STAFF_SCREENS[view];
+    return <Screen onBack={() => setView('dashboard')} onOpenKeys={() => openKeys(view)} {...shared} />;
   }
   if (sessionId === null) {
     return (
       <AdminDashboardScreen
         onEnterSession={setSessionId}
         onOpenKeys={() => openKeys('dashboard')}
-        onOpenCeremony={ceremonyAllowed ? () => setView(CEREMONY_VIEW) : undefined}
-        onOpenArchive={archiveAllowed ? () => setView(ARCHIVE_VIEW) : undefined}
+        onOpenCeremony={opener(CEREMONY_VIEW, setView)}
+        onOpenArchive={opener(ARCHIVE_VIEW, setView)}
+        onOpenRecoveryRequests={opener(RECOVERY_REQUESTS_VIEW, setView)}
+        onOpenRecoveryApprovals={opener(RECOVERY_APPROVALS_VIEW, setView)}
         {...shared}
       />
     );

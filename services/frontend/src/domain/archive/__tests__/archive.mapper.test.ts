@@ -53,6 +53,8 @@ describe('archive mapper', () => {
       conversations: [
         {
           conversation_id: ID,
+          employee_sub: 'alice',
+          recovered: false,
           started_at: 's',
           ended_at: 'e',
           retention_until: 'r',
@@ -66,10 +68,35 @@ describe('archive mapper', () => {
     });
     expect(row).toMatchObject({
       conversationId: ID,
+      employeeSub: 'alice',
+      employeeName: null,
+      recovered: false,
       incomplete: true,
       messages: 3,
       verification: 'not_verified',
     });
+  });
+
+  it('maps a recovered row with its employee name', () => {
+    const [row] = toOwnConversations({
+      conversations: [
+        {
+          conversation_id: ID,
+          employee_sub: 'bob',
+          employee_name: 'Bob Employee',
+          recovered: true,
+          started_at: 's',
+          ended_at: 'e',
+          retention_until: 'r',
+          legal_hold: false,
+          incomplete: false,
+          messages: 1,
+          amendments: 0,
+          verification: 'not_verified',
+        },
+      ],
+    });
+    expect([row.recovered, row.employeeName]).toEqual([true, 'Bob Employee']);
   });
 
   it('keeps the signed objects text verbatim and decodes bytes', () => {

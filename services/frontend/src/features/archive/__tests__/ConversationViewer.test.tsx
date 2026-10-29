@@ -180,4 +180,13 @@ describe('ConversationViewer', () => {
     await waitFor(() => expect(amend).toHaveBeenCalledTimes(2));
     expect(amend.mock.calls[1]).toEqual(amend.mock.calls[0]);
   });
+
+  it("offers no amendment on someone else's conversation (§10.4)", () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'sam' });
+    render();
+    expect(screen.queryAllByRole('button', { name: archive.amend })).toEqual([]);
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
+    render();
+    expect(screen.getAllByRole('button', { name: archive.amend }).length).toBeGreaterThan(0);
+  });
 });

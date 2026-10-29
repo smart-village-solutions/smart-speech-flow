@@ -540,6 +540,7 @@ from .routes import (
     recording,
     recording_archive,
     recording_ceremony,
+    recording_recovery,
     recording_retention,
     recording_session,
     session,
@@ -570,6 +571,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(recording_session.router)
     app.include_router(recording_retention.router)
     app.include_router(recording_archive.router)
+    app.include_router(recording_recovery.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)

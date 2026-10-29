@@ -134,6 +134,37 @@
         "title": "AmendmentBody",
         "type": "object"
       },
+      "ApproveBody": {
+        "additionalProperties": false,
+        "properties": {
+          "partials": {
+            "additionalProperties": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxProperties": 500,
+            "minProperties": 1,
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Partials",
+            "type": "object"
+          },
+          "signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "partials",
+          "signature"
+        ],
+        "title": "ApproveBody",
+        "type": "object"
+      },
       "AudioVariant": {
         "enum": [
           "original",
@@ -1244,6 +1275,46 @@
         "title": "FeedbackSummaryResponse",
         "type": "object"
       },
+      "FileBody": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Conversation Ids",
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "reason",
+          "conversation_ids",
+          "signature"
+        ],
+        "title": "FileBody",
+        "type": "object"
+      },
       "GuestLanguagesResponse": {
         "properties": {
           "languages": {
@@ -1369,27 +1440,6 @@
           "feedback"
         ],
         "title": "InstallationContentResponse",
-        "type": "object"
-      },
-      "IntegrityBody": {
-        "additionalProperties": false,
-        "properties": {
-          "stage": {
-            "enum": [
-              "trust",
-              "wrap",
-              "chain",
-              "stamp",
-              "object"
-            ],
-            "title": "Stage",
-            "type": "string"
-          }
-        },
-        "required": [
-          "stage"
-        ],
-        "title": "IntegrityBody",
         "type": "object"
       },
       "LoginTenantDirectoryResponse": {
@@ -1601,6 +1651,22 @@
         "title": "RealtimeTicketResponse",
         "type": "object"
       },
+      "ReasonBody": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReasonBody",
+        "type": "object"
+      },
       "RecordingAnswerBody": {
         "additionalProperties": false,
         "properties": {
@@ -1708,6 +1774,38 @@
           "request_id"
         ],
         "title": "RecordingRequestBody",
+        "type": "object"
+      },
+      "RejectionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "fault": {
+            "enum": [
+              "partial_unreadable",
+              "proof_invalid"
+            ],
+            "title": "Fault",
+            "type": "string"
+          },
+          "holder_index": {
+            "maximum": 15.0,
+            "minimum": 1.0,
+            "title": "Holder Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "holder_index",
+          "attempt",
+          "fault"
+        ],
+        "title": "RejectionBody",
         "type": "object"
       },
       "SessionCreateResponse": {
@@ -2031,6 +2129,102 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WrapItem": {
+        "additionalProperties": false,
+        "properties": {
+          "blob": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Blob",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "key_id",
+          "blob",
+          "signature"
+        ],
+        "title": "WrapItem",
+        "type": "object"
+      },
+      "WrapsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "wraps": {
+            "items": {
+              "$ref": "#/components/schemas/WrapItem"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Wraps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "wraps"
+        ],
+        "title": "WrapsBody",
+        "type": "object"
+      },
+      "services__api_gateway__routes__recording_archive__IntegrityBody": {
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "enum": [
+              "trust",
+              "wrap",
+              "chain",
+              "stamp",
+              "object"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "IntegrityBody",
+        "type": "object"
+      },
+      "services__api_gateway__routes__recording_recovery__IntegrityBody": {
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "enum": [
+              "trust",
+              "wrap_signature",
+              "approval_signature",
+              "partial_hash",
+              "wrap_damaged"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "IntegrityBody",
         "type": "object"
       }
     }
@@ -2443,7 +2637,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IntegrityBody"
+                "$ref": "#/components/schemas/services__api_gateway__routes__recording_archive__IntegrityBody"
               }
             }
           },
@@ -3189,6 +3383,595 @@
           }
         },
         "summary": "Own Key",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/approvals": {
+      "get": {
+        "operationId": "approvals_api_admin_recording_recovery_approvals_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approvals Api Admin Recording Recovery Approvals Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Approvals",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/approvals/{request_id}": {
+      "get": {
+        "operationId": "approval_api_admin_recording_recovery_approvals__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approval Api Admin Recording Recovery Approvals  Request Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approval",
+        "tags": [
+          "recording"
+        ]
+      },
+      "post": {
+        "operationId": "approve_api_admin_recording_recovery_approvals__request_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/approvals/{request_id}/decline": {
+      "post": {
+        "operationId": "decline_api_admin_recording_recovery_approvals__request_id__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/candidates": {
+      "get": {
+        "operationId": "candidates_api_admin_recording_recovery_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "employee",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Employee",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "To",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Candidates Api Admin Recording Recovery Candidates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Candidates",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/employees": {
+      "get": {
+        "operationId": "employees_api_admin_recording_recovery_employees_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Employees Api Admin Recording Recovery Employees Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Employees",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests": {
+      "get": {
+        "operationId": "own_requests_api_admin_recording_recovery_requests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Own Requests Api Admin Recording Recovery Requests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Own Requests",
+        "tags": [
+          "recording"
+        ]
+      },
+      "post": {
+        "operationId": "file_request_api_admin_recording_recovery_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response File Request Api Admin Recording Recovery Requests Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "File Request",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests/{request_id}": {
+      "get": {
+        "operationId": "progress_api_admin_recording_recovery_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Progress Api Admin Recording Recovery Requests  Request Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Progress",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests/{request_id}/cancel": {
+      "post": {
+        "operationId": "cancel_api_admin_recording_recovery_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests/{request_id}/integrity-failures": {
+      "post": {
+        "operationId": "integrity_failure_api_admin_recording_recovery_requests__request_id__integrity_failures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/services__api_gateway__routes__recording_recovery__IntegrityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Integrity Failure",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests/{request_id}/partials": {
+      "get": {
+        "operationId": "partials_api_admin_recording_recovery_requests__request_id__partials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Partials Api Admin Recording Recovery Requests  Request Id  Partials Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Partials",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests/{request_id}/rejections": {
+      "post": {
+        "operationId": "reject_api_admin_recording_recovery_requests__request_id__rejections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/recovery/requests/{request_id}/wraps": {
+      "post": {
+        "operationId": "store_wraps_api_admin_recording_recovery_requests__request_id__wraps_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WrapsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Store Wraps Api Admin Recording Recovery Requests  Request Id  Wraps Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Store Wraps",
         "tags": [
           "recording"
         ]

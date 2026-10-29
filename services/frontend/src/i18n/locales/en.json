@@ -155,7 +155,9 @@
       "signOut": "Sign out",
       "keys": "Archive keys",
       "ceremony": "Recovery key",
-      "archive": "My recordings"
+      "archive": "My recordings",
+      "recoveryRequests": "Recovery requests",
+      "recoveryApprovals": "Recovery approvals"
     },
     "dashboard": {
       "welcome": {
@@ -477,7 +479,109 @@
           "failed": "The amendment was not saved.",
           "noKey": "No key suitable for an amendment."
         }
-      }
+      },
+      "recovered": "Recovered: {{name}}"
+    },
+    "recovery": {
+      "locked": "Unlock your archive key first.",
+      "unlock": "Unlock key",
+      "stepUpBody": "Recovery steps need a fresh sign-in with your second factor.",
+      "unavailable": "Recovery is not available right now.",
+      "requests": {
+        "title": "Recovery requests",
+        "intro": "Ask the custodians for access to conversations of an employee who is unavailable. Every step is recorded.",
+        "empty": "No requests yet.",
+        "conversations": "Conversations: {{count}}"
+      },
+      "status": {
+        "open": "Open",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "expired": "Expired",
+        "scope_gone": "Nothing left to recover"
+      },
+      "new": {
+        "action": "New request",
+        "title": "New recovery request",
+        "employee": "Employee",
+        "chooseEmployee": "Choose an employee",
+        "from": "From",
+        "to": "To",
+        "none": "No conversations of this employee can be recovered in this period.",
+        "limit": "At most 50 conversations per request.",
+        "reason": "Reason",
+        "used": "{{used}} / 1000",
+        "submit": "Sign and file request"
+      },
+      "detail": {
+        "title": "Request",
+        "progress": "{{valid}} of {{k}} approvals",
+        "combine": "Open conversations",
+        "combining": "Checking and combining…",
+        "cancel": "Cancel request",
+        "created": "Filed",
+        "expires": "Expires",
+        "reason": "Reason",
+        "status": "Status",
+        "conversations": "Conversations",
+        "decisions": "Decisions",
+        "noDecisions": "No custodian has decided yet."
+      },
+      "decision": {
+        "approved": "Approved",
+        "declined": "Declined",
+        "rejected": "Partial rejected"
+      },
+      "combine": {
+        "done": "Access restored. The conversations are now in your archive.",
+        "waiting": "Not enough valid approvals yet.",
+        "damaged": "The served data failed a check. Nothing was stored; the failure was recorded.",
+        "rejectedCustodian": "The partial from {{name}} did not verify and was rejected.",
+        "failed": "Combining failed. Try again."
+      },
+      "approvals": {
+        "title": "Recovery approvals",
+        "intro": "Requests waiting for your decision as custodian. You never see a conversation's content.",
+        "empty": "No requests are waiting for you."
+      },
+      "approve": {
+        "fingerprint": "Requester's key fingerprint",
+        "fingerprintHint": "Read it out to the requester by phone or in person and compare every group.",
+        "confirmed": "I confirmed this fingerprint with the requester by phone or in person.",
+        "action": "Approve",
+        "approving": "Checking and approving…"
+      },
+      "decline": {
+        "action": "Decline",
+        "reason": "Reason for declining",
+        "submit": "Decline request"
+      },
+      "fault": {
+        "self_approval": "You filed this request, so you cannot approve it.",
+        "not_listed": "Your key does not match the recovery transcript. Do not approve; tell the other custodians.",
+        "request_signature": "The request's signature does not verify. Do not approve.",
+        "out_of_scope": "The request lists a conversation its requester did not sign. Do not approve.",
+        "wrap_signature": "A recovery key wrap is not signed by a certified gateway key. Do not approve.",
+        "share_mismatch": "Your share does not match the transcript. Do not approve.",
+        "trust": "The recovery transcript does not verify. Do not approve; tell the other custodians.",
+        "step_up": "Sign in again with your second factor first.",
+        "unavailable": "Recovery is not available right now.",
+        "fingerprint_changed": "The requester's keys changed after you confirmed the fingerprint. Do not approve; compare again."
+      },
+      "error": {
+        "REQUEST_EXISTS": "One of these conversations is already in an open request of yours.",
+        "ALREADY_ACCESSIBLE": "You can already open one of these conversations.",
+        "KEY_NOT_ENROLLED": "Set up your archive key first.",
+        "CONVERSATION_NOT_FOUND": "One of these conversations can no longer be recovered.",
+        "RECOVERY_KEY_MISSING": "This organisation has no recovery key.",
+        "SIGNATURE_INVALID": "The signature did not verify. Unlock your key again and retry.",
+        "REQUESTER_CANNOT_APPROVE": "You filed this request, so you cannot approve it.",
+        "ALREADY_DECIDED": "You have already decided on this request.",
+        "REQUEST_CLOSED": "This request is closed.",
+        "NOT_ENOUGH_APPROVALS": "Not enough custodians have approved yet.",
+        "SCOPE_NOT_COVERED": "Not every conversation of the request was covered. Try again."
+      },
+      "retry": "Try again"
     }
   }
 }

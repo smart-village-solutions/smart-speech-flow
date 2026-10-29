@@ -26,3 +26,17 @@ class StudioCustodianDirectory:
             sys.stderr.write(f"Recording directory read failed: {error.code}\n")
             return None
         return {sub: user.display_name for sub, user in directory.holders_of(CUSTODIAN).items()}
+
+    async def names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]:
+        """Subject -> display name of every recording user; nothing when Studio cannot answer.
+
+        Callers show the sub instead, which is not a stale name (spec §10.1).
+        """
+        if self._client is None:
+            return {}
+        try:
+            directory = await self._client.fetch(tenant_id, correlation_id)
+        except (StudioV1ClientError, StudioTokenError) as error:
+            sys.stderr.write(f"Recording directory read failed: {error.code}\n")
+            return {}
+        return {user.sub: user.display_name for user in directory.users}

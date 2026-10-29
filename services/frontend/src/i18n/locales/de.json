@@ -155,7 +155,9 @@
       "signOut": "Abmelden",
       "keys": "Archivschlüssel",
       "ceremony": "Wiederherstellungsschlüssel",
-      "archive": "Meine Aufzeichnungen"
+      "archive": "Meine Aufzeichnungen",
+      "recoveryRequests": "Wiederherstellungsanträge",
+      "recoveryApprovals": "Wiederherstellungsfreigaben"
     },
     "dashboard": {
       "welcome": {
@@ -477,7 +479,109 @@
           "failed": "Die Ergänzung wurde nicht gespeichert.",
           "noKey": "Kein geeigneter Schlüssel für eine Ergänzung."
         }
-      }
+      },
+      "recovered": "Wiederhergestellt: {{name}}"
+    },
+    "recovery": {
+      "locked": "Entsperren Sie zuerst Ihren Archivschlüssel.",
+      "unlock": "Schlüssel entsperren",
+      "stepUpBody": "Für Wiederherstellungsschritte melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
+      "unavailable": "Die Wiederherstellung ist gerade nicht verfügbar.",
+      "requests": {
+        "title": "Wiederherstellungsanträge",
+        "intro": "Bitten Sie die Verwahrenden um Zugang zu Gesprächen einer Person, die nicht mehr verfügbar ist. Jeder Schritt wird protokolliert.",
+        "empty": "Noch keine Anträge.",
+        "conversations": "Gespräche: {{count}}"
+      },
+      "status": {
+        "open": "Offen",
+        "completed": "Abgeschlossen",
+        "cancelled": "Zurückgezogen",
+        "expired": "Abgelaufen",
+        "scope_gone": "Nichts mehr wiederherzustellen"
+      },
+      "new": {
+        "action": "Neuer Antrag",
+        "title": "Neuer Wiederherstellungsantrag",
+        "employee": "Mitarbeitende Person",
+        "chooseEmployee": "Person auswählen",
+        "from": "Von",
+        "to": "Bis",
+        "none": "In diesem Zeitraum lässt sich kein Gespräch dieser Person wiederherstellen.",
+        "limit": "Höchstens 50 Gespräche je Antrag.",
+        "reason": "Begründung",
+        "used": "{{used}} / 1000",
+        "submit": "Antrag signieren und stellen"
+      },
+      "detail": {
+        "title": "Antrag",
+        "progress": "{{valid}} von {{k}} Zustimmungen",
+        "combine": "Gespräche öffnen",
+        "combining": "Prüfen und zusammenführen …",
+        "cancel": "Antrag zurückziehen",
+        "created": "Gestellt",
+        "expires": "Läuft ab",
+        "reason": "Begründung",
+        "status": "Status",
+        "conversations": "Gespräche",
+        "decisions": "Entscheidungen",
+        "noDecisions": "Noch hat keine verwahrende Person entschieden."
+      },
+      "decision": {
+        "approved": "Zugestimmt",
+        "declined": "Abgelehnt",
+        "rejected": "Teilergebnis verworfen"
+      },
+      "combine": {
+        "done": "Der Zugang ist wiederhergestellt. Die Gespräche stehen jetzt in Ihrem Archiv.",
+        "waiting": "Noch nicht genug gültige Zustimmungen.",
+        "damaged": "Die gelieferten Daten haben eine Prüfung nicht bestanden. Nichts wurde gespeichert; der Fehler wurde protokolliert.",
+        "rejectedCustodian": "Das Teilergebnis von {{name}} war ungültig und wurde verworfen.",
+        "failed": "Das Zusammenführen ist fehlgeschlagen. Bitte erneut versuchen."
+      },
+      "approvals": {
+        "title": "Wiederherstellungsfreigaben",
+        "intro": "Anträge, die auf Ihre Entscheidung als verwahrende Person warten. Den Inhalt eines Gesprächs sehen Sie nie.",
+        "empty": "Es warten keine Anträge auf Sie."
+      },
+      "approve": {
+        "fingerprint": "Fingerabdruck des Schlüssels der antragstellenden Person",
+        "fingerprintHint": "Lesen Sie ihn der antragstellenden Person telefonisch oder persönlich vor und vergleichen Sie jede Gruppe.",
+        "confirmed": "Ich habe diesen Fingerabdruck telefonisch oder persönlich mit der antragstellenden Person verglichen.",
+        "action": "Zustimmen",
+        "approving": "Prüfen und zustimmen …"
+      },
+      "decline": {
+        "action": "Ablehnen",
+        "reason": "Grund der Ablehnung",
+        "submit": "Antrag ablehnen"
+      },
+      "fault": {
+        "self_approval": "Sie haben diesen Antrag gestellt und können ihm daher nicht zustimmen.",
+        "not_listed": "Ihr Schlüssel passt nicht zum Wiederherstellungsprotokoll. Stimmen Sie nicht zu und informieren Sie die anderen Verwahrenden.",
+        "request_signature": "Die Signatur des Antrags ist ungültig. Stimmen Sie nicht zu.",
+        "out_of_scope": "Der Antrag enthält ein Gespräch, das die antragstellende Person nicht signiert hat. Stimmen Sie nicht zu.",
+        "wrap_signature": "Eine Schlüsselhülle ist nicht von einem bestätigten Gateway-Schlüssel signiert. Stimmen Sie nicht zu.",
+        "share_mismatch": "Ihr Anteil passt nicht zum Protokoll. Stimmen Sie nicht zu.",
+        "trust": "Das Wiederherstellungsprotokoll ist ungültig. Stimmen Sie nicht zu und informieren Sie die anderen Verwahrenden.",
+        "step_up": "Melden Sie sich zuerst erneut mit Ihrem zweiten Faktor an.",
+        "unavailable": "Die Wiederherstellung ist gerade nicht verfügbar.",
+        "fingerprint_changed": "Die Schlüssel der antragstellenden Person haben sich nach Ihrer Bestätigung geändert. Stimmen Sie nicht zu; vergleichen Sie erneut."
+      },
+      "error": {
+        "REQUEST_EXISTS": "Eines dieser Gespräche steht bereits in einem offenen Antrag von Ihnen.",
+        "ALREADY_ACCESSIBLE": "Eines dieser Gespräche können Sie bereits öffnen.",
+        "KEY_NOT_ENROLLED": "Richten Sie zuerst Ihren Archivschlüssel ein.",
+        "CONVERSATION_NOT_FOUND": "Eines dieser Gespräche lässt sich nicht mehr wiederherstellen.",
+        "RECOVERY_KEY_MISSING": "Diese Organisation hat keinen Wiederherstellungsschlüssel.",
+        "SIGNATURE_INVALID": "Die Signatur ist ungültig. Entsperren Sie Ihren Schlüssel erneut und versuchen Sie es noch einmal.",
+        "REQUESTER_CANNOT_APPROVE": "Sie haben diesen Antrag gestellt und können ihm daher nicht zustimmen.",
+        "ALREADY_DECIDED": "Sie haben über diesen Antrag bereits entschieden.",
+        "REQUEST_CLOSED": "Dieser Antrag ist abgeschlossen.",
+        "NOT_ENOUGH_APPROVALS": "Noch haben nicht genug Verwahrende zugestimmt.",
+        "SCOPE_NOT_COVERED": "Nicht jedes Gespräch des Antrags war abgedeckt. Bitte erneut versuchen."
+      },
+      "retry": "Erneut versuchen"
     }
   }
 }

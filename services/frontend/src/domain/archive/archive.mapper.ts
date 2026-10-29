@@ -7,6 +7,9 @@ const verification = z.literal('not_verified');
 
 const own = z.object({
   conversation_id: uuid,
+  employee_sub: z.string(),
+  employee_name: z.string().nullable().optional(),
+  recovered: z.boolean(),
   started_at: z.string(),
   ended_at: z.string(),
   retention_until: z.string(),
@@ -92,6 +95,9 @@ export function toOwnConversations(body: unknown): OwnConversation[] {
     .parse(body)
     .conversations.map((row) => ({
       conversationId: row.conversation_id,
+      employeeSub: row.employee_sub,
+      employeeName: row.employee_name ?? null,
+      recovered: row.recovered,
       startedAt: row.started_at,
       endedAt: row.ended_at,
       retentionUntil: row.retention_until,

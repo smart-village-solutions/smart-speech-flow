@@ -23,6 +23,9 @@ const keys = { fingerprint: new Uint8Array(32) } as unknown as UnlockedKeys;
 function row(overrides: Partial<OwnConversation> = {}): OwnConversation {
   return {
     conversationId: '6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f',
+    employeeSub: 'alice',
+    employeeName: null,
+    recovered: false,
     startedAt: '2026-10-29T10:00:00+00:00',
     endedAt: '2026-10-29T10:20:00+00:00',
     retentionUntil: '2027-10-29T10:00:00+00:00',
@@ -109,5 +112,18 @@ describe('ArchiveScreen', () => {
     expect(archive.object).not.toHaveBeenCalled();
     expect(archive.reportIntegrity).toHaveBeenCalledWith(row().conversationId, 'chain');
     expect(screen.queryByText('Amira Haddad')).not.toBeInTheDocument();
+  });
+
+  it('tags a recovered conversation with its employee and opens it as theirs', async () => {
+    vi.mocked(verifyConversation).mockReturnValue(new Promise(() => undefined));
+    const recovered = row({ employeeSub: 'bob', employeeName: 'Bob Employee', recovered: true });
+    const { archive } = render({ unlocked: keys, pages: [[recovered]] });
+    const served = openedConversation();
+    served.conversation.employeeSub = 'bob';
+    vi.mocked(archive.open).mockResolvedValue(served);
+    await userEvent.click(await screen.findByText('Wiederhergestellt: Bob Employee'));
+    await waitFor(() => expect(archive.open).toHaveBeenCalledWith(recovered.conversationId));
+    // Checks start only for the employee the list named; bob's would be refused as alice's.
+    await waitFor(() => expect(verifyConversation).toHaveBeenCalled());
   });
 });

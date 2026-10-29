@@ -18,6 +18,7 @@ from services.api_gateway.recording.archive_access_repository import (
     ExistingAmendment,
     ObjectLocation,
     OpenedConversation,
+    OwnConversation,
 )
 from services.api_gateway.recording.archive_service import stored_recorder
 from services.api_gateway.recording.chain import GENESIS
@@ -47,7 +48,7 @@ class FakeAccess:
     def _ok(self, sub, conversation_id):
         return (sub, conversation_id) in self.openable_pairs
 
-    async def open(self, tenant_id, sub, conversation_id, now):
+    async def open(self, tenant_id, sub, conversation_id, now, *, supervisor=False):
         if not self._ok(sub, conversation_id):
             self.audit.append((sub, "not_found", conversation_id))
             return None
@@ -68,10 +69,12 @@ class FakeAccess:
             (),
         )
 
-    async def openable(self, tenant_id, sub, conversation_id, now):
+    async def openable(self, tenant_id, sub, conversation_id, now, *, supervisor=False):
         return self._ok(sub, conversation_id)
 
-    async def object_location(self, tenant_id, sub, conversation_id, entry_id, object_type, now):
+    async def object_location(
+        self, tenant_id, sub, conversation_id, entry_id, object_type, now, *, supervisor=False
+    ):
         if not self._ok(sub, conversation_id):
             return None
         return self.locations.get((entry_id, object_type))
@@ -335,3 +338,28 @@ async def test_two_identical_posts_at_once_both_answer_the_entry(rig):
     access.append_amendment = raced
     loser, created = await service.amend(TENANT, "alice", CONVERSATION, entry_id, KEY, data)
     assert (loser, created) == (winner, False)
+
+
+class Names:
+    def __init__(self) -> None:
+        self.reads = 0
+
+    async def names(self, tenant_id, correlation_id):
+        self.reads += 1
+        return {"bob": "Bob Employee"}
+
+
+async def test_names_are_read_only_for_recovered_rows(rig):
+    service, *_ = rig
+    names = Names()
+    service._names = names
+    own = OwnConversation(CONVERSATION, "alice", NOW, NOW, NOW, False, False, 1, 0)
+    theirs = OwnConversation(CONVERSATION, "bob", NOW, NOW, NOW, False, False, 1, 0)
+
+    assert await service.employee_names(TENANT, "alice", [own], "corr") == {}
+    assert names.reads == 0
+    assert await service.employee_names(TENANT, "alice", [own, theirs], "corr") == {
+        "bob": "Bob Employee"
+    }
+    service._names = None
+    assert await service.employee_names(TENANT, "alice", [theirs], "corr") == {}

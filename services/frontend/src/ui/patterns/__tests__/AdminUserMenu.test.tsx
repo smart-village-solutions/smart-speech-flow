@@ -41,6 +41,25 @@ describe('AdminUserMenu', () => {
     expect(onOpenArchive).toHaveBeenCalledOnce();
   });
 
+  it('offers recovery requests and approvals each only where its permission let a screen open it', async () => {
+    const requests = vi.fn();
+    const approvals = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryApprovals={approvals} />, {
+      locale: 'de',
+    });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Wiederherstellungsanträge' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
+    expect(approvals).toHaveBeenCalledOnce();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryRequests={requests} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Wiederherstellungsfreigaben' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsanträge' }));
+    expect(requests).toHaveBeenCalledOnce();
+  });
+
   it('opens and closes on the trigger', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
 

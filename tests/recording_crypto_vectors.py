@@ -220,6 +220,25 @@ def signature_vectors() -> list[dict[str, Any]]:
                 scalar("deal-s"),
             ),
         ),
+        signature_vector(
+            tags.REQUEST_SIG,
+            signatures.request_fields(
+                TENANT,
+                REQUEST,
+                "access",
+                CEREMONY,
+                "sam",
+                "Employee left; the authority needs the record.",
+                # Out of order on purpose: both sides must sort to the same fields.
+                [(CONVERSATION, KEY_ID), (CEREMONY, REQUEST)],
+            ),
+        ),
+        signature_vector(
+            tags.APPROVAL_SIG,
+            signatures.approval_fields(
+                TENANT, REQUEST, 3, 1, {KEY_ID: '{"v":1}', CEREMONY: '{"v":2}'}
+            ),
+        ),
     ]
 
 

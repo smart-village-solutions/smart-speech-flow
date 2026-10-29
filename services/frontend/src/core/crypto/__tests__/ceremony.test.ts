@@ -217,6 +217,23 @@ async function signedCeremony() {
 }
 
 describe('certify', () => {
+  it('certifies the facts a recovery needs: k, X and every X_i from the commitments', async () => {
+    const { facts, hash, signatures } = await signedCeremony();
+    const trust = await ceremonyCrypto.certifyTrust(facts, hash, signatures);
+    const lists = [...facts.dealings]
+      .sort((left, right) => left.dealerIndex - right.dealerIndex)
+      .map((dealing) => dealing.commitments);
+    expect(trust.recoveryKeyId).toBe(facts.ceremonyId);
+    expect(trust.k).toBe(facts.k);
+    expect(equalBytes(trust.transcriptHash, hash)).toBe(true);
+    expect(equalBytes(trust.recoveryPublicKey, recoveryPublicKey(lists))).toBe(true);
+    for (const participant of facts.participants) {
+      const share = trust.holderShares.get(participant.holderIndex) ?? new Uint8Array(0);
+      expect(equalBytes(share, holderPublicShare(participant.holderIndex, lists))).toBe(true);
+    }
+    expect([...trust.gatewayKeys.keys()]).toEqual(['gk-1']);
+  });
+
   it('returns the gateway keys a fully signed transcript lists', async () => {
     const { facts, hash, signatures } = await signedCeremony();
     const keys = await ceremonyCrypto.certify(facts, hash, signatures);

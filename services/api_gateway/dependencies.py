@@ -102,6 +102,8 @@ class GatewayDependencies:
     recording_stamper: Any = None
     # The employee's own archive (#616), wired with the archive.
     recording_archive_access: Any = None
+    # Exceptional access through custodian approval (#617a), wired with the keys.
+    recording_recovery_requests: Any = None
     # The archive sites' retention workers, as the gateway exports them (#618).
     retention_worker_metrics: Any = None
 

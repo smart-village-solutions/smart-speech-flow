@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Final, Protocol
 
@@ -58,14 +58,27 @@ class AccessRepository(Protocol):
         limit: int,
         started_before: datetime | None,
         before_id: str | None,
+        supervisor: bool = False,
     ) -> list[OwnConversation]: ...
 
     async def open(
-        self, tenant_id: str, sub: str, conversation_id: str, now: datetime
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        now: datetime,
+        *,
+        supervisor: bool = False,
     ) -> OpenedConversation | None: ...
 
     async def openable(
-        self, tenant_id: str, sub: str, conversation_id: str, now: datetime
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        now: datetime,
+        *,
+        supervisor: bool = False,
     ) -> bool: ...
 
     async def object_location(
@@ -76,6 +89,8 @@ class AccessRepository(Protocol):
         entry_id: str,
         object_type: str,
         now: datetime,
+        *,
+        supervisor: bool = False,
     ) -> ObjectLocation | None: ...
 
     async def existing_amendment(
@@ -104,6 +119,10 @@ class AccessRepository(Protocol):
     async def mark_incomplete(self, tenant_id: str, conversation_id: str) -> None: ...
 
 
+class NameSource(Protocol):
+    async def names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]: ...
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -123,9 +142,11 @@ class ArchiveAccess:
         reader: ArchiveWriter,
         spools: TenantSpools,
         secrets: RecordingSecrets,
+        names: NameSource | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._repository = repository
+        self._names = names
         self._reader = reader
         self._spools = spools
         self._secrets = secrets
@@ -141,6 +162,7 @@ class ArchiveAccess:
         limit: int,
         started_before: datetime | None,
         before_id: str | None,
+        supervisor: bool = False,
     ) -> list[OwnConversation]:
         return await _guard(
             self._repository.own_conversations(
@@ -150,12 +172,25 @@ class ArchiveAccess:
                 limit=limit,
                 started_before=started_before,
                 before_id=before_id,
+                supervisor=supervisor,
             )
         )
 
-    async def open(self, tenant_id: str, sub: str, conversation_id: str) -> OpenedConversation:
+    async def employee_names(
+        self, tenant_id: str, sub: str, rows: list[OwnConversation], correlation_id: str
+    ) -> Mapping[str, str]:
+        """Names for recovered rows only (§9.5); the directory is not read for one's own."""
+        if self._names is None or all(row.employee_sub == sub for row in rows):
+            return {}
+        return await self._names.names(tenant_id, correlation_id)
+
+    async def open(
+        self, tenant_id: str, sub: str, conversation_id: str, *, supervisor: bool = False
+    ) -> OpenedConversation:
         now = self._clock()
-        opened = await _guard(self._repository.open(tenant_id, sub, conversation_id, now))
+        opened = await _guard(
+            self._repository.open(tenant_id, sub, conversation_id, now, supervisor=supervisor)
+        )
         if opened is None:
             raise ArchiveAccessError("not_found")
         self._prune(now)
@@ -181,13 +216,26 @@ class ArchiveAccess:
         }
 
     async def object(
-        self, tenant_id: str, sub: str, conversation_id: str, entry_id: str, object_type: str
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        entry_id: str,
+        object_type: str,
+        *,
+        supervisor: bool = False,
     ) -> bytes:
         if not self._recently_opened(tenant_id, sub, conversation_id):
             raise await self._not_found(tenant_id, sub, conversation_id)
         location = await _guard(
             self._repository.object_location(
-                tenant_id, sub, conversation_id, entry_id, object_type, self._clock()
+                tenant_id,
+                sub,
+                conversation_id,
+                entry_id,
+                object_type,
+                self._clock(),
+                supervisor=supervisor,
             )
         )
         if location is None:
@@ -327,7 +375,15 @@ class ArchiveAccess:
         finally:
             self._spools.notify(tenant_id)
 
-    async def report(self, tenant_id: str, sub: str, conversation_id: str, stage: str) -> None:
+    async def report(
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        stage: str,
+        *,
+        supervisor: bool = False,
+    ) -> None:
         """A browser's integrity failure (§10.6): a signal, audited and logged with IDs only."""
         if stage not in INTEGRITY_STAGES:
             raise ArchiveAccessError("not_found")
@@ -336,7 +392,10 @@ class ArchiveAccess:
         last = self._reported.get(marker)
         if last is not None and now - last < REPORT_INTERVAL:
             return
-        if not await _guard(self._repository.openable(tenant_id, sub, conversation_id, now)):
+        openable = self._repository.openable(
+            tenant_id, sub, conversation_id, now, supervisor=supervisor
+        )
+        if not await _guard(openable):
             raise await self._not_found(tenant_id, sub, conversation_id)
         await _guard(
             self._repository.record_integrity_failure(tenant_id, sub, conversation_id, stage, now)

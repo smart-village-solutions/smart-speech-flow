@@ -41,7 +41,8 @@ export function useArchiveList() {
 export function useOpenedConversation(
   conversationId: string,
   unlocked: UnlockedKeys,
-  version: number
+  version: number,
+  employeeSub?: string
 ): Opened {
   const { archive, archiveCrypto, ceremonyCrypto } = useServices();
   // `version` re-opens the conversation after an amendment; a result for an older request reads as checking.
@@ -57,7 +58,8 @@ export function useOpenedConversation(
         : openConversation(
             { archive, archiveCrypto, ceremonyCrypto, identity },
             conversationId,
-            unlocked
+            unlocked,
+            employeeSub ?? identity.userSub
           );
     const settle = (opened: Opened) => {
       if (live) setResult({ request, opened });
@@ -66,7 +68,7 @@ export function useOpenedConversation(
     return () => {
       live = false;
     };
-  }, [archive, archiveCrypto, ceremonyCrypto, conversationId, unlocked, request]);
+  }, [archive, archiveCrypto, ceremonyCrypto, conversationId, unlocked, request, employeeSub]);
 
   return result?.request === request ? result.opened : { status: 'checking' };
 }

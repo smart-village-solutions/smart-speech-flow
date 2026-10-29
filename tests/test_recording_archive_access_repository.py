@@ -153,7 +153,8 @@ async def test_the_list_reads_counts_and_clear_metadata():
         1,
         True,
     )
-    assert own.public()["verification"] == "not_verified"
+    assert own.public("alice")["verification"] == "not_verified"
+    assert (own.employee_sub, own.public("alice")["recovered"]) == ("alice", False)
 
 
 async def test_a_refused_open_reads_nothing_and_is_audited_as_not_found():

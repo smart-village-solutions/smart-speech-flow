@@ -8,6 +8,8 @@ import { KEYS_VIEW } from './useKeys';
 const BODY = {
   keys: 'admin.keys.stepUpBody',
   ceremony: 'admin.ceremony.stepUpBody',
+  recoveryRequests: 'admin.recovery.stepUpBody',
+  recoveryApprovals: 'admin.recovery.stepUpBody',
 } as const;
 
 interface StepUpPromptProps {

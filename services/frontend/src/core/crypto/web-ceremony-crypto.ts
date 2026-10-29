@@ -2,6 +2,7 @@ import { type Bytes, bytesToBigInt, equalBytes, fromBuffer, scalarToBytes } from
 import {
   type CeremonyCrypto,
   type CeremonyFacts,
+  type CertifiedTrust,
   type CeremonyFault,
   type CeremonyParticipant,
   CeremonyCheckError,
@@ -141,6 +142,31 @@ async function participantVouches(
   return verifyFields(participant.sigPub, signature, TAGS.transcript, [transcript]);
 }
 
+async function certifyTrust(
+  facts: Readonly<CeremonyFacts>,
+  expectedTranscript: Bytes,
+  signatures: ReadonlyMap<number, Bytes>
+): Promise<CertifiedTrust> {
+  await fingerprints(facts);
+  const input = transcriptOf(facts);
+  const hash = await transcriptHash(input);
+  if (!equalBytes(hash, expectedTranscript)) fail('transcript_mismatch');
+  const vouched = await Promise.all(
+    facts.participants.map((p) => participantVouches(p, signatures.get(p.holderIndex), hash))
+  );
+  if (vouched.includes(false)) fail('signature_invalid');
+  const participants = [...facts.participants].sort((left, right) => left.holderIndex - right.holderIndex);
+  return {
+    recoveryKeyId: facts.ceremonyId,
+    k: facts.k,
+    transcriptHash: hash,
+    recoveryPublicKey: input.recoveryPublicKey,
+    participants,
+    holderShares: new Map(participants.map((p, i) => [p.holderIndex, input.holderShares[i]])),
+    gatewayKeys: new Map(facts.gatewayKeys.map((key) => [key.keyId, key.publicKey])),
+  };
+}
+
 export function createWebCeremonyCrypto(): CeremonyCrypto {
   return {
     fingerprints,
@@ -182,15 +208,10 @@ export function createWebCeremonyCrypto(): CeremonyCrypto {
     },
 
     async certify(facts, expectedTranscript, signatures) {
-      await fingerprints(facts);
-      const hash = await transcriptHash(transcriptOf(facts));
-      if (!equalBytes(hash, expectedTranscript)) fail('transcript_mismatch');
-      const vouched = await Promise.all(
-        facts.participants.map((p) => participantVouches(p, signatures.get(p.holderIndex), hash))
-      );
-      if (vouched.includes(false)) fail('signature_invalid');
-      return new Map(facts.gatewayKeys.map((key) => [key.keyId, key.publicKey]));
+      return (await certifyTrust(facts, expectedTranscript, signatures)).gatewayKeys;
     },
+
+    certifyTrust,
 
     async createPaperDevice(tenantId) {
       const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);

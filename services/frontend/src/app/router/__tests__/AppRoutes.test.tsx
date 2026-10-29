@@ -236,6 +236,28 @@ describe('tenant login routes', () => {
     ).toBeInTheDocument();
   });
 
+  it('opens recovery approvals for a custodian only, and its back returns to the dashboard', async () => {
+    vi.mocked(hasPermission).mockImplementation(
+      (permission) => permission === 'ssf.recording.recovery.custodian'
+    );
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
+    server.use(
+      http.get('*/api/admin/recording/recovery/approvals', () => HttpResponse.json({ requests: [] }))
+    );
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.queryByRole('button', { name: 'Wiederherstellungsanträge' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Wiederherstellungsfreigaben' })
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Es warten keine Anträge auf Sie.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(await screen.findByRole('button', { name: 'Neues Gespräch starten' })).toBeInTheDocument();
+  });
+
   it('offers no recording archive without a recording permission', async () => {
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });

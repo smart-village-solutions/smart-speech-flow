@@ -206,6 +206,9 @@ class FakeRetentionStore:
         self.steps.append("deletable")
         return sorted(self.cleared & self.cleared_elsewhere)
 
+    async def settle_requests(self, tenant_id, now):
+        self.steps.append("settle_requests")
+
     async def delete_rows(self, tenant_id, conversation_id, now):
         del self.conversations[conversation_id]
         self.rows_deleted.append(conversation_id)

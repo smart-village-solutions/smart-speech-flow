@@ -29,6 +29,8 @@ from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
+from .recovery_requests import RecoveryRequests
+from .recovery_requests_repository import PostgresRecoveryRequests
 from .retention.decisions_repository import PostgresRetentionDecisions
 from .retention.metrics import SITES as RETENTION_SITES
 from .secrets import MissingRecordingSecrets, RecordingSecrets
@@ -133,6 +135,7 @@ def _connect_archive(
         reader=store,
         spools=spools,
         secrets=secrets,
+        names=_custodian_directory(state),
     )
     state.recording_spools = spools
     state.recording_archive_client = client
@@ -265,6 +268,11 @@ async def connect_recording(state: Any, dsn: str) -> bool:
         repository=repository, directory=_custodian_directory(state), secrets=secrets
     )
     state.recording_retention = PostgresRetentionDecisions(repository.pool)
+    state.recording_recovery_requests = RecoveryRequests(
+        repository=PostgresRecoveryRequests(repository.pool),
+        keys=repository,
+        names=_custodian_directory(state),
+    )
     archive = _connect_archive(state, repository, secrets)
     _attach_sessions(state, _recording_sessions(state, repository, archive))
     sys.stderr.write("Recording keys ready\n")
@@ -293,6 +301,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_repository = None
     dependencies.recording_keys = None
     dependencies.recording_ceremony = None
+    dependencies.recording_recovery_requests = None
     dependencies.recording_retention = None
     dependencies.recording_secrets = None
     sessions = dependencies.recording_sessions

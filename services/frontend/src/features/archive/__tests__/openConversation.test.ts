@@ -169,6 +169,19 @@ describe('openConversation', () => {
     expect(verifyConversation).not.toHaveBeenCalled();
   });
 
+  it('opens a recovered conversation when the list named its employee (§9.5)', async () => {
+    vi.mocked(verifyConversation).mockResolvedValue({ ok: false, stage: 'wrap' });
+    const recovered = await conversation();
+    recovered.conversation.employeeSub = 'bob';
+    expect(
+      await openConversation(deps(recovered), IDS.conversation, {} as UnlockedKeys, 'bob')
+    ).toEqual({
+      status: 'broken',
+      stage: 'wrap',
+    });
+    expect(verifyConversation).toHaveBeenCalled();
+  });
+
   it('opens the conversation again when the hour since its open has passed, then fetches', async () => {
     vi.mocked(verifyConversation).mockResolvedValue({
       ok: true,

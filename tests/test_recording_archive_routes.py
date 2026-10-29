@@ -35,6 +35,7 @@ from tests.recording_archive_fakes import recovery_record
 TENANT = "tenant-test"
 BASE = "/api/admin/recording/archive"
 CONVERSATION = str(uuid.uuid4())
+RECOVERED = str(uuid.uuid4())
 NOW = datetime(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
 
 
@@ -48,18 +49,30 @@ class FakeService:
         if self.fail:
             raise ArchiveAccessError(self.fail)
 
-    async def conversations(self, tenant_id, sub, *, limit, started_before, before_id):
+    async def conversations(
+        self, tenant_id, sub, *, limit, started_before, before_id, supervisor=False
+    ):
         self.calls.append(("list", sub, limit, started_before, before_id))
-        return [OwnConversation(CONVERSATION, NOW, NOW, NOW, False, True, 3, 1)]
+        self.supervisor = supervisor
+        return [
+            OwnConversation(CONVERSATION, "alice", NOW, NOW, NOW, False, True, 3, 1),
+            OwnConversation(RECOVERED, "bob", NOW, NOW, NOW, False, False, 1, 0),
+        ]
 
-    async def open(self, tenant_id, sub, conversation_id):
+    async def employee_names(self, tenant_id, sub, rows, correlation_id):
+        return {"bob": "Bob Employee"}
+
+    async def open(self, tenant_id, sub, conversation_id, *, supervisor=False):
         self._maybe_fail()
         self.calls.append(("open", sub, conversation_id))
+        self.supervisor = supervisor
         return OpenedConversation(
             conversation_id, sub, "consent", NOW, NOW, NOW, False, False, (), (), {}, (), ()
         )
 
-    async def object(self, tenant_id, sub, conversation_id, entry_id, object_type):
+    async def object(
+        self, tenant_id, sub, conversation_id, entry_id, object_type, *, supervisor=False
+    ):
         self._maybe_fail()
         return b"\x01cipher"
 
@@ -68,7 +81,7 @@ class FakeService:
         self.calls.append(("amend", entry_id, key_id, ciphertext))
         return SimpleNamespace(entry_id=entry_id, seq=4), self.created
 
-    async def report(self, tenant_id, sub, conversation_id, stage):
+    async def report(self, tenant_id, sub, conversation_id, stage, *, supervisor=False):
         self._maybe_fail()
         self.calls.append(("report", stage))
 
@@ -256,3 +269,24 @@ def test_trust_without_an_active_key_is_a_404(client_for):
     app.dependency_overrides[get_trust_source] = lambda: NoKey()
     response = client.get(f"{BASE}/trust")
     assert (response.status_code, _code(response)) == (404, "RECOVERY_KEY_MISSING")
+
+
+@pytest.mark.parametrize(
+    ("permissions", "supervisor"),
+    [(("ssf.recording.request",), False), (("ssf.recording.supervise",), True)],
+)
+def test_only_supervise_opens_recovered_conversations(client_for, permissions, supervisor):
+    service = FakeService()
+    client = client_for(_claims(permissions=permissions), service)
+    client.get(f"{BASE}/{CONVERSATION}")
+    assert service.supervisor is supervisor
+    client.get(BASE)
+    assert service.supervisor is supervisor
+
+
+def test_the_list_tags_recovered_rows_with_the_employees_name(client_for):
+    rows = client_for(_claims(), FakeService()).get(BASE).json()["conversations"]
+    assert [(r["employee_sub"], r["recovered"], r["employee_name"]) for r in rows] == [
+        ("alice", False, None),
+        ("bob", True, "Bob Employee"),
+    ]

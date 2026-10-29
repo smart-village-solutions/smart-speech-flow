@@ -17,6 +17,8 @@ interface AdminDashboardScreenProps {
   onOpenKeys?: () => void;
   onOpenCeremony?: () => void;
   onOpenArchive?: () => void;
+  onOpenRecoveryRequests?: () => void;
+  onOpenRecoveryApprovals?: () => void;
   accountUrl?: string;
   studioUrl?: string;
 }
@@ -27,6 +29,8 @@ export function AdminDashboardScreen({
   onOpenKeys,
   onOpenCeremony,
   onOpenArchive,
+  onOpenRecoveryRequests,
+  onOpenRecoveryApprovals,
   accountUrl,
   studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
@@ -49,6 +53,8 @@ export function AdminDashboardScreen({
         onOpenKeys={onOpenKeys}
         onOpenCeremony={onOpenCeremony}
         onOpenArchive={onOpenArchive}
+        onOpenRecoveryRequests={onOpenRecoveryRequests}
+        onOpenRecoveryApprovals={onOpenRecoveryApprovals}
       />
 
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">

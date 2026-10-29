@@ -81,6 +81,19 @@ export function heldShare(received: Readonly<ReceivedShares>, index: number): bi
   return share;
 }
 
+/** What a certified transcript vouches for: the browser derives X and every X_i itself. */
+export interface CertifiedTrust {
+  /** The recovery key's ID, which is its ceremony's. */
+  recoveryKeyId: string;
+  k: number;
+  transcriptHash: Bytes;
+  recoveryPublicKey: Bytes;
+  participants: CeremonyParticipant[];
+  /** Holder index -> X_i. */
+  holderShares: Map<number, Bytes>;
+  gatewayKeys: Map<string, Bytes>;
+}
+
 /** The browser's part of the recovery-key ceremony (spec §9.2). Features reach it through this port only. */
 export interface CeremonyCrypto {
   /** Rejects with CeremonyCheckError('fingerprint_mismatch') if a listed fingerprint does not match its keys. */
@@ -114,6 +127,12 @@ export interface CeremonyCrypto {
     transcriptHash: Bytes,
     signatures: ReadonlyMap<number, Bytes>
   ): Promise<Map<string, Bytes>>;
+  /** The same checks as `certify`, returning everything a recovery needs (spec §9.5). */
+  certifyTrust(
+    facts: Readonly<CeremonyFacts>,
+    transcriptHash: Bytes,
+    signatures: ReadonlyMap<number, Bytes>
+  ): Promise<CertifiedTrust>;
 }
 
 /** The ceremony device's key, in memory for as long as this tab lives. */

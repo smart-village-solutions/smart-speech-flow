@@ -11,6 +11,8 @@ interface AdminHeaderProps {
   onOpenKeys?: () => void;
   onOpenCeremony?: () => void;
   onOpenArchive?: () => void;
+  onOpenRecoveryRequests?: () => void;
+  onOpenRecoveryApprovals?: () => void;
 }
 
 /** The customer header plus the account menu: same 72px bar, same 800px column. */
@@ -24,6 +26,8 @@ export function AdminHeader({
   onOpenKeys,
   onOpenCeremony,
   onOpenArchive,
+  onOpenRecoveryRequests,
+  onOpenRecoveryApprovals,
 }: Readonly<AdminHeaderProps>) {
   return (
     <AppHeader
@@ -38,6 +42,8 @@ export function AdminHeader({
           onOpenKeys={onOpenKeys}
           onOpenCeremony={onOpenCeremony}
           onOpenArchive={onOpenArchive}
+          onOpenRecoveryRequests={onOpenRecoveryRequests}
+          onOpenRecoveryApprovals={onOpenRecoveryApprovals}
         />
       }
     />
