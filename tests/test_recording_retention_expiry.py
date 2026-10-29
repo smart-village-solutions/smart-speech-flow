@@ -146,7 +146,7 @@ async def test_a_refused_delete_leaves_the_site_uncleared(world):
     report = ExpiryReport()
     await Expirer(store, refusing).clear(TENANT, NOW, report)
     assert store.cleared == set()
-    assert report.versions_deleted == 0
+    assert (report.versions_deleted, report.refused) == (0, 1)
 
 
 async def test_rows_go_for_conversations_both_sites_cleared(world):

@@ -29,11 +29,13 @@ class FakeDecisions:
         self.rows = {summary.conversation_id: summary for summary in summaries}
         self.decided: list[tuple[RetentionDecision, str]] = []
         self.not_found: list[tuple[str, str, str]] = []
+        self.cursors: list[tuple] = []
 
     async def summary(self, tenant_id, conversation_id):
         return self.rows.get(conversation_id) if tenant_id == TENANT else None
 
-    async def summaries(self, tenant_id, *, limit, started_before):
+    async def summaries(self, tenant_id, *, limit, started_before, before_id=None):
+        self.cursors.append((started_before, before_id))
         rows = sorted(self.rows.values(), key=lambda row: row.started_at, reverse=True)
         return [row for row in rows if started_before is None or row.started_at < started_before][
             :limit
@@ -281,6 +283,16 @@ def test_the_list_is_newest_first_and_pages_by_start(client_for):
     ]
     for limit in (0, 101):
         assert client.get(BASE, params={"limit": limit}).status_code == 422
+
+
+def test_the_next_page_is_asked_for_by_start_and_id(client_for):
+    decisions = FakeDecisions(_summary())
+    client = client_for(_claims(), decisions)
+    boundary, last = "2026-10-28T12:00:00+00:00", "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+    response = client.get(BASE, params={"started_before": boundary, "before_id": last})
+    assert response.status_code == 200
+    assert decisions.cursors[-1] == (datetime.fromisoformat(boundary), last)
+    assert client.get(BASE, params={"before_id": "not-a-uuid"}).status_code == 422
 
 
 def test_an_unwired_gateway_answers_503(client_for):

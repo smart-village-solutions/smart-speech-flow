@@ -691,7 +691,7 @@ tests:
               site: primary
             exp_annotations:
               summary: A retention worker has stopped finishing its passes.
-              description: "The primary archive site's retention worker has not finished a pass for over thirty minutes, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+              description: "The primary archive site's retention worker has not finished a pass for over thirty minutes, or never reported since the gateway has had an archive, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording, and that the gateway can read ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
 
   # Still pending ten minutes after the last beat; and a worker beating every pass never fires.
   - interval: 1m

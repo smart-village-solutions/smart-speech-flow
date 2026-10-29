@@ -13,13 +13,16 @@ from services.api_gateway.recording.retention.restore_guard import (
 A1, A3, B2 = AuditMark(1, "a1"), AuditMark(3, "a3"), AuditMark(2, "b2")
 
 
-def _observe(path, behind=False, latest=None) -> bool:
+def _observe(path, behind=False, latest=None, *, regressed=False, advance=True) -> bool:
     with AuditHighWater(path).locked() as guard:
-        return guard.observe(behind, latest or {})
+        return guard.observe(behind, regressed, latest or {}, advance=advance)
 
 
-def test_marks_advance_while_the_database_keeps_up(tmp_path):
+def test_marks_advance_only_once_a_pass_is_over(tmp_path):
     assert _observe(tmp_path, latest={"a": A1}) is False
+    assert _observe(tmp_path, latest={"a": A3, "b": B2}, advance=False) is False
+    with AuditHighWater(tmp_path).locked() as guard:
+        assert guard.marks == {"a": A1}
     assert _observe(tmp_path, latest={"a": A3, "b": B2}) is False
     with AuditHighWater(tmp_path).locked() as guard:
         assert guard.marks == {"a": A3, "b": B2}
@@ -34,25 +37,41 @@ def test_a_database_behind_halts_for_good_and_marks_every_tenant_for_a_re_read(t
     with AuditHighWater(tmp_path).locked() as guard:
         assert guard.marks == {"a": A3, "b": B2}
         assert guard.recheck == {"a", "b", "c"}
+        assert guard.seen == {"a": AuditMark(9, "a9"), "c": AuditMark(1, "c1")}
         guard.rechecked("b")
     with AuditHighWater(tmp_path).locked() as guard:
         assert guard.recheck == {"a", "c"}
 
 
+def test_a_second_restore_while_halted_re_reads_everything_again(tmp_path):
+    _observe(tmp_path, latest={"a": A3})
+    _observe(tmp_path, behind=True, latest={"a": A1})
+    with AuditHighWater(tmp_path).locked() as guard:
+        guard.rechecked("a")
+    assert _observe(tmp_path, behind=True, latest={"a": A1}) is True
+    with AuditHighWater(tmp_path).locked() as guard:
+        assert guard.recheck == set()  # still the same restore: nothing to read again
+
+    assert _observe(tmp_path, behind=True, regressed=True, latest={"a": AuditMark(1, "x")}) is True
+    with AuditHighWater(tmp_path).locked() as guard:
+        assert guard.recheck == {"a"}
+        assert guard.seen == {"a": AuditMark(1, "x")}
+
+
 def test_an_acknowledgement_resumes_and_survives_the_running_loop(tmp_path):
     running = AuditHighWater(tmp_path)  # the loop's guard, built once
     with running.locked() as guard:
-        guard.observe(False, {"a": A3})
+        guard.observe(False, False, {"a": A3}, advance=True)
     with running.locked() as guard:
-        assert guard.observe(True, {"a": A1}) is True
+        assert guard.observe(True, False, {"a": A1}, advance=False) is True
 
     with AuditHighWater(tmp_path).locked() as guard:  # acknowledge-restore, another process
         guard.acknowledge({"a": A1})
 
     with running.locked() as guard:
-        assert guard.observe(False, {"a": AuditMark(2, "a2")}) is False
+        assert guard.observe(False, False, {"a": AuditMark(2, "a2")}, advance=True) is False
         assert guard.marks == {"a": AuditMark(2, "a2")}
-        assert guard.recheck == set()
+        assert (guard.recheck, guard.seen) == (set(), {})
 
 
 def test_an_unreadable_state_halts_and_re_reads_every_tenant(tmp_path):

@@ -2528,6 +2528,7 @@
     },
     "/api/admin/recording/conversations": {
       "get": {
+        "description": "Newest first; the next page passes the last row's `started_at` and `conversation_id`.",
         "operationId": "list_conversations_api_admin_recording_conversations_get",
         "parameters": [
           {
@@ -2557,6 +2558,23 @@
                 }
               ],
               "title": "Started Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
             }
           }
         ],

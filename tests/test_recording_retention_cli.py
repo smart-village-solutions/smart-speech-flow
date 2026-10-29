@@ -95,8 +95,8 @@ def test_usage_errors_exit_2(argv):
 def _halted(environment, *, reread: bool = True) -> None:
     """Tripped by a restore; the worker's re-read of the tenant done, or not yet."""
     with AuditHighWater(environment / "state").locked() as guard:
-        guard.observe(False, {TENANT: AuditMark(9, "lost")})
-        guard.observe(True, {})
+        guard.observe(False, False, {TENANT: AuditMark(9, "lost")}, advance=True)
+        guard.observe(True, False, {}, advance=False)
         if reread:
             guard.rechecked(TENANT)
 

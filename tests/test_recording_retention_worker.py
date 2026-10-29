@@ -52,7 +52,7 @@ def _worker(tmp_path, store, archive=None, at=NOW) -> RetentionWorker:
 def _tripped(tmp_path) -> None:
     """A mark for an event the database no longer holds: it was restored."""
     with AuditHighWater(tmp_path / "state").locked() as guard:
-        guard.observe(False, {TENANT: AuditMark(9, "lost")})
+        guard.observe(False, False, {TENANT: AuditMark(9, "lost")}, advance=True)
 
 
 async def _held_in_store(tmp_path):
@@ -127,7 +127,7 @@ async def test_a_restore_re_reads_every_version_and_a_lost_hold_blocks_expiry(tm
     store = FakeRetentionStore(restored, positions={TENANT: 6})
     store.conversation(restored.conversation_id, due=True)
     with AuditHighWater(tmp_path / "state").locked() as guard:
-        guard.observe(False, {TENANT: AuditMark(6, f"{TENANT}:6")})
+        guard.observe(False, False, {TENANT: AuditMark(6, f"{TENANT}:6")}, advance=True)
     store.restore(TENANT, 4)  # gone: events 5 and 6, though the chain grew past them
 
     halted = await _worker(tmp_path, store, archive).run_once()
@@ -349,3 +349,54 @@ class ShreddingStore(FakeRetentionStore):
             if row.conversation_id == conversation_id:
                 self.rows[version] = dataclasses.replace(row, shredded_at=now, next_attempt_at=now)
         return shredded
+
+
+async def test_a_second_restore_before_the_acknowledgement_re_reads_again(tmp_path):
+    store = FakeRetentionStore(positions={TENANT: 6})
+    await _worker(tmp_path, store).run_once()
+    store.restore(TENANT, 4)
+    await _worker(tmp_path, store).run_once()
+    await _worker(tmp_path, store).run_once()
+    assert store.rechecked == [TENANT]  # one restore, one re-read
+
+    store.restore(TENANT, 2)  # another dump, before anyone acknowledged the first
+    report = await _worker(tmp_path, store).run_once()
+
+    assert report.halted is True
+    assert store.rechecked == [TENANT, TENANT]
+
+
+class DecidingStore(FakeRetentionStore):
+    """A supervisor's decision lands while the pass runs: its audit event comes mid-pass."""
+
+    async def discover(self, tenant_id, now):
+        self.append_event(tenant_id)
+        return await super().discover(tenant_id, now)
+
+
+async def test_the_marks_include_what_was_decided_during_the_pass(tmp_path):
+    store = DecidingStore(positions={TENANT: 1})
+    await _worker(tmp_path, store).run_once()
+    with AuditHighWater(tmp_path / "state").locked() as guard:
+        assert guard.marks[TENANT].seq == 2
+
+    # A dump from before that decision: the mark taken after the pass names the lost event.
+    store.restore(TENANT, 1)
+    assert (await _worker(tmp_path, store).run_once()).halted is True
+
+
+async def test_a_delete_the_store_refuses_without_reason_fails_the_tenant(tmp_path):
+    moments = [NOW - timedelta(days=40)]
+    archive = FilesystemArchiveStore(
+        tmp_path / "archive", timedelta(days=31), clock=lambda: moments[-1]
+    )
+    await archive.put(TENANT, due_row().key, b"c")  # an orphan: no rows name it
+    moments.append(NOW)
+    store = FakeRetentionStore()
+    refusing = Failing(archive, "delete_version", ArchiveRefusedError("AccessDenied"))
+
+    first = await _worker(tmp_path, store, refusing).run_once()
+    later = await _worker(tmp_path, store, refusing, at=NOW + timedelta(hours=26)).run_once()
+
+    assert (first.failures, first.swept, later.swept) == (1, True, True)
+    assert store.beats[-1][1] == 26 * 3600.0

@@ -72,6 +72,7 @@ async def test_the_status_loop_exports_and_keeps_the_last_values_on_a_failed_rea
             [_status()], RecordingStorageUnavailable("the recording database is unavailable")
         ),
         retention_worker_metrics=RetentionWorkerMetrics(registry),
+        recording_archive=None,
     )
     sleeps = []
 
@@ -92,7 +93,9 @@ async def test_the_status_loop_exports_and_keeps_the_last_values_on_a_failed_rea
 
 
 async def test_the_status_loop_waits_while_recording_is_not_wired(monkeypatch):
-    state = SimpleNamespace(recording_retention=None, retention_worker_metrics=None)
+    state = SimpleNamespace(
+        recording_retention=None, retention_worker_metrics=None, recording_archive=None
+    )
     sleeps = []
 
     async def sleep(seconds):
@@ -103,3 +106,51 @@ async def test_the_status_loop_waits_while_recording_is_not_wired(monkeypatch):
     monkeypatch.setattr(wiring.asyncio, "sleep", sleep)
     with pytest.raises(asyncio.CancelledError):
         await wiring.recording_retention_status_task(state)
+
+
+def test_an_expected_site_that_never_reported_looks_silent():
+    registry = CollectorRegistry()
+    RetentionWorkerMetrics(registry).update([_status()], expected=("primary", "replica"))
+    assert _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", "replica") == 0.0
+    assert _value(registry, "ssf_retention_worker_halted", "replica") == 0.0
+    assert _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", "primary") == (
+        BEAT.timestamp()
+    )
+
+
+def test_an_unreadable_status_keeps_known_sites_and_adds_the_missing_ones():
+    registry = CollectorRegistry()
+    metrics = RetentionWorkerMetrics(registry)
+    metrics.update([_status()])
+    metrics.expect(("primary", "replica"))
+    assert _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", "primary") == (
+        BEAT.timestamp()
+    )
+    assert _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", "replica") == 0.0
+
+
+@pytest.mark.parametrize(("archive", "sites"), [(object(), {"primary", "replica"}), (None, set())])
+async def test_with_an_archive_both_sites_are_expected_even_if_unread(monkeypatch, archive, sites):
+    registry = CollectorRegistry()
+    state = SimpleNamespace(
+        recording_retention=Decisions(RecordingStorageUnavailable("down")),
+        retention_worker_metrics=RetentionWorkerMetrics(registry),
+        recording_archive=archive,
+    )
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(wiring.asyncio, "sleep", sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await wiring.recording_retention_status_task(state)
+
+    exported = {
+        site
+        for site in ("primary", "replica")
+        if _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", site) is not None
+    }
+    assert exported == sites

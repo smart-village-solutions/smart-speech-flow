@@ -52,6 +52,7 @@ class FakeRetentionStore:
             for tenant, count in (positions if positions is not None else {TENANT: 1}).items()
         }
         self.rechecked: list[str] = []
+        self.restores = 0
         self.recorded: dict[str, tuple[LockState, datetime]] = {}
         self.failed: list[str] = []
         self.failing: dict[str, datetime] = {}
@@ -73,8 +74,15 @@ class FakeRetentionStore:
 
     def restore(self, tenant_id: str, count: int) -> None:
         """The tenant's chain as a dump restored it: count events, then others than before."""
+        self.restores += 1
         kept = self.audit[tenant_id][:count]
-        self.audit[tenant_id] = kept + [f"{tenant_id}:restored:{n}" for n in range(1, 4)]
+        self.audit[tenant_id] = kept + [
+            f"{tenant_id}:restore{self.restores}:{n}" for n in range(1, 4)
+        ]
+
+    def append_event(self, tenant_id: str) -> None:
+        chain = self.audit[tenant_id]
+        chain.append(f"{tenant_id}:{len(chain) + 1}")
 
     async def tenants(self) -> list[str]:
         return sorted(self.audit)
@@ -132,9 +140,17 @@ class FakeRetentionStore:
         if state.deleted_at is not None:
             del self.rows[row.version_id]
 
-    async def record_failure(self, row, now):
+    async def record_failure(self, row, now, state=None):
         self.failed.append(row.version_id)
         self.failing.setdefault(row.version_id, now)
+        if state is not None:
+            row = dataclasses.replace(
+                row,
+                checked_at=state.checked_at,
+                locked_until=state.locked_until,
+                held=state.held,
+                held_since=state.held_since,
+            )
         self.rows[row.version_id] = dataclasses.replace(
             row, next_attempt_at=now + timedelta(minutes=1)
         )

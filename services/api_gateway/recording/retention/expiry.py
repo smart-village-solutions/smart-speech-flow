@@ -52,6 +52,8 @@ class ExpiryReport:
     # Found clearing a shredded conversation, and by the sweep.
     held_orphans: int = 0
     swept_held: int = 0
+    # Deletes the store refused although its own lock read said lapsed and free.
+    refused: int = 0
 
 
 class Expirer:
@@ -126,5 +128,7 @@ class Expirer:
         except ArchiveNotFoundError:
             return  # gone already
         except ArchiveRefusedError:
-            return  # still locked by the store's clock: the next pass tries again
+            # Retried next pass; counted, so a missing delete right does not go unnoticed.
+            report.refused += 1
+            return
         report.versions_deleted += 1

@@ -334,7 +334,8 @@ compare. In this order:
    marks they kept: both report `"halted": true` and
    `RecordingRetentionWorkerHalted` fires. From then on they extend and hold,
    but shred, lift and delete nothing, and they read every version's lock and
-   hold from the store again.
+   hold from the store again. Should the database be restored once more before
+   the acknowledgement, they notice and read everything again.
 4. Repeat every erasure the dump does not know, on the archive VM:
 
    ```bash
@@ -378,7 +379,7 @@ compare. In this order:
 
 | Alert | What to do |
 |---|---|
-| `RecordingRetentionWorkerSilent` | That site's worker has not finished a pass for 30 minutes. Check the container (`… --profile retention ps`, `… logs retention`) and Step 3's link. |
+| `RecordingRetentionWorkerSilent` | That site's worker has not finished a pass for 30 minutes, or has never reported since the gateway got an archive. Check the container (`… --profile retention ps`, `… logs retention`), Step 3's link, and that the gateway can read `ssf_recording`. |
 | `RecordingRetentionWorkerFailing` | A step on that site has failed for a day. The log names the error type; Step 6 lists the usual causes. |
 | `RecordingRetentionWorkerHalted` | The database is behind the worker's audit mark. If it was restored on purpose, work through Step 11. If not, find out why before acknowledging anything. |
 | `RecordingRetentionHoldMismatch` | Versions are held on that site with no hold in the database and no later `hold_off`, or untracked versions there are held. After a restore, have a supervisor set the hold again (Step 11, item 5). Otherwise check the conversation's decisions in the audit log; a supervisor's `hold_off` lifts it. For a shredded conversation no decision is accepted any more: lift the hold on that site with its retention pair by hand, and record why. |
@@ -391,6 +392,11 @@ keep protecting the archive. Migration 004 stays: its tables are unused without
 the workers, and the gateway's routes keep working.
 
 ## Known limits
+
+- A worker never locks a version more than 8760 hours ahead of now. A
+  conversation dated further out, which only a decision beyond the gateway's
+  and the database's checks could produce, has its locks extended a step at a
+  time as the date approaches.
 
 - Root on an archive VM holds that site's retention pair: it can extend locks
   there without bound and lift that site's holds (spec §19).

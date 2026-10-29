@@ -19,6 +19,7 @@ from ..storage.archive import (
     ArchiveRetention,
     ArchiveUnavailableError,
 )
+from .decisions import MAX_EXTENSION
 from .store import DueVersion, LockState
 
 Action = Literal["check", "hold_on", "lift", "extend", "delete"]
@@ -50,7 +51,9 @@ class RetentionRows(Protocol):
 
     async def record(self, row: DueVersion, state: LockState, revisit_at: datetime) -> None: ...
 
-    async def record_failure(self, row: DueVersion, now: datetime) -> None: ...
+    async def record_failure(
+        self, row: DueVersion, now: datetime, state: LockState | None = None
+    ) -> None: ...
 
 
 def _lift_allowed(row: DueVersion) -> bool:
@@ -75,7 +78,7 @@ def plan(row: DueVersion, now: datetime, *, destructive: bool) -> Plan:
             actions.append("lift")
         else:
             mismatch = True
-    if row.locked_until is None or row.locked_until < row.retention_until:
+    if row.locked_until is None or row.locked_until < lock_target(row, now):
         actions.append("extend")
     revisit = IDLE_REVISIT if destructive else GUARD_REVISIT
     return Plan(tuple(actions), now + revisit, mismatch)
@@ -91,6 +94,15 @@ def _plan_shredded(row: DueVersion, now: datetime, destructive: bool) -> Plan:
     if row.locked_until is not None and row.locked_until > now:
         return Plan((), row.locked_until)
     return Plan(("delete",), now + IDLE_REVISIT)
+
+
+def lock_target(row: DueVersion, now: datetime) -> datetime:
+    """The conversation's date, but never more than one extension step ahead of now.
+
+    A compliance lock cannot be shortened, so a date the database should not
+    hold is approached a step at a time rather than set at once.
+    """
+    return min(row.retention_until, now + MAX_EXTENSION)
 
 
 def _recorded(row: DueVersion, now: datetime) -> LockState:
@@ -134,48 +146,60 @@ class LockReconciler:
     ) -> bool:
         """False when the store was unreachable."""
         report.processed += 1
-        state = _recorded(row, now)
+        # None until the store has been read: a failure then records nothing as read.
+        state = None if row.checked_at is None else _recorded(row, now)
         action: Action = "check"
         try:
-            if row.checked_at is None:
+            if state is None:
                 state = await self._read(row, now, None)
             steps = plan(_confirmed(row, state), now, destructive=destructive)
             for action in steps.actions:
                 state = await self._act(action, row, state, now)
         except ArchiveUnavailableError:
-            await self._failed(row, now, report)
+            await self._failed(row, now, report, state)
             return False
         except ArchiveNotFoundError:
             if row.shredded_at is None:
-                await self._failed(row, now, report)
+                await self._failed(row, now, report, state)
                 return True
             # Gone, or not yet copied here: the prefix listing finds a late copy (expiry.py).
-            await self._store.record(row, dataclasses.replace(state, deleted_at=now), now)
+            gone = dataclasses.replace(state or _recorded(row, now), deleted_at=now)
+            await self._store.record(row, gone, now)
             return True
         except ArchiveRefusedError:
-            if action != "delete":
-                await self._failed(row, now, report)
+            if action != "delete" or state is None:
+                await self._failed(row, now, report, state)
                 return True
-            await self._refused_delete(row, state, now)
+            await self._refused_delete(row, state, now, report)
             return True
         report.mismatches += steps.mismatch
         await self._store.record(row, state, steps.revisit_at)
         return True
 
-    async def _failed(self, row: DueVersion, now: datetime, report: ReconcileReport) -> None:
+    async def _failed(
+        self, row: DueVersion, now: datetime, report: ReconcileReport, state: LockState | None
+    ) -> None:
+        """Count the failure, and keep what earlier steps of the plan did, such as a hold."""
         report.failures += 1
-        await self._store.record_failure(row, now)
+        await self._store.record_failure(row, now, state)
 
-    async def _refused_delete(self, row: DueVersion, state: LockState, now: datetime) -> None:
-        """The store still holds the version: learn why, and come back no sooner than an hour."""
+    async def _refused_delete(
+        self, row: DueVersion, state: LockState, now: datetime, report: ReconcileReport
+    ) -> None:
+        """The store kept the version: wait if its lock or a hold explains it, else fail."""
         try:
             state = await self._read(row, now, state.held_since)
         except (ArchiveUnavailableError, ArchiveRefusedError, ArchiveNotFoundError):
-            pass
-        later = now + GUARD_REVISIT
-        if state.locked_until is not None and state.locked_until > later:
-            later = state.locked_until
-        await self._store.record(row, state, later)
+            await self._failed(row, now, report, state)
+            return
+        if state.held or (state.locked_until is not None and state.locked_until > now):
+            later = now + GUARD_REVISIT
+            if state.locked_until is not None and state.locked_until > later:
+                later = state.locked_until
+            await self._store.record(row, state, later)
+            return
+        # Lapsed and free, yet refused: a credential without delete rights, for instance.
+        await self._failed(row, now, report, state)
 
     async def _act(
         self, action: Action, row: DueVersion, state: LockState, now: datetime
@@ -188,7 +212,10 @@ class LockReconciler:
             await self._archive.set_legal_hold(tenant_id, key, version, False)
             return dataclasses.replace(state, held=False, held_since=None)
         if action == "extend":
-            await self._archive.extend_retention(tenant_id, key, version, row.retention_until)
-            return dataclasses.replace(state, locked_until=row.retention_until)
-        await self._archive.delete_version(tenant_id, key, version)
-        return dataclasses.replace(state, deleted_at=now)
+            target = lock_target(row, now)
+            await self._archive.extend_retention(tenant_id, key, version, target)
+            return dataclasses.replace(state, locked_until=target)
+        if action == "delete":
+            await self._archive.delete_version(tenant_id, key, version)
+            return dataclasses.replace(state, deleted_at=now)
+        raise ValueError(f"no store call for the action {action!r}")

@@ -114,28 +114,34 @@ class RetentionWorker:
     async def run_once(self) -> PassReport:
         now = self._clock()
         tenants = await self._store.tenants()
-        halted, recheck = await self._observe(tenants)
+        halted, recheck = await self._observe(tenants, advance=False)
         report = PassReport(len(tenants), halted=halted)
         report.swept = not halted and self._sweep_due(now)
         failed = await self._tenant_passes(tenants, now, report, recheck)
+        # Only now, with every hold this pass applied in the audit log, may the marks move on.
+        report.halted, _ = await self._observe(await self._store.tenants(), advance=True)
         report.mismatches = await self._mismatches(tenants, report, complete=not failed)
         overdue = await self._overdue_seconds(tenants, now, failed)
-        await self._store.beat(now, overdue, halted, report.mismatches)
+        await self._store.beat(now, overdue, report.halted, report.mismatches)
         return report
 
-    async def _observe(self, tenants: list[str]) -> tuple[bool, set[str]]:
+    async def _observe(self, tenants: list[str], *, advance: bool) -> tuple[bool, set[str]]:
         """Whether the database is behind the marks, and which tenants owe a re-read."""
         with self._guard.locked() as guard:
-            behind = False
-            for tenant, mark in guard.marks.items():
-                if await self._store.audit_hash_at(tenant, mark.seq) != mark.hash:
-                    behind = True
+            behind = await self._behind(guard.marks)
+            regressed = await self._behind(guard.seen)
             latest = {}
             for tenant in tenants:
                 if (newest := await self._store.audit_mark(tenant)) is not None:
                     latest[tenant] = newest
-            halted = guard.observe(behind, latest)
+            halted = guard.observe(behind, regressed, latest, advance=advance)
             return halted, set(guard.recheck)
+
+    async def _behind(self, marks: dict[str, AuditMark]) -> bool:
+        for tenant, mark in marks.items():
+            if await self._store.audit_hash_at(tenant, mark.seq) != mark.hash:
+                return True
+        return False
 
     async def _tenant_passes(
         self, tenants: list[str], now: datetime, report: PassReport, recheck: set[str]
@@ -145,7 +151,9 @@ class RetentionWorker:
             try:
                 if tenant in recheck:
                     await self._recheck(tenant, now)
-                await self._tenant_pass(tenant, now, report)
+                if await self._tenant_pass(tenant, now, report):
+                    report.failures += 1
+                    failed.add(tenant)
             except (RecordingStorageUnavailable, ArchiveError):
                 report.failures += 1  # this tenant's turn comes again in the next pass
                 failed.add(tenant)
@@ -162,7 +170,8 @@ class RetentionWorker:
         with self._guard.locked() as guard:
             guard.rechecked(tenant_id)
 
-    async def _tenant_pass(self, tenant_id: str, now: datetime, report: PassReport) -> None:
+    async def _tenant_pass(self, tenant_id: str, now: datetime, report: PassReport) -> bool:
+        """True when the store refused deletes it should have allowed."""
         expiry = ExpiryReport()
         await self._store.discover(tenant_id, now)
         if self._primary and not report.halted:
@@ -181,6 +190,7 @@ class RetentionWorker:
             report.rows_deleted += expiry.rows_deleted
             report.held_orphans += expiry.held_orphans
             report.swept_held += expiry.swept_held
+        return expiry.refused > 0
 
     async def _expire(
         self, tenant_id: str, now: datetime, sweep: bool, expiry: ExpiryReport

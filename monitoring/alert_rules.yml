@@ -530,7 +530,7 @@ groups:
           component: recording
         annotations:
           summary: A retention worker has stopped finishing its passes.
-          description: "The {{ $labels.site }} archive site's retention worker has not finished a pass for over thirty minutes, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+          description: "The {{ $labels.site }} archive site's retention worker has not finished a pass for over thirty minutes, or never reported since the gateway has had an archive, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording, and that the gateway can read ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
 
       - alert: RecordingRetentionWorkerFailing
         expr: ssf_retention_worker_failing_seconds > 86400

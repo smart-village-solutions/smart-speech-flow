@@ -28,6 +28,7 @@ from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
 from .retention.decisions_repository import PostgresRetentionDecisions
+from .retention.metrics import SITES as RETENTION_SITES
 from .secrets import MissingRecordingSecrets, RecordingSecrets
 from .session_service import TICK_SECONDS, RecordingSessions
 from .storage.s3 import S3ArchiveStore, S3Client
@@ -195,16 +196,23 @@ async def recording_stamp_task(state: Any) -> None:
 
 
 async def recording_retention_status_task(state: Any) -> None:
-    """Export the archive sites' retention heartbeats; a failed read keeps the last values."""
+    """Export the archive sites' retention heartbeats; a failed read keeps the last values.
+
+    With an archive, recording can store, so both sites' workers must run
+    (recording-retention-deployment.md): a site without a heartbeat counts as silent.
+    """
     while True:
         await asyncio.sleep(RETENTION_STATUS_INTERVAL_SECONDS)
         if state.recording_retention is None:
             continue
+        expected = RETENTION_SITES if state.recording_archive is not None else ()
         try:
-            state.retention_worker_metrics.update(await state.recording_retention.worker_statuses())
+            statuses = await state.recording_retention.worker_statuses()
+            state.retention_worker_metrics.update(statuses, expected)
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            state.retention_worker_metrics.expect(expected)
             sys.stderr.write(f"Retention status read failed ({type(error).__name__})\n")
 
 

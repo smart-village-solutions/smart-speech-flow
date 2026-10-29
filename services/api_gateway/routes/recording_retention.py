@@ -134,10 +134,15 @@ async def list_conversations(
     decisions: Decisions,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     started_before: AwareDatetime | None = None,
+    before_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    """Newest first; the next page passes the last row's `started_at` and `conversation_id`."""
     try:
         rows = await decisions.summaries(
-            context.tenant_id, limit=limit, started_before=started_before
+            context.tenant_id,
+            limit=limit,
+            started_before=started_before,
+            before_id=None if before_id is None else str(before_id),
         )
     except RecordingStorageUnavailable:
         raise _unavailable() from None

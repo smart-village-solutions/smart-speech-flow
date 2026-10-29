@@ -7,13 +7,14 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from services.api_gateway.recording.retention.decisions import MAX_EXTENSION
 from services.api_gateway.recording.retention.locks import (
     GUARD_REVISIT,
     IDLE_REVISIT,
     LockReconciler,
     plan,
 )
-from services.api_gateway.recording.retention.store import DueVersion
+from services.api_gateway.recording.retention.store import DueVersion, LockState
 from services.api_gateway.recording.storage.archive import (
     ArchiveNotFoundError,
     ArchiveRefusedError,
@@ -329,14 +330,80 @@ async def test_a_backlog_is_drained_in_batches(store):
     assert rows.calls == 3
 
 
-async def test_a_refused_delete_with_a_lapsed_lock_waits_an_hour(store):
+async def test_a_refused_delete_whose_reason_cannot_be_read_is_a_failure(store):
     archive, _ = store
     row = await _put(archive)
     rows = FakeRows(dataclasses.replace(row, **SHREDDED, checked_at=NOW, locked_until=NOW))
     failing = Failing(archive, "delete_version", ArchiveRefusedError("AccessDenied"))
     failing_reads = Failing(failing, "retention", ArchiveUnavailableError("network_error"))
-    await LockReconciler(rows, failing_reads).run(TENANT, NOW, destructive=True)
-    assert rows.recorded[row.version_id][1] == NOW + GUARD_REVISIT
+    report = await LockReconciler(rows, failing_reads).run(TENANT, NOW, destructive=True)
+    assert report.failures == 1 and rows.failed == [row.version_id]
+
+
+async def test_a_delete_refused_although_lapsed_and_free_is_a_failure(store):
+    archive, clock = store
+    clock.now = NOW - timedelta(days=40)
+    row = await _put(archive)
+    clock.now = NOW
+    rows = FakeRows(dataclasses.replace(row, **SHREDDED, checked_at=NOW, locked_until=NOW))
+    refusing = Failing(archive, "delete_version", ArchiveRefusedError("AccessDenied"))
+
+    report = await LockReconciler(rows, refusing).run(TENANT, NOW, destructive=True)
+
+    assert report.failures == 1 and rows.failed == [row.version_id]
+    assert rows.rows[row.version_id].locked_until == NOW - timedelta(days=9)
+
+
+async def test_a_partly_applied_plan_keeps_what_it_did(store):
+    archive, _ = store
+    row = dataclasses.replace(
+        await _put(archive),
+        checked_at=NOW,
+        locked_until=NOW + timedelta(days=31),
+        legal_hold=True,
+        hold_on_at=NOW - timedelta(minutes=5),
+        retention_until=NOW + timedelta(days=60),
+    )
+    rows = FakeRows(row)
+    failing = Failing(archive, "extend_retention", ArchiveUnavailableError("network_error"))
+
+    report = await LockReconciler(rows, failing).run(TENANT, NOW, destructive=True)
+
+    assert report.failures == 1
+    kept = rows.rows[row.version_id]
+    assert (kept.held, kept.held_since) == (True, NOW - timedelta(minutes=5))
+    assert (await archive.retention(TENANT, KEY, row.version_id)).legal_hold is True
+
+
+async def test_a_version_never_read_stays_unread_when_reading_fails(store):
+    archive, _ = store
+    rows = FakeRows(await _put(archive))
+    failing = Failing(archive, "retention", ArchiveUnavailableError("network_error"))
+    await LockReconciler(rows, failing).run(TENANT, NOW, destructive=True)
+    assert next(iter(rows.rows.values())).checked_at is None
+
+
+async def test_an_action_without_a_store_call_is_refused_not_turned_into_a_delete(store):
+    archive, _ = store
+    row = await _put(archive)
+    reconciler = LockReconciler(FakeRows(row), archive)
+    with pytest.raises(ValueError):
+        await reconciler._act("check", row, LockState(NOW, None, False, None, None), NOW)
+    assert len(await archive.list_versions(TENANT, "")) == 1
+
+
+async def test_a_lock_never_reaches_beyond_one_extension_step(store):
+    archive, _ = store
+    far = NOW + timedelta(days=5000)
+    row = dataclasses.replace(await _put(archive), retention_until=far)
+    rows = FakeRows(row)
+    await LockReconciler(rows, archive).run(TENANT, NOW, destructive=True)
+    lock = (await archive.retention(TENANT, KEY, row.version_id)).retain_until
+    assert lock == NOW + MAX_EXTENSION
+    # A conversation's real date within reach is still met exactly.
+    assert plan(_row(retention_until=NOW + timedelta(days=60)), NOW, destructive=True).actions == (
+        "extend",
+    )
 
 
 @pytest.mark.parametrize("error", [ArchiveNotFoundError("NoSuchVersion")])

@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS retention_decisions (
     reason          TEXT        NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 500),
     PRIMARY KEY (tenant_id, decision_id)
 );
+-- The workers look up a conversation's latest hold_on and hold_off.
+CREATE INDEX IF NOT EXISTS retention_decisions_conversation
+    ON retention_decisions (tenant_id, conversation_id, kind, at);
 
 -- What each site's worker has confirmed about one stored version.
 CREATE TABLE IF NOT EXISTS version_locks (
@@ -68,6 +71,10 @@ CREATE TABLE IF NOT EXISTS version_locks (
 );
 CREATE INDEX IF NOT EXISTS version_locks_due
     ON version_locks (tenant_id, site, next_attempt_at) WHERE deleted_at IS NULL;
+-- A decision, a shred and the hold checks touch one conversation's rows,
+-- some of them under the conversation's row lock.
+CREATE INDEX IF NOT EXISTS version_locks_conversation
+    ON version_locks (tenant_id, conversation_id);
 
 -- A site's worker found nothing left under the conversation's prefix.
 CREATE TABLE IF NOT EXISTS site_clearances (
@@ -108,6 +115,11 @@ BEGIN
     IF NEW.kind = 'extend' THEN
         IF NEW.retain_until <= target.retention_until THEN
             RAISE EXCEPTION 'retention_not_extended';
+        END IF;
+        -- 8760 h per step, as the gateway's route allows, by this clock with an
+        -- hour for the gateway's: no single decision locks anything beyond reach.
+        IF NEW.retain_until > now() + interval '8761 hours' THEN
+            RAISE EXCEPTION 'retention_too_far';
         END IF;
         UPDATE conversations SET retention_until = NEW.retain_until
         WHERE tenant_id = NEW.tenant_id AND conversation_id = NEW.conversation_id;

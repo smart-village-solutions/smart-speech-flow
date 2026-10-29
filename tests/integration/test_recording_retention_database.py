@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 import pytest
@@ -314,9 +314,56 @@ async def test_summaries_list_newest_first_and_page_by_their_start(archive, gate
     assert await decisions.summary("tenant-b", older.conversation_id) is None
 
 
+async def test_conversations_started_together_are_all_paged(archive, gateway):
+    decisions, _ = gateway
+    record = dataclasses.replace(_conversation(), started_at=NOW + timedelta(hours=2))
+    first, *_ = await _opened(archive, record)
+    second, *_ = await _opened(
+        archive, dataclasses.replace(_conversation(), started_at=NOW + timedelta(hours=2))
+    )
+    third, *_ = await _opened(archive)
+
+    seen, cursor = [], (None, None)
+    for _ in range(4):
+        page = await decisions.summaries(
+            TENANT, limit=1, started_before=cursor[0], before_id=cursor[1]
+        )
+        if not page:
+            break
+        seen.append(page[0].conversation_id)
+        cursor = (page[0].started_at, page[0].conversation_id)
+
+    assert sorted(seen) == sorted(
+        [first.conversation_id, second.conversation_id, third.conversation_id]
+    )
+    assert seen[-1] == third.conversation_id
+
+
 async def test_a_conversation_not_found_is_audited(archive, gateway):
     decisions, base = gateway
     missing = str(uuid.uuid4())
     await decisions.record_not_found(TENANT, "sup", missing, NOW)
     last = (await base.audit_rows(TENANT))[-1].event
     assert (last.event_type, last.object_ref) == ("recording.retention.not_found", missing)
+
+
+async def test_one_extension_reaches_at_most_8760_hours_by_the_databases_clock(archive, owner):
+    conversation, *_ = await _opened(archive)
+    now = datetime.now(timezone.utc)
+    with pytest.raises(asyncpg.RaiseError, match="retention_too_far"):
+        await _decide(conversation.conversation_id, "extend", until=now + timedelta(hours=8762))
+    within = now + timedelta(hours=8760)
+    await _decide(conversation.conversation_id, "extend", until=within)
+    assert await owner.fetchval("SELECT retention_until FROM conversations") == within
+
+
+async def test_a_conversations_retention_rows_are_indexed(owner):
+    indexes = {
+        row["indexname"]: row["indexdef"]
+        for row in await owner.fetch(
+            "SELECT indexname, indexdef FROM pg_indexes WHERE tablename IN"
+            " ('version_locks', 'retention_decisions')"
+        )
+    }
+    assert "(tenant_id, conversation_id)" in indexes["version_locks_conversation"]
+    assert "(tenant_id, conversation_id, kind, at)" in indexes["retention_decisions_conversation"]

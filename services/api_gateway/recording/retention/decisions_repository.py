@@ -98,14 +98,23 @@ class PostgresRetentionDecisions:
         return None if row is None else _summary(row)
 
     async def summaries(
-        self, tenant_id: str, *, limit: int, started_before: datetime | None
+        self,
+        tenant_id: str,
+        *,
+        limit: int,
+        started_before: datetime | None,
+        before_id: str | None = None,
     ) -> list[ConversationSummary]:
+        """Newest first. The next page starts after the last row's start and ID."""
+
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetch(
-                _SUMMARY + " WHERE ($1::timestamptz IS NULL OR started_at < $1)"
-                " ORDER BY started_at DESC LIMIT $2",
+                _SUMMARY + " WHERE $1::timestamptz IS NULL OR started_at < $1"
+                " OR (started_at = $1 AND conversation_id < $3::uuid)"
+                " ORDER BY started_at DESC, conversation_id DESC LIMIT $2",
                 started_before,
                 limit,
+                before_id,
             )
 
         return [_summary(row) for row in await self._run(tenant_id, work)]

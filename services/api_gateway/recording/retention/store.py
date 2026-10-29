@@ -124,6 +124,8 @@ _DISCOVER: Final[str] = (
     " SELECT s.tenant_id, e.conversation_id, s.entry_id, s.object_type, $1, s.version_id, $2"
     " FROM stored_objects s JOIN chain_entries e"
     " ON e.tenant_id = s.tenant_id AND e.entry_id = s.entry_id"
+    " WHERE NOT EXISTS (SELECT 1 FROM version_locks v WHERE v.tenant_id = s.tenant_id"
+    "  AND v.entry_id = s.entry_id AND v.object_type = s.object_type AND v.site = $1)"
     " ON CONFLICT DO NOTHING"
 )
 _DUE: Final[str] = (
@@ -147,12 +149,20 @@ _RECORD: Final[str] = (
     " WHERE " + _ROW
 )
 # The exponent is capped so the interval cannot overflow before least() applies.
+# What the failed step had already done to the version is kept ($8 onwards),
+# unless the version was never read ($8 null).
 _FAILED: Final[str] = (
     "UPDATE version_locks SET attempts = attempts + 1,"
     " failing_since = coalesce(failing_since, $5),"
     " next_attempt_at = CASE WHEN next_attempt_at = $6"
     "  THEN $5 + least(interval '60 seconds' * power(2, least(attempts, 20)), $7)"
-    "  ELSE next_attempt_at END"
+    "  ELSE next_attempt_at END,"
+    " checked_at = coalesce($8::timestamptz, checked_at),"
+    " locked_until = CASE WHEN $8::timestamptz IS NULL THEN locked_until"
+    "  ELSE $9::timestamptz END,"
+    " held = CASE WHEN $8::timestamptz IS NULL THEN held ELSE $10::boolean END,"
+    " held_since = CASE WHEN $8::timestamptz IS NULL THEN held_since"
+    "  ELSE $11::timestamptz END"
     " WHERE " + _ROW
 )
 
@@ -345,10 +355,17 @@ class PostgresRetentionStore:
 
         await self._run(row.tenant_id, work)
 
-    async def record_failure(self, row: DueVersion, now: datetime) -> None:
+    async def record_failure(
+        self, row: DueVersion, now: datetime, state: LockState | None = None
+    ) -> None:
+        """A failed step, keeping `state`: what the steps before it changed in the store."""
+        known: tuple[Any, ...] = (None, None, None, None)
+        if state is not None:
+            known = (state.checked_at, state.locked_until, state.held, state.held_since)
+
         async def work(connection: asyncpg.Connection) -> None:
             await connection.execute(
-                _FAILED, *self._row(row), now, row.next_attempt_at, BACKOFF_CEILING
+                _FAILED, *self._row(row), now, row.next_attempt_at, BACKOFF_CEILING, *known
             )
 
         await self._run(row.tenant_id, work)
