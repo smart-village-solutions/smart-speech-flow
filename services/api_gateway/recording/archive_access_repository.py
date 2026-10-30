@@ -47,8 +47,9 @@ _APPROVED = (
     "  AND d.decision = 'approved' AND NOT EXISTS (SELECT 1 FROM recovery_rejections j"
     "   WHERE j.tenant_id = d.tenant_id AND j.request_id = d.request_id"
     "   AND j.holder_index = d.holder_index AND j.attempt = d.attempt))"
-    " >= (SELECT rkey.k FROM recovery_keys rkey"
-    "  WHERE rkey.tenant_id = r.tenant_id AND rkey.key_id = r.recovery_key_id)"
+    # The k of the holders it was filed under: a later resharing never revokes it (§9.7).
+    " >= (SELECT g.k FROM recovery_ceremonies g"
+    "  WHERE g.tenant_id = r.tenant_id AND g.ceremony_id = r.holders_ceremony_id)"
 )
 
 

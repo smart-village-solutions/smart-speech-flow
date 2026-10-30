@@ -1,12 +1,13 @@
 import type { AxiosInstance } from 'axios';
 import { type Bytes, scalarToBytes, toBase64Url } from '@/core/crypto/bytes';
 import type { Confirmation } from '@/core/crypto/ceremony-crypto.port';
-import { toCandidates, toCeremony, toCeremonyState, toSubshares } from './recovery.mapper';
+import { toCandidates, toCeremony, toCeremonyState, toDealerKey, toSubshares } from './recovery.mapper';
 import type {
   AbortReason,
   Ceremony,
   CeremonyState,
   CustodianCandidate,
+  DealerKey,
   NewDealing,
   ReceivedSubshares,
 } from './recovery.types';
@@ -22,6 +23,29 @@ export interface RecoveryCeremonyRepository {
   confirm(ceremonyId: string, confirmation: Readonly<Confirmation>): Promise<void>;
   confirmPaper(ceremonyId: string, transcriptHash: Bytes): Promise<void>;
   abort(ceremonyId: string, reason: AbortReason): Promise<void>;
+  startResharing(start: Readonly<ResharingStart>): Promise<Ceremony>;
+  dealer(ceremonyId: string): Promise<DealerKey>;
+  paperDeal(ceremonyId: string, dealerIndex: number, dealing: Readonly<NewDealing>): Promise<void>;
+}
+
+export interface ResharingStart {
+  k: number;
+  custodians: readonly string[];
+  /** Old holder indices, exactly the current k. */
+  dealers: readonly number[];
+  /** The ceremony device's key, when a new paper backup is wanted. */
+  paperDevicePub: Bytes | null;
+  /** The generation the dealers were picked from; the gateway refuses another. */
+  holdersCeremonyId: string;
+}
+
+function dealingBody(dealing: Readonly<NewDealing>) {
+  return {
+    commitments: dealing.commitments.map(toBase64Url),
+    c: toBase64Url(scalarToBytes(dealing.proof.c)),
+    s: toBase64Url(scalarToBytes(dealing.proof.s)),
+    subshares: Object.fromEntries([...dealing.subshares].map(([index, sealed]) => [String(index), sealed])),
+  };
 }
 
 export function createRecoveryCeremonyRepository(http: AxiosInstance): RecoveryCeremonyRepository {
@@ -44,13 +68,8 @@ export function createRecoveryCeremonyRepository(http: AxiosInstance): RecoveryC
     },
 
     async deal(ceremonyId, dealing) {
-      await http.post(`${BASE}/${ceremonyId}/dealings`, {
-        commitments: dealing.commitments.map(toBase64Url),
-        c: toBase64Url(scalarToBytes(dealing.proof.c)),
-        s: toBase64Url(scalarToBytes(dealing.proof.s)),
-        signature: toBase64Url(dealing.signature),
-        subshares: Object.fromEntries([...dealing.subshares].map(([index, sealed]) => [String(index), sealed])),
-      });
+      const signature = dealing.signature === null ? undefined : toBase64Url(dealing.signature);
+      await http.post(`${BASE}/${ceremonyId}/dealings`, { ...dealingBody(dealing), signature });
     },
 
     async subshares(ceremonyId) {
@@ -58,9 +77,12 @@ export function createRecoveryCeremonyRepository(http: AxiosInstance): RecoveryC
     },
 
     async confirm(ceremonyId, confirmation) {
+      const proof = confirmation.shareProof;
       await http.post(`${BASE}/${ceremonyId}/confirmations`, {
         transcript_signature: toBase64Url(confirmation.transcriptSignature),
         encrypted_share: confirmation.encryptedShare,
+        share_proof_c: proof === null ? undefined : toBase64Url(scalarToBytes(proof.c)),
+        share_proof_s: proof === null ? undefined : toBase64Url(scalarToBytes(proof.s)),
       });
     },
 
@@ -70,6 +92,25 @@ export function createRecoveryCeremonyRepository(http: AxiosInstance): RecoveryC
 
     async abort(ceremonyId, reason) {
       await http.post(`${BASE}/${ceremonyId}/abort`, { reason });
+    },
+
+    async startResharing(start) {
+      const response = await http.post<unknown>(`${BASE}/resharing`, {
+        k: start.k,
+        custodians: start.custodians,
+        dealers: start.dealers,
+        paper_device_pub: start.paperDevicePub === null ? null : toBase64Url(start.paperDevicePub),
+        holders_ceremony_id: start.holdersCeremonyId,
+      });
+      return toCeremony(response.data);
+    },
+
+    async dealer(ceremonyId) {
+      return toDealerKey((await http.get<unknown>(`${BASE}/${ceremonyId}/dealer`)).data);
+    },
+
+    async paperDeal(ceremonyId, dealerIndex, dealing) {
+      await http.post(`${BASE}/${ceremonyId}/paper-dealings`, { dealer_index: dealerIndex, ...dealingBody(dealing) });
     },
   };
 }

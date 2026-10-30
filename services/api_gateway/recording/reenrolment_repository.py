@@ -30,16 +30,21 @@ from .repository import (
 
 T = TypeVar("T")
 
-# A ceremony still dealing or confirming holds sub-shares sealed to this key.
+# A ceremony still dealing or confirming holds sub-shares sealed to this key, or, for a
+# resharing's dealer, relies on the key that opens the dealer's share (§9.7).
 _IN_CEREMONY = (
-    "SELECT EXISTS (SELECT 1 FROM recovery_ceremonies c JOIN ceremony_participants p"
-    " ON p.tenant_id = c.tenant_id AND p.ceremony_id = c.ceremony_id"
-    " WHERE c.status IN ('dealing', 'confirming') AND c.expires_at > $2 AND p.holder_ref = $1)"
+    "SELECT EXISTS (SELECT 1 FROM recovery_ceremonies c"
+    " WHERE c.status IN ('dealing', 'confirming') AND c.expires_at > $2 AND ("
+    "  EXISTS (SELECT 1 FROM ceremony_participants p"
+    "   WHERE p.tenant_id = c.tenant_id AND p.ceremony_id = c.ceremony_id AND p.holder_ref = $1)"
+    "  OR EXISTS (SELECT 1 FROM ceremony_dealers d"
+    "   WHERE d.tenant_id = c.tenant_id AND d.ceremony_id = c.ceremony_id"
+    "   AND d.holder_ref = $1)))"
 )
-# The active recovery key, if the caller is its custodian by this very key.
+# The active recovery key, if the caller is a current custodian of it by this very key.
 _CUSTODIAN_OF = (
     "SELECT r.key_id FROM recovery_keys r JOIN ceremony_participants p"
-    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.key_id"
+    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
     " WHERE r.status = 'active' AND p.kind = 'custodian' AND p.holder_ref = $1"
     " AND p.fingerprint = $2"
 )
@@ -79,6 +84,10 @@ class PostgresKeyReenrolment:
                 "SELECT key_version, fingerprint FROM user_keys"
                 " WHERE user_sub = $1 AND retired_at IS NULL FOR UPDATE",
                 record.user_sub,
+            )
+            # Before the requests: a resharing's activation takes this row, then them (§9.7).
+            await connection.execute(
+                "SELECT 1 FROM recovery_keys WHERE status = 'active' FOR SHARE"
             )
             refused = await _refusal(connection, old, record.user_sub, replaces_version, now)
             if refused is not None:

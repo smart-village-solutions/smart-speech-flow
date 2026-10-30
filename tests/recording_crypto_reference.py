@@ -27,7 +27,11 @@ from services.api_gateway.recording.crypto.curve import (
     require_point,
 )
 from services.api_gateway.recording.crypto.encoding import b64url, enc, from_b64url
-from services.api_gateway.recording.crypto.proofs import dleq_challenge, schnorr_challenge
+from services.api_gateway.recording.crypto.proofs import (
+    dleq_challenge,
+    schnorr_challenge,
+    share_proof_challenge,
+)
 
 
 def public_point(scalar: int) -> bytes:
@@ -81,6 +85,16 @@ def dleq_prove(
     statement = (public_point(share), encode_point(ephemeral), partial)
     c = dleq_challenge(tenant_id, request_id, key_id, holder_index, (*statement, first, second))
     return partial, c, (nonce - c * share) % ORDER
+
+
+def share_proof_prove(
+    tenant_id: str, ceremony_id: str, holder_index: int, share: int, nonce: int
+) -> tuple[int, int]:
+    """Proof of knowledge of x'_j behind X'_j, from the share a custodian re-opened (§9.7)."""
+    c = share_proof_challenge(
+        tenant_id, ceremony_id, holder_index, public_point(share), public_point(nonce)
+    )
+    return c, (nonce - c * share) % ORDER
 
 
 def lagrange_at_zero(index: int, indices: Sequence[int]) -> int:

@@ -114,7 +114,8 @@ export type RecoveryFault =
   | 'out_of_scope'
   | 'wrap_signature'
   | 'share_mismatch'
-  | 'step_up';
+  | 'step_up'
+  | 'custodians_changed';
 
 export class RecoveryCheckError extends Error {
   readonly fault: RecoveryFault;

@@ -76,7 +76,8 @@ async def recovery_key(owner, *, custodians=("carol", "dave"), k=1) -> str:
         await owner.execute(
             "INSERT INTO recovery_keys (tenant_id, key_id, recovery_public_key, k, n, mode,"
             " transcript_hash, canary_wrap, canary_signature, canary_signer_key_id, status,"
-            " activated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, '{}', $8, 'gw', 'active', $9)",
+            " activated_at, holders_ceremony_id, holders_transcript_hash)"
+            " VALUES ($1, $2, $3, $4, $5, $6, $7, '{}', $8, 'gw', 'active', $9, $2, $7)",
             TENANT,
             key_id,
             ref.public_point(31),
@@ -90,7 +91,8 @@ async def recovery_key(owner, *, custodians=("carol", "dave"), k=1) -> str:
         for index, sub in enumerate(custodians, start=1):
             await owner.execute(
                 "INSERT INTO recovery_shares (tenant_id, key_id, holder_index, holder_ref,"
-                " holder_public_share, encrypted_share) VALUES ($1, $2, $3, $4, $5, '{}')",
+                " holder_public_share, encrypted_share, ceremony_id)"
+                " VALUES ($1, $2, $3, $4, $5, '{}', $2)",
                 TENANT,
                 key_id,
                 index,
@@ -98,6 +100,8 @@ async def recovery_key(owner, *, custodians=("carol", "dave"), k=1) -> str:
                 ref.public_point(300 + index),
             )
     await owner.execute("UPDATE recovery_keys SET k = $2 WHERE key_id = $1", key_id, k)
+    # A request counts the k of the holders it was filed under (§9.7).
+    await owner.execute("UPDATE recovery_ceremonies SET k = $2 WHERE ceremony_id = $1", key_id, k)
     for index, sub in enumerate(custodians, start=1):
         await _enrol_custodian(owner, sub, index)
     await owner.execute(
@@ -146,8 +150,8 @@ async def file_directly(owner, conversation_id: str, key_id: str, *, requester="
     await owner.execute(
         "INSERT INTO recovery_requests (tenant_id, request_id, kind, requester_sub,"
         " requester_key_version, recovery_key_id, reason, request_signature, status,"
-        " created_at, expires_at) VALUES ($1, $2, 'access', $3, $4, $5, 'why', $6, 'open',"
-        " $7, $8)",
+        " created_at, expires_at, holders_ceremony_id) VALUES ($1, $2, 'access', $3, $4, $5,"
+        " 'why', $6, 'open', $7, $8, $5)",
         TENANT,
         request_id,
         requester,
@@ -679,7 +683,7 @@ async def _make_custodian(owner, sub: str, index: int) -> None:
     )
     await owner.execute(
         "INSERT INTO recovery_shares (tenant_id, key_id, holder_index, holder_ref,"
-        " holder_public_share, encrypted_share) VALUES ($1, $2, $3, $4, $5, '{}')"
+        " holder_public_share, encrypted_share, ceremony_id) VALUES ($1, $2, $3, $4, $5, '{}', $2)"
         " ON CONFLICT DO NOTHING",
         TENANT,
         key_id,
@@ -898,8 +902,8 @@ async def test_only_custodians_see_requests_they_can_open(archive, owner, reques
     )
     await owner.execute(
         "INSERT INTO recovery_shares (tenant_id, key_id, holder_index, holder_ref,"
-        " holder_public_share, encrypted_share) VALUES ($1, $2, 9, 'paula', $3, '{}')"
-        " ON CONFLICT DO NOTHING",
+        " holder_public_share, encrypted_share, ceremony_id)"
+        " VALUES ($1, $2, 9, 'paula', $3, '{}', $2) ON CONFLICT DO NOTHING",
         TENANT,
         recovery,
         ref.public_point(309),

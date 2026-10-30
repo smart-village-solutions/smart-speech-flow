@@ -29,7 +29,7 @@ function deps(overrides: Partial<Record<string, unknown>> = {}) {
   };
   const recoveryRequests = {
     file: vi.fn().mockResolvedValue([]),
-    partials: vi.fn().mockResolvedValue({ wraps: [], approvals: [] }),
+    partials: vi.fn().mockResolvedValue({ wraps: [], approvals: [], holdersCeremonyId: 'g1' }),
     reject: vi.fn().mockResolvedValue(undefined),
     reportIntegrity: vi.fn().mockResolvedValue(undefined),
     storeWraps: vi.fn().mockResolvedValue([]),
@@ -46,7 +46,7 @@ function deps(overrides: Partial<Record<string, unknown>> = {}) {
     }),
   };
   const ceremonyCrypto = {
-    certifyTrust: vi.fn().mockResolvedValue({ k: 2, recoveryKeyId: 'rk-1' }),
+    certifyChain: vi.fn().mockResolvedValue({ k: 2, recoveryKeyId: 'rk-1', holdersCeremonyId: 'g1' }),
   };
   const archive = { trust: vi.fn().mockResolvedValue(trust) };
   return {
@@ -93,7 +93,7 @@ describe('filing', () => {
     expect(filed.requestId).toBe(signed.requestId);
     expect(filed.conversationIds).toEqual([C1, C2]);
     expect(filed.kind).toBe('key_recovery');
-    expect(d.ceremonyCrypto.certifyTrust).toHaveBeenCalled();
+    expect(d.ceremonyCrypto.certifyChain).toHaveBeenCalled();
   });
 });
 
@@ -145,7 +145,7 @@ describe('combining', () => {
 
   it('a transcript that does not certify is reported and nothing is fetched', async () => {
     const d = deps();
-    d.ceremonyCrypto.certifyTrust.mockRejectedValue(new CeremonyCheckError('transcript_mismatch'));
+    d.ceremonyCrypto.certifyChain.mockRejectedValue(new CeremonyCheckError('transcript_mismatch'));
 
     expect(await combineOnce(d, identity, keys, 'r1')).toEqual({
       kind: 'damaged',
@@ -153,6 +153,15 @@ describe('combining', () => {
     });
     expect(d.recoveryRequests.reportIntegrity).toHaveBeenCalledWith('r1', 'trust');
     expect(d.recoveryRequests.partials).not.toHaveBeenCalled();
+  });
+
+  it('partials of holders other than the certified ones combine nothing and blame nobody', async () => {
+    const d = deps();
+    d.recoveryRequests.partials.mockResolvedValue({ wraps: [], approvals: [], holdersCeremonyId: 'g0' });
+
+    await expect(combineOnce(d, identity, keys, 'r1')).rejects.toMatchObject({ fault: 'custodians_changed' });
+    expect(d.recoveryCrypto.combine).not.toHaveBeenCalled();
+    expect(d.recoveryRequests.reject).not.toHaveBeenCalled();
   });
 });
 

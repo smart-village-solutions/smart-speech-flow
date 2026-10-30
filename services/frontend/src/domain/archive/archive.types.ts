@@ -1,5 +1,5 @@
 import type { Bytes } from '@/core/crypto/bytes';
-import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
+import type { TrustChain } from '@/core/crypto/ceremony-crypto.port';
 import type { SignedEntry } from '@/core/crypto/chain';
 
 /** Derived until verification records exist (#619, spec §10.5). */
@@ -77,11 +77,5 @@ export interface OpenedConversation {
   keys: KeyFacts[];
 }
 
-/** The active recovery key's ceremony: what certifies the gateway's signing keys (spec A.6). */
-export interface ArchiveTrust {
-  recoveryKeyId: string;
-  transcriptHash: Bytes;
-  facts: CeremonyFacts;
-  /** Holder index -> transcript signature, one per custodian. */
-  signatures: Map<number, Bytes>;
-}
+/** The recovery key's generations: what certifies the gateway's signing keys (spec A.6, §9.7). */
+export type ArchiveTrust = TrustChain;

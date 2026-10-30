@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
-import { CeremonyCheckError, type CeremonyFacts, type CeremonyFault } from '@/core/crypto/ceremony-crypto.port';
+import { type Bytes, equalBytes } from '@/core/crypto/bytes';
+import {
+  CeremonyCheckError,
+  type CeremonyFacts,
+  type CeremonyFault,
+  type CertifiedTrust,
+} from '@/core/crypto/ceremony-crypto.port';
 import { AppError } from '@/core/http/AppError';
 import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
-import type { Ceremony } from '@/domain/recovery/recovery.types';
+import { trustChain } from '@/domain/recovery/chain.mapper';
+import type { Ceremony, CeremonyParticipant, ServedChain } from '@/domain/recovery/recovery.types';
 
 export const CEREMONY_QUERY = ['recording', 'ceremony'] as const;
 /** The staff view the step-up redirect returns to. */
@@ -23,8 +30,13 @@ export function useCeremonyState() {
   });
 }
 
-export function ceremonyFacts(tenantId: string, ceremony: Readonly<Ceremony>): CeremonyFacts {
-  return {
+/** A resharing's facts carry the generation it replaces, once this browser certified it (§9.7). */
+export function ceremonyFacts(
+  tenantId: string,
+  ceremony: Readonly<Ceremony>,
+  previous: CertifiedTrust | null = null
+): CeremonyFacts {
+  const facts: CeremonyFacts = {
     tenantId,
     ceremonyId: ceremony.ceremonyId,
     k: ceremony.k,
@@ -32,6 +44,35 @@ export function ceremonyFacts(tenantId: string, ceremony: Readonly<Ceremony>): C
     dealings: ceremony.dealings,
     gatewayKeys: ceremony.gatewayKeys,
   };
+  if (ceremony.kind !== 'resharing' || ceremony.recoveryKeyId === null || ceremony.previousTranscript === null) {
+    return facts;
+  }
+  return {
+    ...facts,
+    resharing: {
+      recoveryKeyId: ceremony.recoveryKeyId,
+      previousTranscript: ceremony.previousTranscript,
+      dealers: ceremony.dealers.map((dealer) => dealer.dealerIndex),
+      previous,
+    },
+  };
+}
+
+/**
+ * The current holders, certified here before anyone deals to or receives from a
+ * resharing. A chain that fails leaves `previous` null, so every step aborts with chain_invalid.
+ */
+export function useCertifiedChain(tenantId: string, chain: Readonly<ServedChain> | null) {
+  const { ceremonyCrypto } = useServices();
+  const last = chain?.generations.at(-1)?.ceremonyId ?? null;
+  const query = useQuery({
+    queryKey: [...CEREMONY_QUERY, 'chain', last],
+    queryFn: () => ceremonyCrypto.certifyChain(trustChain(tenantId, chain as ServedChain)),
+    enabled: chain !== null,
+    retry: false,
+    staleTime: Infinity,
+  });
+  return { previous: query.data ?? null, pending: chain !== null && query.isPending };
 }
 
 export type StepError = 'stepUp' | 'failed' | CeremonyFault;
@@ -72,4 +113,15 @@ async function classify(caught: unknown, abort: () => Promise<void>): Promise<St
   if (!(caught instanceof CeremonyCheckError)) return 'failed';
   await abort().catch(() => undefined);
   return caught.fault;
+}
+
+/** Every new holder ticked as compared, with exactly the fingerprint listed now (spec §9.7). */
+export function allTicked(
+  participants: readonly CeremonyParticipant[],
+  ticked: ReadonlyMap<number, Bytes>
+): boolean {
+  return participants.every((p) => {
+    const seen = ticked.get(p.holderIndex);
+    return seen !== undefined && equalBytes(seen, p.fingerprint);
+  });
 }

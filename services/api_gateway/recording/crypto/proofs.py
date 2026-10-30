@@ -56,6 +56,44 @@ def verify_schnorr(
     return c == schnorr_challenge(tenant_id, ceremony_id, dealer_index, commitment, nonce_point)
 
 
+def share_proof_challenge(
+    tenant_id: str, ceremony_id: str, holder_index: int, public_share: bytes, nonce_point: bytes
+) -> int:
+    return hash_to_scalar(
+        enc(tags.SHARE_POK, tenant_id, ceremony_id, holder_index, public_share, nonce_point)
+    )
+
+
+def verify_share_proof(
+    tenant_id: str, ceremony_id: str, holder_index: int, public_share: bytes, c: int, s: int
+) -> bool:
+    """A resharing's custodian knows x'_j behind X'_j, from the share it sealed (§9.7)."""
+    if not _in_range(c, s):
+        return False
+    try:
+        nonce_point = _combine(s, GENERATOR, c, decode_point(public_share))
+    except InvalidPoint:
+        return False
+    if nonce_point is None:
+        return False
+    expected = share_proof_challenge(
+        tenant_id, ceremony_id, holder_index, public_share, nonce_point
+    )
+    return c == expected
+
+
+def lagrange_at_zero(index: int, indices: Sequence[int]) -> int:
+    """λ_index at 0 over `indices`, mod n; the indices must be distinct and non-zero."""
+    if len(set(indices)) != len(indices) or any(i % ORDER == 0 for i in indices):
+        raise ValueError("Lagrange indices must be distinct and non-zero")
+    numerator, denominator = 1, 1
+    for other in indices:
+        if other != index:
+            numerator = numerator * other % ORDER
+            denominator = denominator * (other - index) % ORDER
+    return numerator * pow(denominator, ORDER - 2, ORDER) % ORDER
+
+
 def dleq_challenge(
     tenant_id: str,
     request_id: str,

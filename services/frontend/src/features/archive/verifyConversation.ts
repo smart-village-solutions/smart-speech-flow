@@ -28,11 +28,7 @@ export interface VerifyInput {
 
 async function certified(input: Readonly<VerifyInput>): Promise<Map<string, Bytes> | null> {
   try {
-    return await input.ceremonyCrypto.certify(
-      input.trust.facts,
-      input.trust.transcriptHash,
-      input.trust.signatures
-    );
+    return (await input.ceremonyCrypto.certifyChain(input.trust)).gatewayKeys;
   } catch {
     return null;
   }

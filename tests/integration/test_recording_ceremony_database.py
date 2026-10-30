@@ -47,7 +47,7 @@ async def owner():
     connection = await asyncpg.connect(OWNER_DSN, password=OWNER_PASSWORD)
     await connection.execute(
         "TRUNCATE recovery_shares, recovery_keys, ceremony_confirmations, ceremony_dealings,"
-        " ceremony_participants, recovery_ceremonies, user_keys, audit_events,"
+        " ceremony_dealers, ceremony_participants, recovery_ceremonies, user_keys, audit_events,"
         " gateway_signing_keys CASCADE"
     )
     yield connection
@@ -122,7 +122,7 @@ async def test_a_closed_ceremony_is_read_without_sub_shares(repository):
     """What browsers check gateway keys against (#616, spec §10.6)."""
     ceremony_id = await _run_to_active(_service(repository))
     key = await repository.active_recovery_key(TENANT)
-    read = await repository.ceremony(TENANT, ceremony_id)
+    [read] = await repository.chain(TENANT, ceremony_id)
 
     assert key.key_id == ceremony_id
     assert read.ceremony.status == "active"
@@ -131,7 +131,7 @@ async def test_a_closed_ceremony_is_read_without_sub_shares(repository):
     assert {c.holder_index for c in read.confirmations} == {
         p.holder_index for p in read.participants if p.kind == "custodian"
     }
-    assert await repository.ceremony("tenant-other", ceremony_id) is None
+    assert await repository.chain("tenant-other", ceremony_id) == []
 
 
 async def test_the_last_dealing_and_the_move_to_signing_commit_together(repository, monkeypatch):
@@ -254,7 +254,8 @@ async def test_the_application_role_cannot_rewrite_dealings_or_keys(repository):
                 await connection.execute("DELETE FROM ceremony_participants")
         async with connection.transaction():
             await connection.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", TENANT)
+            # k follows the holders since #617c; X and the first transcript never change.
             with pytest.raises(asyncpg.InsufficientPrivilegeError):
-                await connection.execute("UPDATE recovery_keys SET k = 1")
+                await connection.execute("UPDATE recovery_keys SET transcript_hash = $1", bytes(32))
     finally:
         await connection.close()

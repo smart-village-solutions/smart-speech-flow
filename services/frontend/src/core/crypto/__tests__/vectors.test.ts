@@ -4,26 +4,32 @@ import { p256 } from '@noble/curves/nist.js';
 import { describe, expect, it } from 'vitest';
 import { aesKey, objectAad, openEnvelope, sealEnvelope } from '@/core/crypto/aead';
 import { type Bytes, bytesToBigInt, fromBase64Url, toBase64Url, toHex, utf8 } from '@/core/crypto/bytes';
-import { publicPoint } from '@/core/crypto/curve';
+import { mod, publicPoint } from '@/core/crypto/curve';
 import { type Field, enc } from '@/core/crypto/encoding';
 import { openWithSharedX, parseSealed, seal, sealedToJson } from '@/core/crypto/ecies';
 import { openPrivateKeys, sealPrivateKeys } from '@/core/crypto/private-key-blob';
 import {
   combinePartials,
   commitmentsOf,
+  contribution,
   dleqProve,
   evaluatePolynomial,
   holderPublicShare,
+  lagrangeAtZero,
   recoveryPublicKey,
   schnorrProve,
+  shareProofProve,
   verifyDleq,
   verifySchnorr,
+  verifyShareProof,
   verifySubshare,
 } from '@/core/crypto/proofs';
 import {
   approvalFields,
   dealingFields,
+  participantsDigest,
   requestFields,
+  reshareDealingFields,
   sha256,
   signedDigest,
   verifyFields,
@@ -223,6 +229,71 @@ describe('shared crypto vectors', () => {
       })),
     });
     expect(toBase64Url(hash)).toBe(c.transcript_hash);
+  });
+
+  it('checks a resharing that keeps X (spec §9.7)', async () => {
+    const r = vectors.resharing;
+    const c = vectors.ceremony;
+    const dealers: number[] = r.dealers;
+    for (const dealer of dealers) {
+      expect(lagrangeAtZero(dealer, dealers)).toBe(n(r.lagrange[dealer]));
+      same(contribution(dealer, dealers, b(c.holder_shares[dealer - 1])), b(r.contributions[dealer]));
+      expect(mod(n(c.shares[dealer]) * lagrangeAtZero(dealer, dealers))).toBe(n(r.polynomials[dealer][0]));
+    }
+    const lists = r.dealings.map((d: { commitments: string[] }) => d.commitments.map(b));
+    expect(toBase64Url(recoveryPublicKey(lists))).toBe(c.recovery_public_key);
+    for (const dealing of r.dealings) {
+      const proof = await schnorrProve(
+        c.tenant_id,
+        r.ceremony_id,
+        dealing.dealer_index,
+        n(r.polynomials[dealing.dealer_index][0]),
+        n(r.pok_nonces[dealing.dealer_index])
+      );
+      expect(proof).toEqual({ c: n(dealing.c), s: n(dealing.s) });
+    }
+    const participants = r.participants.map((p: { holder_ref: string; index: number; fingerprint: string }) => ({
+      holderRef: p.holder_ref,
+      index: p.index,
+      fingerprint: b(p.fingerprint),
+    }));
+    const digest = await participantsDigest(participants);
+    same(digest, b(r.participants_digest));
+    const first = r.dealings[0];
+    const signed = reshareDealingFields({
+      tenantId: c.tenant_id,
+      ceremonyId: r.ceremony_id,
+      dealerIndex: first.dealer_index,
+      commitments: first.commitments.map(b),
+      proof: { c: n(first.c), s: n(first.s) },
+      previousTranscript: b(r.previous_transcript_hash),
+      participantsDigest: digest,
+    });
+    same(enc(...signed), enc(...fields(r.dealing_fields)));
+    const hash = await transcriptHash({
+      tenantId: c.tenant_id,
+      ceremonyId: r.ceremony_id,
+      k: r.k,
+      participants,
+      dealings: r.dealings.map((d: { dealer_index: number; commitments: string[]; c: string; s: string }) => ({
+        dealerIndex: d.dealer_index,
+        commitments: d.commitments.map(b),
+        proof: { c: n(d.c), s: n(d.s) },
+      })),
+      recoveryPublicKey: b(c.recovery_public_key),
+      holderShares: r.holder_shares.map(b),
+      gatewayKeys: c.gateway_keys.map((g: { key_id: string; public_key: string }) => ({
+        keyId: g.key_id,
+        publicKey: b(g.public_key),
+      })),
+      previousTranscript: b(r.previous_transcript_hash),
+    });
+    expect(toBase64Url(hash)).toBe(r.transcript_hash);
+    const share = n(r.shares[r.share_proof.holder_index]);
+    const proof = await shareProofProve(c.tenant_id, r.ceremony_id, 1, share, n(r.share_proof.nonce));
+    expect(proof).toEqual({ c: n(r.share_proof.c), s: n(r.share_proof.s) });
+    expect(await verifyShareProof(c.tenant_id, r.ceremony_id, 1, b(r.holder_shares[0]), proof)).toBe(true);
+    expect(await verifyShareProof(c.tenant_id, r.ceremony_id, 2, b(r.holder_shares[0]), proof)).toBe(false);
   });
 
   it('recovers a conversation key from k partials', async () => {

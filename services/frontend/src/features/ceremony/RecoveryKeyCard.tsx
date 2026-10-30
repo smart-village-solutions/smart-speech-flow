@@ -1,10 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import type { RecoveryKey } from '@/domain/recovery/recovery.types';
+import { Button } from '@/ui/primitives/Button';
 
 const MODE = { standard: 'admin.ceremony.modeStandard', enhanced: 'admin.ceremony.modeEnhanced' } as const;
 
 /** The tenant's active recovery key; recording may be enabled from here on (spec §9.2). */
-export function RecoveryKeyCard({ recoveryKey }: Readonly<{ recoveryKey: RecoveryKey }>) {
+interface RecoveryKeyCardProps {
+  recoveryKey: RecoveryKey;
+  /** Offered to an org admin while no ceremony runs (spec §9.7). */
+  onReshare?: () => void;
+}
+
+export function RecoveryKeyCard({ recoveryKey, onReshare }: Readonly<RecoveryKeyCardProps>) {
   const { t } = useTranslation();
 
   return (
@@ -21,6 +28,16 @@ export function RecoveryKeyCard({ recoveryKey }: Readonly<{ recoveryKey: Recover
         <p className={`text-label ${recoveryKey.usableShares > recoveryKey.k ? 'text-fg-muted' : 'text-fg-status-alert'}`}>
           {t('admin.ceremony.usableShares', { usable: recoveryKey.usableShares, k: recoveryKey.k })}
         </p>
+      )}
+      {recoveryKey.previousHadPaper && (
+        <p role="alert" className="text-note text-fg-status-alert">
+          {t('admin.ceremony.reshare.voidSheets')}
+        </p>
+      )}
+      {onReshare !== undefined && (
+        <Button variant="compact" className="self-start bg-accent text-accent-on" onClick={onReshare}>
+          {t('admin.ceremony.reshare.start')}
+        </Button>
       )}
     </section>
   );

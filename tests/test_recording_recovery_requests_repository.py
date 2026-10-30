@@ -46,7 +46,7 @@ REMAINING = "FOR SHARE OF c"
 HOLDER = "FROM recovery_shares s"
 LATEST = "ORDER BY d.attempt DESC LIMIT 1"
 VALID = "ORDER BY d.holder_index, d.attempt"
-K = "SELECT k FROM recovery_keys"
+K = "SELECT k FROM recovery_ceremonies"
 
 
 def _row(status="open", requester="sam", expires=NOW + timedelta(days=7)) -> dict:
@@ -63,6 +63,7 @@ def _row(status="open", requester="sam", expires=NOW + timedelta(days=7)) -> dic
         "expires_at": expires,
         "closed_at": None if status == "open" else NOW,
         "conversations": 1,
+        "holders_ceremony_id": uuid.UUID(RECOVERY),
     }
 
 
@@ -80,10 +81,16 @@ class Scripted(ScriptedConnection):
 
 # The requester's active key, version 1, unless a test scripts another answer.
 REQUESTER_KEY = "retired_at IS NULL FOR SHARE"
+# The recovery key's current holders, read under a shared lock at filing (§9.7).
+KEY_HOLDERS = "AND status = 'active' FOR SHARE"
+# Whether the caller was a custodian of the request's generation.
+LISTED = "FROM ceremony_participants WHERE ceremony_id = $1"
 
 
 def repository(answers: dict[str, object]):
-    connection = Scripted({REQUESTER_KEY: 1, **answers})
+    connection = Scripted(
+        {REQUESTER_KEY: 1, KEY_HOLDERS: uuid.UUID(RECOVERY), LISTED: True, **answers}
+    )
     return PostgresRecoveryRequests(ScriptedPool(connection)), connection
 
 
@@ -217,7 +224,8 @@ async def test_a_request_without_remaining_scope_closes_as_scope_gone():
 @pytest.mark.parametrize(
     ("answers", "refused"),
     [
-        ({LOCK: _row()}, "not_found"),
+        ({LOCK: _row(), LISTED: False}, "not_found"),
+        ({LOCK: _row(), REMAINING: SCOPE}, "not_found"),
         (
             {LOCK: _row(requester="carol"), REMAINING: SCOPE, HOLDER: HOLDER_ROW},
             "requester_cannot_approve",
@@ -667,3 +675,34 @@ async def test_a_key_recovery_carries_up_to_two_thousand_keys(keys, answer):
     requests, _ = repository({"AS requested": [check], "FROM conversation_keys": scope})
     result = await requests.file(_key_recovery(), _always)
     assert (result if isinstance(result, Refused) else Refused("filed")) == Refused(answer)
+
+
+async def test_filing_without_an_active_recovery_key_is_refused_before_any_check():
+    store, connection = repository({KEY_HOLDERS: None})
+    refused = await store.file(_new_request(), _always)
+    assert refused == Refused("recovery_key_missing")
+    assert not any("pg_advisory_xact_lock" in call for call in connection.calls)
+
+
+async def test_the_key_row_is_held_before_the_filing_lock():
+    store, connection = repository({"AS requested": [_check()], "FROM conversation_keys": SCOPE})
+    assert await store.file(_new_request(), _always) == (ScopeKey(CONVERSATION, KEY),)
+    key_lock = next(i for i, c in enumerate(connection.calls) if "FROM recovery_keys" in c)
+    advisory = next(i for i, c in enumerate(connection.calls) if "pg_advisory_xact_lock" in c)
+    assert key_lock < advisory
+    assert connection.calls[key_lock].endswith("FOR SHARE")
+    key_lock = next(i for i, c in enumerate(connection.calls) if KEY_HOLDERS in c)
+    advisory = next(i for i, c in enumerate(connection.calls) if "pg_advisory_xact_lock" in c)
+    assert key_lock < advisory
+
+
+async def test_a_custodian_of_another_generation_learns_nothing():
+    store, connection = repository({LOCK: _row(status="cancelled"), LISTED: False})
+    refused = await store.decline(TENANT, "carol", REQUEST, "no", NOW)
+    assert refused == Refused("not_found")
+    assert not any(HOLDER in call for call in connection.calls)
+
+
+async def test_a_holder_of_the_requests_generation_learns_it_closed_without_a_share():
+    store, _ = repository({LOCK: _row(status="cancelled"), HOLDER: None})
+    assert await store.decline(TENANT, "carol", REQUEST, "no", NOW) == Refused("closed")

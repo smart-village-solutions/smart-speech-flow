@@ -88,8 +88,10 @@ describe('recovery request mapper', () => {
           partials: { [KEY]: '{"p":1}' },
         },
       ],
+      holders_ceremony_id: ID,
     });
     expect(parsed.approvals[0].partials.get(KEY)).toBe('{"p":1}');
+    expect(parsed.holdersCeremonyId).toBe(ID);
     expect(parsed.wraps[0].signerKeyId).toBe('gw-1');
   });
 

@@ -3,6 +3,58 @@ import type { CeremonyParticipant, NewDealing, PublishedDealing } from '@/core/c
 
 export type { CeremonyParticipant, NewDealing, PublishedDealing };
 
+/** An old holder dealing in a resharing, under its old index (spec §9.7). */
+export interface CeremonyDealer {
+  dealerIndex: number;
+  holderRef: string;
+  kind: 'custodian' | 'paper';
+}
+
+/** One completed generation as served, before this browser knows the tenant it belongs to. */
+export interface ServedGeneration {
+  ceremonyId: string;
+  kind: 'generation' | 'resharing';
+  k: number;
+  transcriptHash: Bytes;
+  previousTranscript: Bytes | null;
+  gatewayKeys: { keyId: string; publicKey: Bytes }[];
+  participants: CeremonyParticipant[];
+  dealers: number[];
+  dealings: PublishedDealing[];
+  signatures: Map<number, Bytes>;
+}
+
+export interface ServedChain {
+  recoveryKeyId: string;
+  firstTranscriptHash: Bytes;
+  holdersCeremonyId: string;
+  holdersTranscriptHash: Bytes;
+  generations: ServedGeneration[];
+}
+
+/** What a resharing's dealer opens its share with (spec §9.7). */
+export interface DealerKey {
+  dealerIndex: number;
+  encryptedShare: string;
+  keyVersion: number;
+  encPub: Bytes;
+  sigPub: Bytes;
+  fingerprint: Bytes;
+  fingerprintDisplay: string;
+  blob: string;
+}
+
+/** A current holder, for the admin choosing dealers. */
+export interface CurrentHolder {
+  holderIndex: number;
+  holderRef: string;
+  kind: 'custodian' | 'paper';
+  displayName: string | null;
+  /** 'kept': re-enrolled, the old key kept so the share can still deal; 'lost': it cannot. */
+  state: 'fresh' | 'kept' | 'lost' | 'paper';
+}
+
+
 /** A ceremony in progress, as the gateway lists it (spec §9.2). */
 export interface Ceremony {
   ceremonyId: string;
@@ -17,6 +69,11 @@ export interface Ceremony {
   paperConfirmed: boolean;
   /** Set once every custodian has dealt. */
   transcriptHash: Bytes | null;
+  kind: 'generation' | 'resharing';
+  /** For a resharing: the key it keeps, the generation it replaces, and who deals. */
+  recoveryKeyId: string | null;
+  previousTranscript: Bytes | null;
+  dealers: CeremonyDealer[];
 }
 
 export interface RecoveryKey {
@@ -28,6 +85,11 @@ export interface RecoveryKey {
   activatedAt: string;
   /** Custodian shares their holders' current keys still open; null when not reported (§9.6). */
   usableShares: number | null;
+  holdersCeremonyId: string;
+  /** Listed for an org admin only. */
+  holders: CurrentHolder[];
+  /** The generation a resharing replaced had paper sheets, which must now be destroyed. */
+  previousHadPaper: boolean;
 }
 
 /** The tenant's latest ceremony, when it ended without a key. */
@@ -42,6 +104,8 @@ export interface CeremonyState {
   recoveryKey: RecoveryKey | null;
   ceremony: Ceremony | null;
   lastFailed: FailedCeremony | null;
+  /** Served while a resharing runs or once there was one; what the current holders are certified by. */
+  chain: ServedChain | null;
 }
 
 export interface CustodianCandidate {
@@ -61,4 +125,6 @@ export type AbortReason =
   | 'proof_invalid'
   | 'signature_invalid'
   | 'subshare_invalid'
-  | 'transcript_mismatch';
+  | 'transcript_mismatch'
+  | 'contribution_invalid'
+  | 'chain_invalid';

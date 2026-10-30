@@ -16,9 +16,14 @@ from services.api_gateway.recording.crypto import ecies, tags
 from services.api_gateway.recording.crypto.curve import ORDER
 from services.api_gateway.recording.crypto.encoding import scalar_from_bytes, scalar_to_bytes
 from services.api_gateway.recording.crypto.proofs import verify_subshare
-from services.api_gateway.recording.crypto.signatures import dealing_fields, sign_fields
+from services.api_gateway.recording.crypto.signatures import (
+    dealing_fields,
+    reshare_dealing_fields,
+    sign_fields,
+)
 from services.api_gateway.recording.crypto.transcript import fingerprint
 from services.api_gateway.recording.repository import UserKeyRecord
+from services.api_gateway.recording.resharing_model import holders_digest
 from services.api_gateway.recording.secrets import RecordingSecrets, ServerLayer, gateway_key_id
 from tests import recording_crypto_reference as ref
 
@@ -59,23 +64,12 @@ class Holder:
         c, s = ref.schnorr_prove(
             ceremony.tenant_id, ceremony.ceremony_id, index, coefficients[0], nonce
         )
-        subshares = {
-            p.holder_index: ecies.seal(
-                tags.SUBSHARE,
-                p.enc_pub,
-                scalar_to_bytes(ref.evaluate(coefficients, p.holder_index)),
-                ecies.subshare_context(
-                    ceremony.tenant_id, ceremony.ceremony_id, index, p.holder_index
-                ),
-            ).to_json()
-            for p in snapshot.participants
-        }
         return DealingSubmission(
             commitments=commitments,
             proof_c=c,
             proof_s=s,
             signature=self.dealing_signature(snapshot, commitments, c, s),
-            subshares=subshares,
+            subshares=sealed_subshares(snapshot, index, coefficients),
         )
 
     def dealing_signature(
@@ -104,22 +98,97 @@ class Holder:
         return total
 
     def confirmation(
-        self, snapshot: CeremonySnapshot, index: int, share: int, transcript_hash: bytes
+        self,
+        snapshot: CeremonySnapshot,
+        index: int,
+        share: int,
+        transcript_hash: bytes,
+        key_id: str | None = None,
     ) -> tuple[bytes, str]:
+        """A resharing's share is sealed under the key's ID, never the resharing's (§9.7)."""
         ceremony = snapshot.ceremony
         sealed = ecies.seal(
             tags.SHARE,
             self.enc_pub,
             scalar_to_bytes(share),
-            ecies.share_context(ceremony.tenant_id, ceremony.ceremony_id, index, self.sub),
+            ecies.share_context(
+                ceremony.tenant_id, key_id or ceremony.ceremony_id, index, self.sub
+            ),
         )
         signature = sign_fields(ref.private_key(self.sig_scalar), tags.TRANSCRIPT, transcript_hash)
         return signature, sealed.to_json()
 
 
+def sealed_subshares(
+    snapshot: CeremonySnapshot, dealer_index: int, coefficients: list[int]
+) -> dict[int, str]:
+    ceremony = snapshot.ceremony
+    return {
+        p.holder_index: ecies.seal(
+            tags.SUBSHARE,
+            p.enc_pub,
+            scalar_to_bytes(ref.evaluate(coefficients, p.holder_index)),
+            ecies.subshare_context(
+                ceremony.tenant_id, ceremony.ceremony_id, dealer_index, p.holder_index
+            ),
+        ).to_json()
+        for p in snapshot.participants
+    }
+
+
+def reshare_dealing(
+    snapshot: CeremonySnapshot,
+    dealer_index: int,
+    share: int,
+    tail: list[int],
+    signer: Holder | None,
+    *,
+    weight: int | None = None,
+    nonce: int = 4343,
+) -> DealingSubmission:
+    """g_i(0) = λ_i·x_i over the dealers; a paper sheet (signer None) signs nothing."""
+    ceremony = snapshot.ceremony
+    if weight is None:
+        weight = ref.lagrange_at_zero(dealer_index, snapshot.dealer_indices())
+    coefficients = [weight * share % ORDER, *tail]
+    commitments = ref.commitments(coefficients)
+    c, s = ref.schnorr_prove(
+        ceremony.tenant_id, ceremony.ceremony_id, dealer_index, coefficients[0], nonce
+    )
+    signature = None
+    if signer is not None:
+        signed = reshare_dealing_fields(
+            ceremony.tenant_id,
+            ceremony.ceremony_id,
+            dealer_index,
+            commitments,
+            c,
+            s,
+            ceremony.previous_transcript_hash or b"",
+            holders_digest(snapshot),
+        )
+        signature = sign_fields(
+            ref.private_key(signer.sig_scalar), tags.RESHARE_DEALING_SIG, *signed
+        )
+    return DealingSubmission(
+        commitments=commitments,
+        proof_c=c,
+        proof_s=s,
+        signature=signature,
+        subshares=sealed_subshares(snapshot, dealer_index, coefficients),
+    )
+
+
+def share_proof(snapshot: CeremonySnapshot, index: int, share: int) -> tuple[int, int]:
+    ceremony = snapshot.ceremony
+    return ref.share_proof_prove(ceremony.tenant_id, ceremony.ceremony_id, index, share, 5151)
+
+
 ANNA = Holder("anna", 101, 201)
 BERND = Holder("bernd", 102, 202)
 CARLA = Holder("carla", 103, 203)
+DORA = Holder("dora", 105, 205)
+EMIL = Holder("emil", 106, 206)
 DEVICE = Holder("device", 104)
 ORG_ADMIN = "olga"
 POLYNOMIALS = {"anna": [11, 12], "bernd": [21, 22], "carla": [31, 32]}

@@ -43,7 +43,7 @@ async function certifiedTrust(
   tenantId: string
 ): Promise<CertifiedTrust> {
   const trust = await deps.archive.trust(tenantId);
-  return deps.ceremonyCrypto.certifyTrust(trust.facts, trust.transcriptHash, trust.signatures);
+  return deps.ceremonyCrypto.certifyChain(trust);
 }
 
 export interface FileInput {
@@ -121,6 +121,8 @@ export async function combineOnce(
     return { kind: 'damaged', stages: ['trust'] };
   }
   const served = await deps.recoveryRequests.partials(requestId);
+  // Approvals of other holders cannot combine with these; nobody is to blame (§9.7).
+  if (served.holdersCeremonyId !== trust.holdersCeremonyId) throw new RecoveryCheckError('custodians_changed');
   const result = await deps.recoveryCrypto.combine(
     { tenantId: identity.tenantId, requestId, requesterSub: identity.userSub, ...served },
     trust,

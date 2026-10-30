@@ -185,9 +185,13 @@ def test_custodians_are_ordered_by_subject_not_by_request(http):
     [
         ("post", "", CUSTODIAN),
         ("get", "/candidates", CUSTODIAN),
-        ("post", "/00000000-0000-4000-8000-000000000000/dealings", MANAGE),
+        # A resharing's dealer is checked by identity, but still needs to be staff (§9.7).
+        ("post", "/00000000-0000-4000-8000-000000000000/dealings", "ssf.analytics.view"),
         ("post", "/00000000-0000-4000-8000-000000000000/paper-confirmation", CUSTODIAN),
-        ("get", "", "ssf.recording.review"),
+        ("get", "", "ssf.analytics.view"),
+        ("post", "/resharing", CUSTODIAN),
+        ("post", "/00000000-0000-4000-8000-000000000000/paper-dealings", CUSTODIAN),
+        ("get", "/00000000-0000-4000-8000-000000000000/dealer", "ssf.analytics.view"),
     ],
 )
 def test_each_route_requires_its_permission(http, method, path, permission):

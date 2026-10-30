@@ -18,6 +18,8 @@ interface CustodianStepsProps {
 }
 
 function nextStep(ceremony: Readonly<Ceremony>, index: number): 'deal' | 'confirm' | 'wait' {
+  // In a resharing the old holders deal; a new holder only receives (spec §9.7).
+  if (ceremony.status === 'dealing' && ceremony.kind === 'resharing') return 'wait';
   if (ceremony.status === 'dealing') {
     return ceremony.dealings.some((dealing) => dealing.dealerIndex === index) ? 'wait' : 'deal';
   }

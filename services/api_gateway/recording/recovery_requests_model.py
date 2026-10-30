@@ -87,6 +87,8 @@ class RequestRow:
     created_at: datetime
     expires_at: datetime
     closed_at: datetime | None
+    # The holders it was filed under, whose approvals and k decide it (§9.7).
+    holders_ceremony_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,8 @@ class ServedApproval:
 class ServedPartials:
     wraps: tuple[ServedWrap, ...]
     approvals: tuple[ServedApproval, ...]
+    # The browser requires the generation it certified; otherwise the custodians changed.
+    holders_ceremony_id: str = ""
 
 
 @dataclass(frozen=True)

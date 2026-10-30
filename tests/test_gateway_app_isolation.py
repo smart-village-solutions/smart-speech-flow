@@ -68,6 +68,7 @@ RECORDING = (
     "recording_retention",
     "recording_recovery_requests",
     "recording_reenrolment",
+    "recording_resharing",
     "recording_sessions",
     # ...and without an archive store (#615).
     "recording_archive",

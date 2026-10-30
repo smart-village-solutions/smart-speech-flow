@@ -34,6 +34,7 @@ from .recovery_requests_model import (
 from .recovery_requests_sql import (
     APPROVABLE,
     CANDIDATES,
+    KEY_HOLDERS,
     OWN_CANDIDATES,
     OWN_REQUESTS,
     OWN_TOTALS,
@@ -146,6 +147,9 @@ class PostgresRecoveryRequests:
             key_version = await requester_key(connection, request.requester_sub)
             if key_version != request.requester_key_version:
                 return Refused("key_changed")
+            holders = await connection.fetchval(KEY_HOLDERS, request.recovery_key_id)
+            if holders is None:
+                return Refused("recovery_key_missing")
             # Two filings by one requester serialise, so "one open request per conversation" holds.
             await connection.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
@@ -170,7 +174,7 @@ class PostgresRecoveryRequests:
                 return Refused("signature_invalid")
             try:
                 async with connection.transaction():
-                    await insert_request(connection, request, scope)
+                    await insert_request(connection, request, scope, str(holders))
             except asyncpg.UniqueViolationError:
                 return Refused("request_exists")  # a reused request ID
             return scope
@@ -313,7 +317,7 @@ class PostgresRecoveryRequests:
             request, remaining = owned
             return Progress(
                 request=request,
-                k=await recovery_k(connection, request.recovery_key_id),
+                k=await recovery_k(connection, request),
                 decisions=await decisions_of(connection, request_id),
                 remaining=remaining,
                 conversations=await connection.fetchval(

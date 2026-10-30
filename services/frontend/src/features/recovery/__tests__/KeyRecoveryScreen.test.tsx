@@ -67,7 +67,7 @@ function render({ unlocked = true, own, requests = [] }: Options = {}) {
   } as unknown as RecoveryRequestsRepository;
   const recoveryCrypto = { signRequest: vi.fn().mockResolvedValue(new Uint8Array(64)) };
   const ceremonyCrypto = {
-    certifyTrust: vi.fn().mockResolvedValue({ recoveryKeyId: 'rk-1', k: 2 }),
+    certifyChain: vi.fn().mockResolvedValue({ recoveryKeyId: 'rk-1', k: 2 }),
   };
   const archive = { trust: vi.fn().mockResolvedValue({}) };
   const onOpenKeys = vi.fn();

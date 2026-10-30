@@ -20,6 +20,12 @@ from services.api_gateway.recording.ceremony_model import (
 )
 from services.api_gateway.recording.crypto.encoding import b64url
 from services.api_gateway.recording.repository import KeyAlreadyEnrolledError, UserKeyRecord
+from services.api_gateway.recording.resharing import DealerMaterial
+from services.api_gateway.recording.resharing_model import (
+    HolderGeneration,
+    end_to_end_holds,
+    new_public_shares,
+)
 from tests import recording_crypto_reference as ref
 
 
@@ -81,6 +87,8 @@ class FakeCeremonyRepository:
     audit: list[AuditEvent] = field(default_factory=list)
     aborted: dict[str, FailedCeremony] = field(default_factory=dict)
     usable: int = 0
+    # Custodian holders whose share can no longer be opened (§9.6's lost blob).
+    unusable: set[str] = field(default_factory=set)
 
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None:
         return self.recovery_key
@@ -90,6 +98,59 @@ class FakeCeremonyRepository:
 
     async def user_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, UserKeyRecord]:
         return {sub: self.keys[sub] for sub in subs if sub in self.keys}
+
+    async def holder_generation(self, tenant_id: str) -> HolderGeneration | None:
+        if self.recovery_key is None:
+            return None
+        holders, transcript = self.recovery_key.current_holders
+        snapshot = self.ceremonies.get(holders)
+        if snapshot is None:
+            return None
+        return HolderGeneration(
+            holders,
+            snapshot.ceremony.k,
+            transcript,
+            snapshot.participants,
+            {share.holder_index: share.holder_public_share for share in self.shares},
+        )
+
+    async def chain(self, tenant_id: str, key_id: str) -> list[CeremonySnapshot]:
+        return [
+            s
+            for s in self.ceremonies.values()
+            if s.ceremony.status == "active"
+            and key_id in (s.ceremony.ceremony_id, s.ceremony.recovery_key_id)
+        ]
+
+    async def record_audit(self, event: AuditEvent) -> None:
+        self.audit.append(event)
+
+    async def holder_states(self, tenant_id: str) -> dict[str, str]:
+        generation = await self.holder_generation(tenant_id)
+        if generation is None:
+            return {}
+        return {
+            p.holder_ref: "lost" if p.holder_ref in self.unusable else "fresh"
+            for p in generation.participants
+            if p.kind == "custodian"
+        }
+
+    async def dealer_material(
+        self, tenant_id: str, dealer_index: int, holder_ref: str
+    ) -> DealerMaterial | None:
+        share = next(s for s in self.shares if s.holder_index == dealer_index)
+        if holder_ref in self.unusable or share.encrypted_share is None:
+            return None
+        return DealerMaterial(dealer_index, share.encrypted_share, self.keys[holder_ref])
+
+    async def create_resharing(self, ceremony, participants, dealers, audit) -> None:
+        if await self.open_ceremony(ceremony.tenant_id, ceremony.started_at) is not None:
+            raise conflict("CEREMONY_IN_PROGRESS", "in progress")
+        self.ceremonies[ceremony.ceremony_id] = CeremonySnapshot(
+            ceremony, tuple(participants), (), (), tuple(dealers)
+        )
+        self.subshares[ceremony.ceremony_id] = {}
+        self.audit.extend(audit)
 
     async def gateway_keys(self) -> tuple[tuple[str, bytes], ...]:
         return self.gateway
@@ -184,12 +245,52 @@ class FakeCeremonyRepository:
             self.ceremonies[ceremony_id] = after
             self.audit.append(audit)
             return after.ceremony.status
+        if after.ceremony.kind == "resharing":
+            return self._reshare(after, audit)
         key, shares, activated = activation(after)
         self.ceremonies[ceremony_id] = replace(
             after, ceremony=replace(after.ceremony, status="active")
         )
         self.recovery_key, self.shares = key, list(shares)
         self.audit.extend([audit, activated])
+        return "active"
+
+    def _reshare(self, after: CeremonySnapshot, audit: AuditEvent) -> str:
+        """The Postgres activation's outcome: the end-to-end check, then the new holders."""
+        ceremony = after.ceremony
+        key = self.recovery_key
+        assert key is not None
+        if not end_to_end_holds(after, key.recovery_public_key):
+            self.ceremonies[ceremony.ceremony_id] = replace(
+                after, ceremony=replace(ceremony, status="aborted")
+            )
+            self.aborted[ceremony.ceremony_id] = FailedCeremony(
+                ceremony.ceremony_id, "canary_failed", audit.at
+            )
+            self.audit.append(audit)
+            return "aborted"
+        public = new_public_shares(after)
+        sealed = {c.holder_index: c.encrypted_share for c in after.confirmations}
+        self.shares = [
+            RecoveryShareRecord(
+                p.holder_index, p.holder_ref, public[p.holder_index], sealed.get(p.holder_index)
+            )
+            for p in after.participants
+        ]
+        self.recovery_key = replace(
+            key,
+            holders_ceremony_id=ceremony.ceremony_id,
+            holders_transcript_hash=ceremony.transcript_hash,
+            k=ceremony.k,
+            n=len(after.participants),
+            mode="standard" if ceremony.k == 1 else "enhanced",
+        )
+        self.ceremonies[ceremony.ceremony_id] = replace(
+            after, ceremony=replace(ceremony, status="active")
+        )
+        self.audit.extend(
+            [audit, replace(audit, event_type="recovery_key_reshared", object_ref=key.key_id)]
+        )
         return "active"
 
     async def abort(self, tenant_id, ceremony_id, reason, audit) -> None:

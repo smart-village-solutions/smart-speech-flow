@@ -24,6 +24,7 @@ from .ceremony_model import (
     MAX_CUSTODIANS,
     MAX_K,
     PAPER,
+    RESHARING,
     Activation,
     CeremonyError,
     CeremonyParticipant,
@@ -38,6 +39,7 @@ from .ceremony_model import (
     check_dealing,
     check_sealed,
     conflict,
+    dealing_record,
     invalid,
     transcript_input,
 )
@@ -46,6 +48,7 @@ from .crypto.curve import InvalidPoint, decode_point
 from .crypto.signatures import sign_fields, verify_fields, wrap_fields
 from .crypto.transcript import paper_device_fingerprint, transcript_hash
 from .repository import UserKeyRecord
+from .resharing_model import HolderGeneration, check_resharing_dealing, check_share_proof
 from .secrets import RecordingSecrets
 
 CANARY_CONVERSATION = "canary"
@@ -55,6 +58,12 @@ class CeremonyStore(Protocol):
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None: ...
 
     async def usable_shares(self, tenant_id: str) -> int | None: ...
+
+    async def holder_generation(self, tenant_id: str) -> HolderGeneration | None: ...
+
+    async def holder_states(self, tenant_id: str) -> dict[str, str]: ...
+
+    async def chain(self, tenant_id: str, key_id: str) -> list[CeremonySnapshot]: ...
 
     async def user_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, UserKeyRecord]: ...
 
@@ -125,12 +134,27 @@ class Candidate:
 
 
 @dataclass(frozen=True)
+class HolderView:
+    """A current holder, for the admin choosing dealers: 'fresh', 'kept', 'lost' or 'paper'."""
+
+    holder_index: int
+    holder_ref: str
+    kind: str
+    display_name: str | None
+    state: str
+
+
+@dataclass(frozen=True)
 class CeremonyState:
     recovery_key: RecoveryKeyRecord | None
     ceremony: CeremonySnapshot | None
     last_failed: FailedCeremony | None = None
     # Custodian shares the holders can still open; below k the tenant cannot recover (§9.6).
     usable_shares: int | None = None
+    holders: tuple[HolderView, ...] = ()
+    # Every completed generation, first to current, once there is more than one or a
+    # resharing runs: what browsers certify the current holders by (§9.7).
+    chain: tuple[CeremonySnapshot, ...] = ()
 
 
 def _now() -> datetime:
@@ -176,13 +200,37 @@ class CeremonyService:
         now = self._clock()
         key = await self._repository.active_recovery_key(tenant_id)
         ceremony = await self._repository.open_ceremony(tenant_id, now)
-        if key is not None:
-            usable = await self._repository.usable_shares(tenant_id)
-            return CeremonyState(key, ceremony, usable_shares=usable)
-        if ceremony is not None:
-            return CeremonyState(None, ceremony)
+        failed = None
+        if ceremony is None:
+            failed = await self._repository.last_failed_ceremony(tenant_id, now)
+        if key is None:
+            return CeremonyState(None, ceremony, failed)
+        resharing = ceremony is not None and ceremony.ceremony.kind == RESHARING
+        reshared = key.current_holders[0] != key.key_id
+        chain = await self._repository.chain(tenant_id, key.key_id) if resharing or reshared else []
         return CeremonyState(
-            None, None, await self._repository.last_failed_ceremony(tenant_id, now)
+            key,
+            ceremony,
+            failed,
+            usable_shares=await self._repository.usable_shares(tenant_id),
+            holders=await self._holders(tenant_id),
+            chain=tuple(chain),
+        )
+
+    async def _holders(self, tenant_id: str) -> tuple[HolderView, ...]:
+        generation = await self._repository.holder_generation(tenant_id)
+        if generation is None:
+            return ()
+        states = await self._repository.holder_states(tenant_id)
+        return tuple(
+            HolderView(
+                p.holder_index,
+                p.holder_ref,
+                p.kind,
+                p.display_name,
+                states.get(p.holder_ref, "lost") if p.kind == CUSTODIAN else PAPER,
+            )
+            for p in generation.participants
         )
 
     async def _custodian_names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]:
@@ -226,7 +274,7 @@ class CeremonyService:
             status="dealing",
             gateway_keys=await self._repository.gateway_keys(),
         )
-        participants = _participants(tenant_id, request, names, keys)
+        participants = participants_for(tenant_id, request, names, keys)
         event = AuditEvent(
             tenant_id, starter, "ceremony_started", f"ceremony:{ceremony.ceremony_id}", now
         )
@@ -251,28 +299,33 @@ class CeremonyService:
     async def deal(
         self, tenant_id: str, dealer_sub: str, ceremony_id: str, dealing: DealingSubmission
     ) -> CeremonySnapshot:
-        snapshot, dealer = await self._custodian(tenant_id, ceremony_id, dealer_sub)
+        snapshot = await self._open(tenant_id, ceremony_id)
+        index = _dealer_index(snapshot, dealer_sub)
         if snapshot.ceremony.status != "dealing":
             raise conflict("CEREMONY_STATE", "Dealing is over")
-        if snapshot.has_dealt(dealer.holder_index):
+        if snapshot.has_dealt(index):
             raise conflict("ALREADY_SUBMITTED", "This custodian has already dealt")
-        check_dealing(snapshot, dealer, dealing)
+        await self._check_dealing(tenant_id, snapshot, index, dealing)
         now = self._clock()
-        record = DealingRecord(
-            dealer.holder_index,
-            dealing.commitments,
-            dealing.proof_c,
-            dealing.proof_s,
-            dealing.signature,
-            now,
-            dealing.subshares,
-        )
+        record = dealing_record(index, dealing, now)
         return await self._repository.add_dealing(
             tenant_id,
             ceremony_id,
             record,
             AuditEvent(tenant_id, dealer_sub, "ceremony_dealt", f"ceremony:{ceremony_id}", now),
         )
+
+    async def _check_dealing(
+        self, tenant_id: str, snapshot: CeremonySnapshot, index: int, dealing: DealingSubmission
+    ) -> None:
+        if snapshot.ceremony.kind != RESHARING:
+            check_dealing(snapshot, snapshot.participant(index), dealing)
+            return
+        current = await self._repository.holder_generation(tenant_id)
+        dealer = snapshot.dealer(index)
+        if current is None or dealer is None:
+            raise conflict("NO_RECOVERY_KEY", "The key being reshared is gone")
+        check_resharing_dealing(snapshot, dealer, current, dealing)
 
     async def subshares(
         self, tenant_id: str, user_sub: str, ceremony_id: str
@@ -297,6 +350,7 @@ class CeremonyService:
         ceremony_id: str,
         transcript_signature: bytes,
         encrypted_share: str,
+        share_proof: tuple[int, int] | None = None,
     ) -> str:
         """Returns the ceremony's status afterwards: 'confirming' or 'active'."""
         snapshot, holder = await self._custodian(tenant_id, ceremony_id, user_sub)
@@ -308,13 +362,24 @@ class CeremonyService:
         ):
             raise invalid("INVALID_CONFIRMATION", "The transcript signature does not verify")
         check_sealed(encrypted_share, tags.SHARE)
+        if snapshot.ceremony.kind == RESHARING:
+            check_share_proof(snapshot, holder.holder_index, share_proof)
+        else:
+            share_proof = None
         now = self._clock()
-        return await self._repository.add_confirmation(
-            tenant_id,
-            ceremony_id,
-            ConfirmationRecord(holder.holder_index, transcript_signature, encrypted_share, now),
-            AuditEvent(tenant_id, user_sub, "ceremony_confirmed", f"ceremony:{ceremony_id}", now),
-            self._activation(user_sub),
+        record = ConfirmationRecord(
+            holder.holder_index, transcript_signature, encrypted_share, now, share_proof
+        )
+        return _completed(
+            await self._repository.add_confirmation(
+                tenant_id,
+                ceremony_id,
+                record,
+                AuditEvent(
+                    tenant_id, user_sub, "ceremony_confirmed", f"ceremony:{ceremony_id}", now
+                ),
+                self._activation(user_sub),
+            )
         )
 
     async def confirm_paper(
@@ -329,24 +394,26 @@ class CeremonyService:
             raise conflict("CEREMONY_STATE", "The ceremony is not waiting for paper shares")
         if transcript != ceremony.transcript_hash:
             raise invalid("TRANSCRIPT_MISMATCH", "The device computed a different transcript")
-        return await self._repository.confirm_paper(
-            tenant_id,
-            ceremony_id,
-            AuditEvent(
+        return _completed(
+            await self._repository.confirm_paper(
                 tenant_id,
-                user_sub,
-                "ceremony_paper_printed",
-                f"ceremony:{ceremony_id}",
-                self._clock(),
-            ),
-            self._activation(user_sub),
+                ceremony_id,
+                AuditEvent(
+                    tenant_id,
+                    user_sub,
+                    "ceremony_paper_printed",
+                    f"ceremony:{ceremony_id}",
+                    self._clock(),
+                ),
+                self._activation(user_sub),
+            )
         )
 
     async def abort(self, tenant_id: str, user_sub: str, ceremony_id: str, reason: str) -> None:
         if reason not in ABORT_REASONS:
             raise invalid("INVALID_REASON", "Unknown abort reason")
         snapshot = await self._open(tenant_id, ceremony_id)
-        if user_sub != snapshot.ceremony.started_by and snapshot.custodian(user_sub) is None:
+        if not _takes_part(snapshot, user_sub):
             raise CeremonyError(403, "NOT_A_PARTICIPANT", "Not a participant of this ceremony")
         await self._repository.abort(
             tenant_id,
@@ -432,7 +499,35 @@ class CeremonyService:
         return sealed.to_json(), signature
 
 
-def _participants(
+def _dealer_index(snapshot: CeremonySnapshot, user_sub: str) -> int:
+    """A resharing's dealers deal under their old index, which a new holder may also have."""
+    if snapshot.ceremony.kind == RESHARING:
+        dealer = snapshot.custodian_dealer(user_sub)
+        index = None if dealer is None else dealer.dealer_index
+    else:
+        participant = snapshot.custodian(user_sub)
+        index = None if participant is None else participant.holder_index
+    if index is None:
+        raise CeremonyError(403, "NOT_A_PARTICIPANT", "Not a dealer of this ceremony")
+    return index
+
+
+def _takes_part(snapshot: CeremonySnapshot, user_sub: str) -> bool:
+    return (
+        user_sub == snapshot.ceremony.started_by
+        or snapshot.custodian(user_sub) is not None
+        or snapshot.custodian_dealer(user_sub) is not None
+    )
+
+
+def _completed(status: str) -> str:
+    """The step was stored, but the new shares did not rebuild X: the resharing is over (§9.7)."""
+    if status == "aborted":
+        raise conflict("CEREMONY_ABORTED", "The new shares failed the final check")
+    return status
+
+
+def participants_for(
     tenant_id: str,
     request: StartRequest,
     names: Mapping[str, str],

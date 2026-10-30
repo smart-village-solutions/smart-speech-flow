@@ -217,6 +217,7 @@ const served = z.object({
       partials: z.record(uuid, z.string()),
     })
   ),
+  holders_ceremony_id: z.string(),
 });
 
 export function toServedPartials(body: unknown): ServedPartials {
@@ -235,5 +236,6 @@ export function toServedPartials(body: unknown): ServedPartials {
       signature: a.signature,
       partials: new Map(Object.entries(a.partials)),
     })),
+    holdersCeremonyId: s.holders_ceremony_id,
   };
 }

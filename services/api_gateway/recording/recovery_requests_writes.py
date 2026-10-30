@@ -39,6 +39,7 @@ from .recovery_requests_sql import (
     FILING_CHECK,
     HOLDER,
     LATEST_DECISION,
+    LISTED_HOLDER,
     OPEN_KEY_RECOVERY,
     REMAINING_LOCKED,
     REQUESTER_KEY,
@@ -165,13 +166,16 @@ async def decidable_by(
             connection, AuditEvent(tenant_id, sub, "recovery.approval.refused", request_id, now)
         )
         return Refused("requester_cannot_approve")
+    # A holder of the request's generation learns that it closed, though its share may be gone.
+    if not await connection.fetchval(LISTED_HOLDER, request.holders_ceremony_id, sub):
+        return await not_found(connection, tenant_id, sub, request_id, now)
+    if request.status != "open":
+        return Refused("closed")
     holder = await connection.fetchrow(HOLDER, request.recovery_key_id, sub)
     if holder is None:
         return await not_found(connection, tenant_id, sub, request_id, now)
     if not holder["fresh"]:
         return Refused("share_stale")
-    if request.status != "open":
-        return Refused("closed")
     attempt = await next_attempt(connection, request_id, holder["holder_index"])
     if attempt is None:
         return Refused("already_decided")
@@ -304,19 +308,21 @@ async def served_partials(
             )
             for a in approvals
         ),
+        holders_ceremony_id=request.holders_ceremony_id,
     )
 
 
 async def has_k_approvals(connection: asyncpg.Connection, request: RequestRow) -> bool:
     """k approvals that count: approved, not since rejected, one per custodian."""
-    k = await recovery_k(connection, request.recovery_key_id)
+    k = await recovery_k(connection, request)
     approvals = await connection.fetch(VALID_APPROVALS, request.request_id)
     return len({row["holder_index"] for row in approvals}) >= k
 
 
-async def recovery_k(connection: asyncpg.Connection, recovery_key_id: str) -> int:
+async def recovery_k(connection: asyncpg.Connection, request: RequestRow) -> int:
+    """The k of the holders the request was filed under: a resharing never moves it (§9.7)."""
     k: int = await connection.fetchval(
-        "SELECT k FROM recovery_keys WHERE key_id = $1", recovery_key_id
+        "SELECT k FROM recovery_ceremonies WHERE ceremony_id = $1", request.holders_ceremony_id
     )
     return k
 
@@ -403,14 +409,17 @@ async def filing_refusal(connection: asyncpg.Connection, request: NewRequest) ->
 
 
 async def insert_request(
-    connection: asyncpg.Connection, request: NewRequest, scope: tuple[ScopeKey, ...]
+    connection: asyncpg.Connection,
+    request: NewRequest,
+    scope: tuple[ScopeKey, ...],
+    holders_ceremony_id: str,
 ) -> None:
     now = request.created_at
     await connection.execute(
         "INSERT INTO recovery_requests (tenant_id, request_id, kind, requester_sub,"
         " requester_key_version, recovery_key_id, reason, request_signature, status,"
-        " created_at, expires_at) VALUES ($1, $2, $10, $3, $4, $5, $6, $7, 'open',"
-        " $8, $9)",
+        " created_at, expires_at, holders_ceremony_id) VALUES ($1, $2, $10, $3, $4, $5, $6,"
+        " $7, 'open', $8, $9, $11)",
         request.tenant_id,
         request.request_id,
         request.requester_sub,
@@ -421,6 +430,7 @@ async def insert_request(
         now,
         now + REQUEST_LIFETIME,
         request.kind,
+        holders_ceremony_id,
     )
     await connection.executemany(
         "INSERT INTO recovery_request_keys VALUES ($1, $2, $3, $4)",
