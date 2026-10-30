@@ -5,7 +5,7 @@ import { useDeviceStart } from './useStartCeremony';
 
 export type ResharingError = 'stepUp' | 'dealers' | 'unusable' | 'changed' | 'invalid' | 'failed';
 
-export interface ResharingChoice {
+interface ResharingChoice {
   k: number;
   custodians: string[];
   dealers: number[];
