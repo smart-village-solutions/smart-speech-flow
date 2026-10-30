@@ -130,11 +130,8 @@ async def test_dealer_material_is_the_share_and_the_listed_key():
     )
     store, connection = _store({"AND s.holder_index = $1": key})
     material = await store.dealer_material(TENANT, 1, "anna")
-    assert (material.dealer_index, material.encrypted_share, material.key.key_version) == (
-        1,
-        "{}",
-        1,
-    )
+    encrypted_share, key = material
+    assert (encrypted_share, key.key_version) == ("{}", 1)
     assert "u.retired_at IS NULL OR u.encrypted_private IS NOT NULL" in connection.calls[-1]
     empty, _ = _store({})
     assert await empty.dealer_material(TENANT, 1, "anna") is None
@@ -164,7 +161,10 @@ async def test_a_resharing_is_inserted_with_its_dealers_and_audit():
 
 async def test_a_second_open_ceremony_is_a_conflict_not_an_outage():
     store, _ = _store(
-        {HOLDERS_LOCK: PREVIOUS, "INSERT INTO recovery_ceremonies": asyncpg.UniqueViolationError("one")}
+        {
+            HOLDERS_LOCK: PREVIOUS,
+            "INSERT INTO recovery_ceremonies": asyncpg.UniqueViolationError("one"),
+        }
     )
     snapshot = _snapshot()
     with pytest.raises(CeremonyError) as caught:
@@ -183,19 +183,6 @@ async def test_the_chain_reads_every_active_generation_of_the_key():
     assert "recovery_key_id = $1" in connection.calls[-1]
 
 
-async def test_activation_that_fails_the_final_check_aborts_and_writes_nothing_else(monkeypatch):
-    monkeypatch.setattr(resharing_repository, "end_to_end_holds", lambda *_: False)
-    connection = ScriptedConnection(
-        {KEY_ROW: _row(key_id=uuid.UUID(KEY_ID), recovery_public_key=b"x", holders_transcript_hash=PREVIOUS)}
-    )
-    step = AuditEvent(TENANT, "emil", "ceremony_confirmed", "c", NOW)
-    assert (
-        await resharing_repository.activate_resharing(connection, _snapshot(), [step]) == "aborted"
-    )
-    assert any("SET status = 'aborted'" in c for c in connection.calls)
-    assert not any("recovery_shares" in c or "recovery_requests" in c for c in connection.calls)
-
-
 async def test_activation_without_its_key_aborts():
     connection = ScriptedConnection({})
     step = AuditEvent(TENANT, "emil", "ceremony_confirmed", "c", NOW)
@@ -205,14 +192,15 @@ async def test_activation_without_its_key_aborts():
 
 
 async def test_activation_keeps_the_lock_order_and_audits_once(monkeypatch):
-    monkeypatch.setattr(resharing_repository, "end_to_end_holds", lambda *_: True)
     monkeypatch.setattr(
         resharing_repository, "new_public_shares", lambda s: {1: b"1", 2: b"2", 3: b"3"}
     )
     request = uuid.uuid4()
     connection = ScriptedConnection(
         {
-            KEY_ROW: _row(key_id=uuid.UUID(KEY_ID), recovery_public_key=b"x", holders_transcript_hash=PREVIOUS),
+            KEY_ROW: _row(
+                key_id=uuid.UUID(KEY_ID), recovery_public_key=b"x", holders_transcript_hash=PREVIOUS
+            ),
             OPEN: [_row(request_id=request, lapsed=False)],
             "WHERE status <> ALL": [_row(ceremony_id=uuid.UUID(RESHARING))],
         }
@@ -243,12 +231,15 @@ async def test_activation_keeps_the_lock_order_and_audits_once(monkeypatch):
 
 
 async def test_activation_with_nothing_open_skips_the_request_writes(monkeypatch):
-    monkeypatch.setattr(resharing_repository, "end_to_end_holds", lambda *_: True)
     monkeypatch.setattr(
         resharing_repository, "new_public_shares", lambda s: {1: b"1", 2: b"2", 3: b"3"}
     )
     connection = ScriptedConnection(
-        {KEY_ROW: _row(key_id=uuid.UUID(KEY_ID), recovery_public_key=b"x", holders_transcript_hash=PREVIOUS)}
+        {
+            KEY_ROW: _row(
+                key_id=uuid.UUID(KEY_ID), recovery_public_key=b"x", holders_transcript_hash=PREVIOUS
+            )
+        }
     )
     step = AuditEvent(TENANT, "emil", "ceremony_confirmed", "c", NOW)
     assert (
@@ -263,13 +254,31 @@ async def test_a_resharing_of_holders_since_replaced_is_refused_before_any_write
     with pytest.raises(CeremonyError) as caught:
         await store.create_resharing(snapshot.ceremony, (), (), [])
     assert caught.value.code == "HOLDERS_CHANGED"
-    assert not any(c.startswith(("INSERT", "UPDATE")) for c in connection.calls)
+    # Only the lapse clean-up ran, in the order an activation locks: no ceremony is inserted.
+    assert not any(c.startswith("INSERT") for c in connection.calls)
+    lapse = next(i for i, c in enumerate(connection.calls) if "close_reason = 'expired'" in c)
+    holders = next(i for i, c in enumerate(connection.calls) if HOLDERS_LOCK in c)
+    assert lapse < holders
 
 
 async def test_activation_of_a_resharing_whose_holders_moved_on_aborts_as_chain_invalid():
     connection = ScriptedConnection(
-        {KEY_ROW: _row(key_id=uuid.UUID(KEY_ID), recovery_public_key=b"x", holders_transcript_hash=bytes(32))}
+        {
+            KEY_ROW: _row(
+                key_id=uuid.UUID(KEY_ID),
+                recovery_public_key=b"x",
+                holders_transcript_hash=bytes(32),
+            )
+        }
     )
     step = AuditEvent(TENANT, "emil", "ceremony_confirmed", "c", NOW)
-    assert await resharing_repository.activate_resharing(connection, _snapshot(), [step]) == "aborted"
+    assert (
+        await resharing_repository.activate_resharing(connection, _snapshot(), [step]) == "aborted"
+    )
     assert not any("recovery_shares" in c for c in connection.calls)
+
+
+async def test_a_paper_backup_before_the_current_holders_is_reported():
+    store, connection = _store({"x.kind = 'paper'": True})
+    assert await store.previous_had_paper(TENANT) is True
+    assert "h.previous_transcript_hash" in connection.calls[-1]

@@ -146,7 +146,10 @@ async def _reshare_and_deal(
 ):
     """Anna deals share 1 and the device types in sheet 4; returns the snapshot to confirm."""
     started = await resharing.start(
-        TENANT, ORG_ADMIN, ResharingStart(k, custodians, (1, 4), None, await _holders(ceremonies)), "c"
+        TENANT,
+        ORG_ADMIN,
+        ResharingStart(k, custodians, (1, 4), None, await _holders(ceremonies)),
+        "c",
     )
     snapshot = (await ceremonies.state(TENANT)).ceremony
     reshare_id = started.ceremony.ceremony_id
@@ -513,41 +516,33 @@ async def test_activation_closes_open_requests_and_drops_their_partials(store, o
     assert ("system", "recovery.request.cancelled") in events
 
 
-async def test_shares_that_fail_the_final_check_abort_and_keep_the_old_holders(store, owner):
+async def test_a_last_dealing_that_does_not_rebuild_x_is_refused(store, owner):
     ceremonies, resharing = _services(store)
     shares = await _first_generation(ceremonies)
-    key = await store.active_recovery_key(TENANT)
-    snapshot = await _reshare_and_deal(ceremonies, resharing, shares)
-    reshare_id = snapshot.ceremony.ceremony_id
-    old = await owner.fetch("SELECT * FROM recovery_shares ORDER BY holder_index")
-    await _confirm_one(ceremonies, snapshot, BERND, key.key_id)
-    await _confirm_one(ceremonies, snapshot, DORA, key.key_id)
-    # X changed in storage after the dealings were checked.
+    started = await resharing.start(
+        TENANT,
+        ORG_ADMIN,
+        ResharingStart(2, ("bernd", "dora", "emil"), (1, 4), None, await _holders(ceremonies)),
+        "c",
+    )
+    snapshot = (await ceremonies.state(TENANT)).ceremony
+    reshare_id = started.ceremony.ceremony_id
+    await ceremonies.deal(
+        TENANT, "anna", reshare_id, reshare_dealing(snapshot, 1, shares[1], [61], ANNA)
+    )
+    # X is not the key these holders hold shares of.
     await owner.execute("UPDATE recovery_keys SET recovery_public_key = $1", ref.public_point(5))
+    sheet = reshare_dealing(snapshot, 4, shares[4], [71], None)
     with pytest.raises(CeremonyError) as caught:
-        await _confirm_one(ceremonies, snapshot, EMIL, key.key_id)
-    assert caught.value.code == "CEREMONY_ABORTED"
-
-    row = await owner.fetchrow(
-        "SELECT status, close_reason FROM recovery_ceremonies WHERE ceremony_id = $1",
-        uuid.UUID(reshare_id),
+        await resharing.paper_deal(TENANT, ORG_ADMIN, reshare_id, 4, sheet)
+    assert caught.value.code == "INVALID_DEALING"
+    status = await owner.fetchval(
+        "SELECT status FROM recovery_ceremonies WHERE ceremony_id = $1", uuid.UUID(reshare_id)
     )
-    assert tuple(row) == ("aborted", "canary_failed")
-    assert await owner.fetch("SELECT * FROM recovery_shares ORDER BY holder_index") == old
-    confirmed = await owner.fetchval(
-        "SELECT count(*) FROM ceremony_confirmations WHERE ceremony_id = $1",
-        uuid.UUID(reshare_id),
-    )
-    assert confirmed == 3
+    assert status == "dealing"
     assert (
-        await owner.fetchval(
-            "SELECT count(*) FROM ceremony_dealings WHERE subshares <> '{}'::jsonb"
-        )
-        == 0
+        await owner.fetchval("SELECT count(*) FROM ceremony_dealings WHERE dealer_index = 4") == 0
     )
-    state = await ceremonies.state(TENANT)
-    assert state.recovery_key is not None
-    assert state.last_failed.reason == "canary_failed"
 
 
 async def test_two_last_confirmations_at_once_activate_exactly_once(store):
@@ -584,7 +579,9 @@ async def test_a_re_enrolled_dealer_deals_with_the_retired_key_until_its_blob_is
         "carla": "fresh",
     }
     started = await resharing.start(
-        TENANT, ORG_ADMIN, ResharingStart(2, ("bernd", "dora", "emil"), (1, 2), None, await _holders(ceremonies)),
+        TENANT,
+        ORG_ADMIN,
+        ResharingStart(2, ("bernd", "dora", "emil"), (1, 2), None, await _holders(ceremonies)),
         "c",
     )
     material = await resharing.dealer(TENANT, "anna", started.ceremony.ceremony_id)
@@ -622,7 +619,9 @@ async def test_only_one_ceremony_or_resharing_runs_at_a_time(store):
     await _reshare_and_deal(ceremonies, resharing, shares)
     with pytest.raises(CeremonyError) as caught:
         await resharing.start(
-            TENANT, ORG_ADMIN, ResharingStart(2, ("bernd", "dora", "emil"), (1, 4), None, await _holders(ceremonies)),
+            TENANT,
+            ORG_ADMIN,
+            ResharingStart(2, ("bernd", "dora", "emil"), (1, 4), None, await _holders(ceremonies)),
             "c",
         )
     assert caught.value.code == "CEREMONY_IN_PROGRESS"
@@ -913,6 +912,34 @@ async def test_a_resharing_started_against_replaced_holders_is_refused(store, ow
     with pytest.raises(CeremonyError) as caught:
         await store.create_resharing(stale, (), (), [])
     assert caught.value.code == "HOLDERS_CHANGED"
+
+
+async def test_old_sheets_are_reported_after_a_resharing(store, owner):
+    ceremonies, resharing = _services(store)
+    shares = await _first_generation(ceremonies)
+    key = await store.active_recovery_key(TENANT)
+    assert await store.previous_had_paper(TENANT) is False
+    snapshot = await _reshare_and_deal(ceremonies, resharing, shares)
+    new_shares = await _confirm_all(ceremonies, snapshot, key.key_id)
+    assert await store.previous_had_paper(TENANT) is True
+    # A second resharing replaces a generation that had no paper sheets.
+    started = await resharing.start(
+        TENANT,
+        ORG_ADMIN,
+        ResharingStart(2, ("anna", "bernd", "dora"), (1, 2), None, await _holders(ceremonies)),
+        "c",
+    )
+    second = (await ceremonies.state(TENANT)).ceremony
+    for holder, index in ((BERND, 1), (DORA, 2)):
+        await ceremonies.deal(
+            TENANT,
+            holder.sub,
+            started.ceremony.ceremony_id,
+            reshare_dealing(second, index, new_shares[index], [81], holder),
+        )
+    second = (await ceremonies.state(TENANT)).ceremony
+    await _confirm_all(ceremonies, second, key.key_id)
+    assert await store.previous_had_paper(TENANT) is False
 
 
 async def test_activation_refuses_a_resharing_of_holders_that_were_replaced(store, owner):

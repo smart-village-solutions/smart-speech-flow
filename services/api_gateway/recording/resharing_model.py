@@ -9,7 +9,7 @@ activation that the new public shares still interpolate to X.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .ceremony_model import (
     CUSTODIAN,
@@ -19,6 +19,7 @@ from .ceremony_model import (
     CeremonyDealer,
     CeremonyParticipant,
     CeremonySnapshot,
+    DealingRecord,
     DealingSubmission,
     check_commitments,
     check_subshares,
@@ -192,6 +193,15 @@ def new_public_shares(snapshot: CeremonySnapshot) -> dict[int, bytes]:
     return {
         p.holder_index: holder_public_share(p.holder_index, lists) for p in snapshot.participants
     }
+
+
+def check_last_dealing(
+    snapshot: CeremonySnapshot, record: DealingRecord, recovery_public_key: bytes
+) -> None:
+    """With the last dealing in, the new shares must rebuild X before anyone confirms or prints."""
+    dealt = replace(snapshot, dealings=(*snapshot.dealings, record))
+    if dealt.all_dealt() and not end_to_end_holds(dealt, recovery_public_key):
+        raise invalid("INVALID_DEALING", "The dealings do not rebuild the recovery key")
 
 
 def end_to_end_holds(snapshot: CeremonySnapshot, recovery_public_key: bytes) -> bool:

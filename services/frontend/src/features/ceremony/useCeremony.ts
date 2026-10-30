@@ -66,7 +66,8 @@ export function useCertifiedChain(tenantId: string, chain: Readonly<ServedChain>
   const { ceremonyCrypto } = useServices();
   const last = chain?.generations.at(-1)?.ceremonyId ?? null;
   const query = useQuery({
-    queryKey: [...CEREMONY_QUERY, 'chain', last],
+    // Outside the ceremony's query key: a step refetches that, and the chain does not change.
+    queryKey: ['recording', 'certified-chain', last],
     queryFn: () => ceremonyCrypto.certifyChain(trustChain(tenantId, chain as ServedChain)),
     enabled: chain !== null,
     retry: false,

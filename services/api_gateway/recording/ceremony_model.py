@@ -235,6 +235,11 @@ class DealingSubmission:
     subshares: Mapping[int, str]
 
 
+def mode_of(k: int) -> str:
+    """One share opens alone in standard mode; enhanced needs several (spec §9.1)."""
+    return "standard" if k == 1 else "enhanced"
+
+
 def dealing_record(index: int, dealing: DealingSubmission, now: datetime) -> DealingRecord:
     return DealingRecord(
         index,

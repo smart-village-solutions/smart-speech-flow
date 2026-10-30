@@ -400,19 +400,86 @@ async def test_a_confirmation_without_a_good_share_proof_is_refused(world):
         assert code == "INVALID_CONFIRMATION"
 
 
-async def test_shares_that_do_not_rebuild_x_abort_and_keep_the_old_holders(world):
+async def test_a_last_dealing_whose_shares_do_not_rebuild_x_is_refused(world):
+    await world.resharing.start(TENANT, ORG_ADMIN, _start(), "c")
+    snapshot = await _snapshot(world)
+    await world.ceremonies.deal(
+        TENANT, "anna", RESHARING_ID, reshare_dealing(snapshot, 1, world.shares[1], [61], ANNA)
+    )
+    # As if X were not the key these holders hold shares of.
+    world.repository.recovery_key = replace(
+        world.repository.recovery_key, recovery_public_key=ref.public_point(5)
+    )
+    sheet = reshare_dealing(snapshot, 4, world.shares[4], [71], None)
+    code = await _code(world.resharing.paper_deal(TENANT, ORG_ADMIN, RESHARING_ID, 4, sheet))
+    assert code == "INVALID_DEALING"
+    assert (await _snapshot(world)).ceremony.status == "dealing"
+
+
+async def test_a_custodian_last_dealing_is_checked_the_same_way(world):
+    await world.resharing.start(TENANT, ORG_ADMIN, _start(), "c")
+    snapshot = await _snapshot(world)
+    sheet = reshare_dealing(snapshot, 4, world.shares[4], [71], None)
+    await world.resharing.paper_deal(TENANT, ORG_ADMIN, RESHARING_ID, 4, sheet)
+    world.repository.recovery_key = replace(
+        world.repository.recovery_key, recovery_public_key=ref.public_point(5)
+    )
+    anna = reshare_dealing(snapshot, 1, world.shares[1], [61], ANNA)
+    assert (
+        await _code(world.ceremonies.deal(TENANT, "anna", RESHARING_ID, anna)) == "INVALID_DEALING"
+    )
+
+
+async def test_activation_after_the_holders_moved_on_aborts_and_keeps_them(world):
     await world.resharing.start(TENANT, ORG_ADMIN, _start(), "c")
     snapshot = await _deal(world, await _snapshot(world))
     old_shares = list(world.repository.shares)
-    # As if X had been tampered with in storage after the dealings were checked.
     world.repository.recovery_key = replace(
-        world.repository.recovery_key, recovery_public_key=ref.public_point(5)
+        world.repository.recovery_key, holders_transcript_hash=bytes(32)
     )
     with pytest.raises(CeremonyError) as caught:
         await _confirm(world, snapshot)
     assert caught.value.code == "CEREMONY_ABORTED"
     assert world.repository.shares == old_shares
-    assert world.repository.aborted[RESHARING_ID].reason == "canary_failed"
+    assert world.repository.aborted[RESHARING_ID].reason == "chain_invalid"
+
+
+async def test_a_first_ceremony_dealer_needs_the_custodian_permission(world):
+    world.repository.recovery_key = None
+    await world.ceremonies.start(TENANT, ORG_ADMIN, StartRequest(1, ("dora", "emil"), None), "c")
+    snapshot = await _snapshot(world)
+    dealing = DORA.deal(snapshot, [5])
+    code = await _code(
+        world.ceremonies.deal(
+            TENANT, "dora", snapshot.ceremony.ceremony_id, dealing, custodian=False
+        )
+    )
+    assert code == "PERMISSION_REQUIRED"
+
+
+async def test_a_resharing_dealer_deals_and_aborts_without_the_custodian_permission(world):
+    await world.resharing.start(TENANT, ORG_ADMIN, _start(), "c")
+    snapshot = await _snapshot(world)
+    dealing = reshare_dealing(snapshot, 1, world.shares[1], [61], ANNA)
+    await world.ceremonies.deal(TENANT, "anna", RESHARING_ID, dealing, custodian=False)
+    code = await _code(
+        world.ceremonies.abort(TENANT, "dora", RESHARING_ID, "cancelled", privileged=False)
+    )
+    assert code == "PERMISSION_REQUIRED"
+    await world.ceremonies.abort(TENANT, "anna", RESHARING_ID, "cancelled", privileged=False)
+
+
+async def test_only_an_admin_sees_the_current_holders(world):
+    assert (await world.ceremonies.state(TENANT)).holders == ()
+    holders = (await world.ceremonies.state(TENANT, admin=True)).holders
+    assert [h.holder_ref for h in holders] == ["anna", "bernd", "carla", "paper-1", "paper-2"]
+
+
+async def test_old_sheets_are_reported_once_a_resharing_replaced_them(world):
+    assert (await world.ceremonies.state(TENANT)).previous_had_paper is False
+    await world.resharing.start(TENANT, ORG_ADMIN, _start(), "c")
+    await _confirm(world, await _deal(world, await _snapshot(world)))
+    assert (await world.ceremonies.state(TENANT)).previous_had_paper is True
 
 
 async def test_dealers_and_new_custodians_may_abort_but_never_with_the_gateway_reason(world):

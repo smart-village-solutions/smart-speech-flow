@@ -8,8 +8,16 @@ import {
   type CeremonyFacts,
   ShareMismatchError,
 } from '@/core/crypto/ceremony-crypto.port';
+import { AppError } from '@/core/http/AppError';
 import type { Ceremony, CeremonyDealer } from '@/domain/recovery/recovery.types';
 import { useCeremonyStep } from './useCeremony';
+
+/** Why the dealer's key did not come: its share can no longer be opened, or anything else. */
+function loadFault(error: unknown): 'unusable' | 'failed' {
+  return error instanceof AppError && error.serverCode === 'DEALER_UNUSABLE'
+    ? 'unusable'
+    : 'failed';
+}
 
 /**
  * A custodian dealer opens its share with the key the previous generation lists: the
@@ -20,7 +28,9 @@ export function useDealerActions(
   facts: Readonly<CeremonyFacts>,
   dealer: Readonly<CeremonyDealer>,
   owner: Readonly<KeyOwner>,
-  vault: Readonly<UnlockedKeys> | null
+  vault: Readonly<UnlockedKeys> | null,
+  /** Each read of the key is audited: only once the step-up is fresh and while it has to deal. */
+  active: boolean
 ) {
   const { recoveryCeremony, ceremonyCrypto, archiveCrypto } = useServices();
   const step = useCeremonyStep(ceremony.ceremonyId);
@@ -31,6 +41,8 @@ export function useDealerActions(
     queryKey: ['recording', 'resharing-dealer', ceremony.ceremonyId],
     queryFn: () => recoveryCeremony.dealer(ceremony.ceremonyId),
     staleTime: Infinity,
+    retry: false,
+    enabled: active,
   });
   const served = material.data ?? null;
   const vaultFits =
@@ -83,6 +95,7 @@ export function useDealerActions(
     needsEarlierKey: served !== null && !vaultFits && earlier === null,
     ready: keys !== null,
     served,
+    loadFailed: material.isError ? loadFault(material.error) : null,
     error: step.error,
     pending: step.pending,
   };

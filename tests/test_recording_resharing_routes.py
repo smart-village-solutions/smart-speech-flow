@@ -24,7 +24,12 @@ from tests.recording_ceremony_actors import (
     share_proof,
 )
 from tests.test_recording_ceremony_routes import CUSTODIAN, MANAGE, Caller
-from tests.test_recording_resharing import FIRST_ID, RESHARING_ID, World, world  # noqa: F401 - fixture
+from tests.test_recording_resharing import (
+    FIRST_ID,
+    RESHARING_ID,
+    World,
+    world,
+)  # noqa: F401 - fixture
 
 BASE = "/api/admin/recording/ceremony"
 HOLDERS = {h.sub: h for h in (BERND, DORA, EMIL)}
@@ -133,9 +138,9 @@ async def test_a_whole_resharing_over_http(http):
     caller.be(ORG_ADMIN, MANAGE)
     after = client.get(BASE).json()
     assert after["recovery_key"]["holders_ceremony_id"] == RESHARING_ID
-    assert len(after["chain"]) == 2
+    # The chain is served while a resharing runs; afterwards only the old sheets matter.
+    assert after["chain"] == []
     assert after["previous_had_paper"] is True
-    assert after["chain"][1]["previous_transcript_hash"] == after["chain"][0]["transcript_hash"]
 
 
 def test_starting_needs_a_fresh_login(http):
@@ -143,7 +148,12 @@ def test_starting_needs_a_fresh_login(http):
     caller.be(ORG_ADMIN, MANAGE, fresh=False)
     response = client.post(
         f"{BASE}/resharing",
-        json={"k": 2, "custodians": ["bernd", "dora", "emil"], "dealers": [1, 4], "holders_ceremony_id": FIRST_ID},
+        json={
+            "k": 2,
+            "custodians": ["bernd", "dora", "emil"],
+            "dealers": [1, 4],
+            "holders_ceremony_id": FIRST_ID,
+        },
     )
     assert (response.status_code, _code(response)) == (403, "STEP_UP_REQUIRED")
 
@@ -225,3 +235,31 @@ def test_a_point_that_is_not_base64url_is_refused(http):
     client, caller, _ = http
     response = _start(client, caller, paper_device_pub="!" * 87)
     assert (response.status_code, _code(response)) == (422, "INVALID_CEREMONY")
+
+
+def test_a_recording_user_who_deals_nothing_sees_no_ceremony(http):
+    client, caller, _ = http
+    _start(client, caller)
+    caller.be("someone", "ssf.recording.request")
+    response = client.get(BASE)
+    assert (response.status_code, _code(response)) == (403, "PERMISSION_REQUIRED")
+
+
+def test_a_dealer_without_the_custodian_permission_sees_only_its_resharing(http):
+    client, caller, _ = http
+    _start(client, caller)
+    caller.be("anna", "ssf.recording.request")
+    body = client.get(BASE).json()
+    assert body["ceremony"]["ceremony_id"] == RESHARING_ID
+    assert (body["usable_shares"], body["holders"], body["previous_had_paper"]) == (None, [], False)
+    assert client.get(f"{BASE}/{RESHARING_ID}/dealer").status_code == 200
+    refused = client.get(f"{BASE}/{RESHARING_ID}/subshares")
+    assert (refused.status_code, _code(refused)) == (403, "PERMISSION_REQUIRED")
+
+
+def test_a_custodian_sees_no_holder_list(http):
+    client, caller, _ = http
+    caller.be("bernd", CUSTODIAN)
+    body = client.get(BASE).json()
+    assert body["holders"] == []
+    assert body["usable_shares"] is not None

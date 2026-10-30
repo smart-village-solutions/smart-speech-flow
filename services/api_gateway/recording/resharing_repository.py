@@ -22,6 +22,7 @@ from .ceremony_model import (
     CeremonyRecord,
     CeremonySnapshot,
     conflict,
+    mode_of,
 )
 from .ceremony_rows import (
     OPEN,
@@ -36,13 +37,13 @@ from .recovery_requests_model import SYSTEM_ACTOR
 from .repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
+    UserKeyRecord,
     append_audits,
     bind_tenant,
     storage_unavailable,
     user_key_from_row,
 )
-from .resharing import DealerMaterial
-from .resharing_model import HolderGeneration, end_to_end_holds, new_public_shares
+from .resharing_model import HolderGeneration, new_public_shares
 
 T = TypeVar("T")
 
@@ -142,7 +143,7 @@ class ResharingRepositoryMixin:
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> DealerMaterial | None:
+    ) -> tuple[str, UserKeyRecord] | None:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetchrow(
                 _DEALER_KEY + " AND s.holder_index = $1 AND p.holder_ref = $2"
@@ -154,7 +155,7 @@ class ResharingRepositoryMixin:
         row = await _run(self._pool, tenant_id, work)
         if row is None:
             return None
-        return DealerMaterial(dealer_index, row["encrypted_share"], user_key_from_row(row))
+        return row["encrypted_share"], user_key_from_row(row)
 
     async def create_resharing(
         self,
@@ -164,6 +165,8 @@ class ResharingRepositoryMixin:
         audit: Sequence[AuditEvent],
     ) -> None:
         async def work(connection: asyncpg.Connection) -> None:
+            # Ceremony rows before the key row, the order an activation takes them in.
+            await close_lapsed(connection, ceremony.started_at)
             # Shared, as a filing holds it: an activation in between moves the holders on.
             holders = await connection.fetchval(
                 "SELECT holders_transcript_hash FROM recovery_keys"
@@ -172,7 +175,6 @@ class ResharingRepositoryMixin:
             )
             if holders is None or bytes(holders) != ceremony.previous_transcript_hash:
                 raise conflict("HOLDERS_CHANGED", "The custodians changed; start again")
-            await close_lapsed(connection, ceremony.started_at)
             await connection.execute(
                 "INSERT INTO recovery_ceremonies (tenant_id, ceremony_id, k, started_by,"
                 " started_at, expires_at, status, gateway_keys, kind, recovery_key_id,"
@@ -195,6 +197,24 @@ class ResharingRepositoryMixin:
             await _run(self._pool, ceremony.tenant_id, work)
         except asyncpg.UniqueViolationError:
             raise conflict("CEREMONY_IN_PROGRESS", "A ceremony is already in progress") from None
+
+    async def previous_had_paper(self, tenant_id: str) -> bool:
+        """Whether the generation the current holders replaced had paper sheets."""
+
+        async def work(connection: asyncpg.Connection) -> bool:
+            found: bool = await connection.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM recovery_keys r"
+                " JOIN recovery_ceremonies h ON h.tenant_id = r.tenant_id"
+                "  AND h.ceremony_id = r.holders_ceremony_id"
+                " JOIN recovery_ceremonies p ON p.tenant_id = h.tenant_id AND p.status = 'active'"
+                "  AND p.transcript_hash = h.previous_transcript_hash"
+                " JOIN ceremony_participants x ON x.tenant_id = p.tenant_id"
+                "  AND x.ceremony_id = p.ceremony_id AND x.kind = 'paper'"
+                " WHERE r.status = 'active')"
+            )
+            return found
+
+        return await _run(self._pool, tenant_id, work)
 
     async def chain(self, tenant_id: str, key_id: str) -> list[CeremonySnapshot]:
         """The key's first ceremony, then each completed resharing of it, in order."""
@@ -222,20 +242,18 @@ async def _abort_failed(
     snapshot: CeremonySnapshot,
     events: Sequence[AuditEvent],
     now: datetime,
-    reason: str,
 ) -> str:
     """Committed, not raised: the abort must outlive the confirmation that found it."""
     ceremony_id = snapshot.ceremony.ceremony_id
     await connection.execute(
         "UPDATE recovery_ceremonies SET status = 'aborted', closed_at = $2,"
-        " close_reason = $3 WHERE ceremony_id = $1",
+        " close_reason = 'chain_invalid' WHERE ceremony_id = $1",
         ceremony_id,
         now,
-        reason,
     )
     await clear_subshares(connection, [ceremony_id])
     aborted = _event(
-        snapshot, SYSTEM_ACTOR, "ceremony_aborted", f"ceremony:{ceremony_id}:{reason}", now
+        snapshot, SYSTEM_ACTOR, "ceremony_aborted", f"ceremony:{ceremony_id}:chain_invalid", now
     )
     await append_audits(connection, [*events, aborted])
     return "aborted"
@@ -310,7 +328,7 @@ async def _replace_shares(
 async def activate_resharing(
     connection: asyncpg.Connection, snapshot: CeremonySnapshot, events: Sequence[AuditEvent]
 ) -> str:
-    """'active', or 'aborted' when the new shares do not rebuild X; the caller holds the ceremony."""
+    """'active', or 'aborted' when the holders moved on meanwhile; the caller holds the ceremony."""
     ceremony = snapshot.ceremony
     now = events[-1].at
     key = await connection.fetchrow(
@@ -321,9 +339,7 @@ async def activate_resharing(
     # The generation it replaces must still be the current one, or the old shares it
     # would delete are not the ones its dealers held.
     if key is None or bytes(key["holders_transcript_hash"]) != ceremony.previous_transcript_hash:
-        return await _abort_failed(connection, snapshot, events, now, "chain_invalid")
-    if not end_to_end_holds(snapshot, bytes(key["recovery_public_key"])):
-        return await _abort_failed(connection, snapshot, events, now, "canary_failed")
+        return await _abort_failed(connection, snapshot, events, now)
     cancelled = await _close_open_requests(connection, snapshot, now)
     await _replace_shares(connection, snapshot, key["key_id"])
     await connection.execute(
@@ -334,7 +350,7 @@ async def activate_resharing(
         ceremony.transcript_hash,
         ceremony.k,
         len(snapshot.participants),
-        "standard" if ceremony.k == 1 else "enhanced",
+        mode_of(ceremony.k),
     )
     # No share a retired key opened is left, so the blobs kept for resharing go (§9.6).
     await connection.execute(

@@ -192,6 +192,9 @@ def test_custodians_are_ordered_by_subject_not_by_request(http):
         ("post", "/resharing", CUSTODIAN),
         ("post", "/00000000-0000-4000-8000-000000000000/paper-dealings", CUSTODIAN),
         ("get", "/00000000-0000-4000-8000-000000000000/dealer", "ssf.analytics.view"),
+        # Only a resharing's dealer may act without the custodian permission (§9.7).
+        ("get", "/00000000-0000-4000-8000-000000000000/subshares", "ssf.recording.request"),
+        ("post", "/00000000-0000-4000-8000-000000000000/confirmations", "ssf.recording.request"),
     ],
 )
 def test_each_route_requires_its_permission(http, method, path, permission):

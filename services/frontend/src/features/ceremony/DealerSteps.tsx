@@ -67,6 +67,18 @@ interface DealingPartProps {
 function DealingPart({ ceremony, actions, keys, onOpenKeys }: Readonly<DealingPartProps>) {
   const { t } = useTranslation();
   const [ticked, setTicked] = useState<Map<number, Bytes>>(new Map());
+  // Said rather than shown as an empty card: otherwise the resharing would wait out its 24 hours.
+  if (actions.loadFailed !== null) {
+    return (
+      <p role="alert" className="text-meta text-fg-status-alert">
+        {t(
+          actions.loadFailed === 'unusable'
+            ? 'admin.ceremony.reshare.errorUnusable'
+            : 'admin.ceremony.stepFailed'
+        )}
+      </p>
+    );
+  }
   // A locked vault is unlocked on the keys screen; only a key it does not hold is asked for here.
   if (keys === null) {
     return (
@@ -117,10 +129,10 @@ export function DealerSteps({
   onOpenKeys,
 }: Readonly<DealerStepsProps>) {
   const { t } = useTranslation();
-  const actions = useDealerActions(ceremony, facts, dealer, owner, keys);
   // Asked first and latched: a redirect later would lose the ticks and an unlocked earlier key.
   const [fresh] = useState(() => hasFreshStepUp());
   const dealt = ceremony.dealings.some((dealing) => dealing.dealerIndex === dealer.dealerIndex);
+  const actions = useDealerActions(ceremony, facts, dealer, owner, keys, fresh && !dealt);
 
   if (actions.error === 'stepUp' || (!dealt && !fresh))
     return <StepUpPrompt returnTo={CEREMONY_VIEW} />;

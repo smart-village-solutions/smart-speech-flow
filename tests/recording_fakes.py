@@ -16,14 +16,13 @@ from services.api_gateway.recording.ceremony_model import (
     RecoveryKeyRecord,
     RecoveryShareRecord,
     computed_transcript_hash,
+    mode_of,
     conflict,
 )
 from services.api_gateway.recording.crypto.encoding import b64url
 from services.api_gateway.recording.repository import KeyAlreadyEnrolledError, UserKeyRecord
-from services.api_gateway.recording.resharing import DealerMaterial
 from services.api_gateway.recording.resharing_model import (
     HolderGeneration,
-    end_to_end_holds,
     new_public_shares,
 )
 from tests import recording_crypto_reference as ref
@@ -114,6 +113,17 @@ class FakeCeremonyRepository:
             {share.holder_index: share.holder_public_share for share in self.shares},
         )
 
+    async def previous_had_paper(self, tenant_id: str) -> bool:
+        key = self.recovery_key
+        holders = None if key is None else self.ceremonies.get(key.current_holders[0])
+        if holders is None or holders.ceremony.previous_transcript_hash is None:
+            return False
+        return any(
+            s.paper_holders
+            for s in self.ceremonies.values()
+            if s.ceremony.transcript_hash == holders.ceremony.previous_transcript_hash
+        )
+
     async def chain(self, tenant_id: str, key_id: str) -> list[CeremonySnapshot]:
         return [
             s
@@ -137,11 +147,11 @@ class FakeCeremonyRepository:
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> DealerMaterial | None:
+    ) -> tuple[str, UserKeyRecord] | None:
         share = next(s for s in self.shares if s.holder_index == dealer_index)
         if holder_ref in self.unusable or share.encrypted_share is None:
             return None
-        return DealerMaterial(dealer_index, share.encrypted_share, self.keys[holder_ref])
+        return share.encrypted_share, self.keys[holder_ref]
 
     async def create_resharing(self, ceremony, participants, dealers, audit) -> None:
         if await self.open_ceremony(ceremony.tenant_id, ceremony.started_at) is not None:
@@ -256,16 +266,16 @@ class FakeCeremonyRepository:
         return "active"
 
     def _reshare(self, after: CeremonySnapshot, audit: AuditEvent) -> str:
-        """The Postgres activation's outcome: the end-to-end check, then the new holders."""
+        """The Postgres activation's outcome: the holders must not have moved on meanwhile."""
         ceremony = after.ceremony
         key = self.recovery_key
         assert key is not None
-        if not end_to_end_holds(after, key.recovery_public_key):
+        if key.current_holders[1] != ceremony.previous_transcript_hash:
             self.ceremonies[ceremony.ceremony_id] = replace(
                 after, ceremony=replace(ceremony, status="aborted")
             )
             self.aborted[ceremony.ceremony_id] = FailedCeremony(
-                ceremony.ceremony_id, "canary_failed", audit.at
+                ceremony.ceremony_id, "chain_invalid", audit.at
             )
             self.audit.append(audit)
             return "aborted"
@@ -283,7 +293,7 @@ class FakeCeremonyRepository:
             holders_transcript_hash=ceremony.transcript_hash,
             k=ceremony.k,
             n=len(after.participants),
-            mode="standard" if ceremony.k == 1 else "enhanced",
+            mode=mode_of(ceremony.k),
         )
         self.ceremonies[ceremony.ceremony_id] = replace(
             after, ceremony=replace(ceremony, status="active")

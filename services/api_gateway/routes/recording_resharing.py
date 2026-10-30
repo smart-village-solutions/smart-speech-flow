@@ -19,32 +19,28 @@ from ..recording.ceremony_model import CeremonyError, DealingSubmission
 from ..recording.crypto.encoding import b64url, scalar_from_bytes
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.keys import KeyUnreadableError
-from ..recording.permissions import (
-    RECORDING_PERMISSIONS,
-    TENANT_MANAGE,
-    coded,
-    require_permission,
-    require_step_up,
-)
+from ..recording.permissions import coded, require_step_up
 from ..recording.repository import RecordingStorageUnavailable
 from ..recording.resharing import ResharingService
 from ..recording.resharing_model import ResharingStart
 from ..studio_runtime_flow import correlation_id_from_request
-from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
-from .recording_ceremony import POINT, SCALAR, ceremony_body, decoded, refused
+from .recording_ceremony import (
+    POINT,
+    SCALAR,
+    Admin,
+    Staff,
+    TenantContext,
+    ceremony_body,
+    decoded,
+    refused,
+)
 
 router = APIRouter(
     prefix="/api/admin/recording/ceremony",
     tags=["recording"],
     route_class=ValueFreeValidationRoute,
 )
-
-Admin = Annotated[dict[str, Any], Depends(require_permission(TENANT_MANAGE))]
-Staff = Annotated[
-    dict[str, Any], Depends(require_permission(TENANT_MANAGE, *RECORDING_PERMISSIONS))
-]
-TenantContext = Annotated[StudioTenantContext, Depends(require_studio_tenant_context)]
 
 
 def get_resharing(request: Request) -> ResharingService:

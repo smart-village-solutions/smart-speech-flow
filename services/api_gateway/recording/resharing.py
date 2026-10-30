@@ -39,6 +39,7 @@ from .repository import UserKeyRecord
 from .resharing_model import (
     HolderGeneration,
     ResharingStart,
+    check_last_dealing,
     check_resharing_dealing,
     dealers_of,
     validate_start,
@@ -47,15 +48,6 @@ from .secrets import ServerLayer
 
 # A holder whose share a key on the server still opens: its active one, or one kept (§9.6).
 USABLE_STATES = frozenset({"fresh", "kept"})
-
-
-@dataclass(frozen=True)
-class DealerMaterial:
-    """What a custodian dealer opens its share with: the key the current generation lists."""
-
-    dealer_index: int
-    encrypted_share: str
-    key: UserKeyRecord
 
 
 class ResharingStore(Protocol):
@@ -81,7 +73,9 @@ class ResharingStore(Protocol):
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> DealerMaterial | None: ...
+    ) -> tuple[str, UserKeyRecord] | None:
+        """The dealer's sealed share and the key the current generation lists for it."""
+        ...
 
     async def add_dealing(
         self, tenant_id: str, ceremony_id: str, dealing: DealingRecord, audit: AuditEvent
@@ -201,13 +195,16 @@ class ResharingService:
         if snapshot.ceremony.status != "dealing" or snapshot.has_dealt(dealer.dealer_index):
             raise conflict("CEREMONY_STATE", "This dealer has nothing left to deal")
         material = await self._repository.dealer_material(tenant_id, dealer.dealer_index, user_sub)
-        key = None if material is None else material.key
-        if material is None or key is None or key.encrypted_private is None:
+        if material is None:
+            raise conflict("DEALER_UNUSABLE", "This dealer's share can no longer be opened")
+        encrypted_share, key = material
+        sealed = key.encrypted_private
+        if sealed is None:
             raise conflict("DEALER_UNUSABLE", "This dealer's share can no longer be opened")
         try:
-            blob = self._server_layer.open(
-                key.encrypted_private, tenant_id=tenant_id, user_sub=user_sub
-            ).decode("utf-8")
+            blob = self._server_layer.open(sealed, tenant_id=tenant_id, user_sub=user_sub).decode(
+                "utf-8"
+            )
         except EnvelopeError:
             raise KeyUnreadableError() from None
         await self._repository.record_audit(
@@ -215,7 +212,7 @@ class ResharingService:
                 tenant_id, user_sub, "key_blob_read", f"user-key:{key.key_version}", self._clock()
             )
         )
-        return DealerKey(material.dealer_index, material.encrypted_share, key, blob)
+        return DealerKey(dealer.dealer_index, encrypted_share, key, blob)
 
     async def paper_deal(
         self,
@@ -236,12 +233,14 @@ class ResharingService:
             raise conflict("CEREMONY_STATE", "Dealing is over")
         if snapshot.has_dealt(dealer_index):
             raise conflict("ALREADY_SUBMITTED", "This sheet has already dealt")
-        _, current = await self._current(tenant_id)
+        key, current = await self._current(tenant_id)
         check_resharing_dealing(snapshot, dealer, current, dealing)
         now = self._clock()
+        record = dealing_record(dealer_index, dealing, now)
+        check_last_dealing(snapshot, record, key.recovery_public_key)
         return await self._repository.add_dealing(
             tenant_id,
             ceremony_id,
-            dealing_record(dealer_index, dealing, now),
+            record,
             AuditEvent(tenant_id, user_sub, "ceremony_dealt", f"ceremony:{ceremony_id}", now),
         )

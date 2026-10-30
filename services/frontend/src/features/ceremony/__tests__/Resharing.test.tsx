@@ -164,12 +164,41 @@ describe('dealing in a resharing', () => {
 
   it('asks for a fresh MFA login before the dealer ticks or unlocks anything', async () => {
     vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    render(withKey(resharing()), {
+    const { recoveryCeremony } = render(withKey(resharing()), {
       unlocked: true,
       crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
     });
     expect(await screen.findByText(/zweiten Faktor/)).toBeInTheDocument();
     expect(screen.queryByText(/· verglichen/)).not.toBeInTheDocument();
+    // Each read of the key is audited: none before the fresh login.
+    expect(recoveryCeremony.dealer).not.toHaveBeenCalled();
+  });
+
+  it('reads no key once it has dealt', async () => {
+    const dealt = resharing({
+      dealings: [{ dealerIndex: 1, commitments: [], proof: { c: 1n, s: 2n }, signature: null }],
+    });
+    const { recoveryCeremony } = render(withKey(dealt), {
+      unlocked: true,
+      crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
+    });
+    expect(await screen.findAllByText(/Warten auf die anderen/)).not.toHaveLength(0);
+    expect(recoveryCeremony.dealer).not.toHaveBeenCalled();
+  });
+
+  it('says why it cannot deal when its key cannot be served', async () => {
+    render(withKey(resharing()), {
+      unlocked: true,
+      repository: {
+        dealer: vi
+          .fn()
+          .mockRejectedValue(
+            new AppError('validation', { status: 409, serverCode: 'DEALER_UNUSABLE' })
+          ),
+      },
+      crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
+    });
+    expect(await screen.findByText(/kann seinen Anteil nicht mehr öffnen/)).toBeInTheDocument();
   });
 
   it('sends a dealer with locked keys to unlock them, not to an earlier key', async () => {
@@ -232,6 +261,10 @@ describe('dealing in a resharing', () => {
     await waitFor(() =>
       expect(recoveryCeremony.deal).toHaveBeenCalledWith(expect.any(String), dealing)
     );
+    // The step refetches the ceremony, not the certified chain or the audited key.
+    await waitFor(() => expect(recoveryCeremony.state).toHaveBeenCalledTimes(2));
+    expect(ceremonyCrypto.certifyChain).toHaveBeenCalledTimes(1);
+    expect(recoveryCeremony.dealer).toHaveBeenCalledTimes(1);
     expect(ceremonyCrypto.dealShare).toHaveBeenCalledWith(
       expect.anything(),
       1,

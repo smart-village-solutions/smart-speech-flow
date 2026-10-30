@@ -11,6 +11,7 @@ device key it depends on. Both are audited.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, status
@@ -27,6 +28,7 @@ from ..recording.ceremony_model import (
 from ..recording.crypto.encoding import b64url, from_b64url, scalar_from_bytes
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.permissions import (
+    CUSTODIAN,
     RECORDING_PERMISSIONS,
     TENANT_MANAGE,
     coded,
@@ -47,8 +49,10 @@ router = APIRouter(
 )
 
 Admin = Annotated[dict[str, Any], Depends(require_permission(TENANT_MANAGE))]
-# A resharing's dealer may already have lost the custodian permission: the service
-# checks who takes part by identity (§9.7).
+Custodian = Annotated[dict[str, Any], Depends(require_permission(CUSTODIAN))]
+Participant = Annotated[dict[str, Any], Depends(require_permission(TENANT_MANAGE, CUSTODIAN))]
+# Only for the routes a resharing's dealer needs: one being replaced may already have lost
+# the custodian permission, so the service checks that the caller is a listed dealer (§9.7).
 Staff = Annotated[
     dict[str, Any], Depends(require_permission(TENANT_MANAGE, *RECORDING_PERMISSIONS))
 ]
@@ -194,23 +198,13 @@ def _holder_body(holder: HolderView) -> dict[str, Any]:
     }
 
 
-def _previous_had_paper(state: CeremonyState) -> bool:
-    """Old sheets are void once a resharing replaced the generation they belonged to."""
-    if len(state.chain) < 2 or state.recovery_key is None:
-        return False
-    holders, _ = state.recovery_key.current_holders
-    if state.chain[-1].ceremony.ceremony_id != holders:
-        return False
-    return bool(state.chain[-2].paper_holders)
-
-
 def _state_body(state: CeremonyState, admin: bool) -> dict[str, Any]:
     return {
         "recovery_key": None if state.recovery_key is None else _key_body(state.recovery_key),
         "usable_shares": state.usable_shares,
         # Who holds a share now, for an admin choosing a resharing's dealers.
         "holders": [_holder_body(h) for h in state.holders] if admin else [],
-        "previous_had_paper": _previous_had_paper(state),
+        "previous_had_paper": state.previous_had_paper,
         "chain": [generation_body(snapshot) for snapshot in state.chain],
         "ceremony": None if state.ceremony is None else ceremony_body(state.ceremony),
         "last_failed": (
@@ -225,15 +219,32 @@ def _state_body(state: CeremonyState, admin: bool) -> dict[str, Any]:
     }
 
 
+def _dealer_view(state: CeremonyState, sub: str) -> dict[str, Any]:
+    """For a dealer without the custodian permission: the resharing it deals in, nothing more.
+
+    Who the custodians are, and how many shares still work, are not every recording
+    user's business (§9.7).
+    """
+    ceremony = state.ceremony
+    if ceremony is None or ceremony.custodian_dealer(sub) is None:
+        raise coded(403, "PERMISSION_REQUIRED", "This view needs another permission")
+    limited = replace(state, usable_shares=None, holders=(), previous_had_paper=False)
+    return _state_body(limited, False)
+
+
 @router.get("")
 async def ceremony_state(
     context: TenantContext, claims: Staff, service: Ceremonies
 ) -> dict[str, Any]:
+    held = permissions_of(claims)
     try:
+        if TENANT_MANAGE in held or CUSTODIAN in held:
+            state = await service.state(context.tenant_id, admin=TENANT_MANAGE in held)
+            return _state_body(state, TENANT_MANAGE in held)
         state = await service.state(context.tenant_id)
-        return _state_body(state, TENANT_MANAGE in permissions_of(claims))
     except RecordingStorageUnavailable as error:
         raise refused(error) from None
+    return _dealer_view(state, claims["sub"])
 
 
 @router.get("/candidates")
@@ -297,7 +308,13 @@ async def deal(
         subshares=body.subshares,
     )
     try:
-        after = await service.deal(context.tenant_id, claims["sub"], str(ceremony_id), submission)
+        after = await service.deal(
+            context.tenant_id,
+            claims["sub"],
+            str(ceremony_id),
+            submission,
+            custodian=CUSTODIAN in permissions_of(claims),
+        )
     except (CeremonyError, RecordingStorageUnavailable) as error:
         raise refused(error) from None
     return {"status": "confirming" if after.all_dealt() else "dealing"}
@@ -305,7 +322,7 @@ async def deal(
 
 @router.get("/{ceremony_id}/subshares")
 async def subshares(
-    ceremony_id: uuid.UUID, context: TenantContext, claims: Staff, service: Ceremonies
+    ceremony_id: uuid.UUID, context: TenantContext, claims: Participant, service: Ceremonies
 ) -> dict[str, dict[str, dict[str, str]]]:
     try:
         received = await service.subshares(context.tenant_id, claims["sub"], str(ceremony_id))
@@ -326,7 +343,7 @@ async def confirm(
     ceremony_id: uuid.UUID,
     body: ConfirmationBody,
     context: TenantContext,
-    claims: Staff,
+    claims: Custodian,
     service: Ceremonies,
 ) -> dict[str, str]:
     signature = decoded(body.transcript_signature, "INVALID_CONFIRMATION")
@@ -376,7 +393,14 @@ async def abort(
     claims: Staff,
     service: Ceremonies,
 ) -> None:
+    held = permissions_of(claims)
     try:
-        await service.abort(context.tenant_id, claims["sub"], str(ceremony_id), body.reason)
+        await service.abort(
+            context.tenant_id,
+            claims["sub"],
+            str(ceremony_id),
+            body.reason,
+            privileged=TENANT_MANAGE in held or CUSTODIAN in held,
+        )
     except (CeremonyError, RecordingStorageUnavailable) as error:
         raise refused(error) from None
