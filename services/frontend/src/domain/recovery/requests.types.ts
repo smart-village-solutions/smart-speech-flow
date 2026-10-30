@@ -85,6 +85,8 @@ export interface ApprovalDetail {
 export interface ServedPartials {
   wraps: ServedRecoveryWrap[];
   approvals: ServedApproval[];
+  /** The holders the request was filed under; it must be the generation this browser certified. */
+  holdersCeremonyId: string;
 }
 
 /** The caller's next key-recovery batch, and what lies beyond it (spec §9.6). */

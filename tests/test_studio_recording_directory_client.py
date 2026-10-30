@@ -144,3 +144,16 @@ async def test_names_cover_every_recording_user_and_are_empty_when_studio_cannot
         TENANT, "corr-1"
     )
     assert names == {user["sub"]: user["displayName"] for user in body["users"]}
+
+
+@pytest.mark.asyncio
+async def test_members_are_every_sub_and_none_when_studio_cannot_answer():
+    """A leaver list must never read a failure as an empty directory (spec §9.8)."""
+    refused = _client(FixedTransport(200, _body(tenantId="tenant-other")))
+    assert await StudioCustodianDirectory(refused).members(TENANT, "corr-1") is None
+    assert await StudioCustodianDirectory(None).members(TENANT, "corr-1") is None
+    body = _body()
+    members = await StudioCustodianDirectory(_client(FixedTransport(200, body))).members(
+        TENANT, "corr-1"
+    )
+    assert members == frozenset(user["sub"] for user in body["users"])

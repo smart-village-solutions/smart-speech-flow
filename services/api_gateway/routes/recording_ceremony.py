@@ -11,13 +11,14 @@ device key it depends on. Both are audited.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..dependencies import optional_container
-from ..recording.ceremony import CeremonyService, CeremonyState, StartRequest
+from ..recording.ceremony import CeremonyService, CeremonyState, HolderView, StartRequest
 from ..recording.ceremony_model import (
     CeremonyError,
     CeremonySnapshot,
@@ -28,8 +29,10 @@ from ..recording.crypto.encoding import b64url, from_b64url, scalar_from_bytes
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.permissions import (
     CUSTODIAN,
+    RECORDING_PERMISSIONS,
     TENANT_MANAGE,
     coded,
+    permissions_of,
     require_permission,
     require_step_up,
 )
@@ -37,6 +40,7 @@ from ..recording.repository import RecordingStorageUnavailable
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
+from .recording_generations import generation_body
 
 router = APIRouter(
     prefix="/api/admin/recording/ceremony",
@@ -47,10 +51,15 @@ router = APIRouter(
 Admin = Annotated[dict[str, Any], Depends(require_permission(TENANT_MANAGE))]
 Custodian = Annotated[dict[str, Any], Depends(require_permission(CUSTODIAN))]
 Participant = Annotated[dict[str, Any], Depends(require_permission(TENANT_MANAGE, CUSTODIAN))]
+# Only for the routes a resharing's dealer needs: one being replaced may already have lost
+# the custodian permission, so the service checks that the caller is a listed dealer (§9.7).
+Staff = Annotated[
+    dict[str, Any], Depends(require_permission(TENANT_MANAGE, *RECORDING_PERMISSIONS))
+]
 TenantContext = Annotated[StudioTenantContext, Depends(require_studio_tenant_context)]
 StepUp = [Depends(require_step_up)]
-_POINT = 87  # a 65-byte point in unpadded base64url
-_SCALAR = 43  # 32 bytes
+POINT = 87  # a 65-byte point in unpadded base64url
+SCALAR = 43  # 32 bytes
 _SIGNATURE = 86  # 64 bytes
 
 
@@ -71,15 +80,15 @@ class StartBody(BaseModel):
 
     k: int = Field(ge=1, le=5)
     custodians: list[str] = Field(min_length=2, max_length=10)
-    paper_device_pub: str | None = Field(default=None, min_length=_POINT, max_length=_POINT)
+    paper_device_pub: str | None = Field(default=None, min_length=POINT, max_length=POINT)
 
 
 class DealingBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     commitments: list[str] = Field(min_length=1, max_length=5)
-    c: str = Field(min_length=_SCALAR, max_length=_SCALAR)
-    s: str = Field(min_length=_SCALAR, max_length=_SCALAR)
+    c: str = Field(min_length=SCALAR, max_length=SCALAR)
+    s: str = Field(min_length=SCALAR, max_length=SCALAR)
     signature: str = Field(min_length=_SIGNATURE, max_length=_SIGNATURE)
     subshares: dict[int, str] = Field(min_length=1, max_length=15)
 
@@ -89,12 +98,15 @@ class ConfirmationBody(BaseModel):
 
     transcript_signature: str = Field(min_length=_SIGNATURE, max_length=_SIGNATURE)
     encrypted_share: str = Field(min_length=1, max_length=1024)
+    # A resharing's custodian proves it holds the share it sealed (§9.7).
+    share_proof_c: str | None = Field(default=None, min_length=SCALAR, max_length=SCALAR)
+    share_proof_s: str | None = Field(default=None, min_length=SCALAR, max_length=SCALAR)
 
 
 class PaperConfirmationBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    transcript_hash: str = Field(min_length=_SCALAR, max_length=_SCALAR)
+    transcript_hash: str = Field(min_length=SCALAR, max_length=SCALAR)
 
 
 class AbortBody(BaseModel):
@@ -103,13 +115,13 @@ class AbortBody(BaseModel):
     reason: str = Field(min_length=1, max_length=40)
 
 
-def _refused(error: Exception) -> Exception:
+def refused(error: Exception) -> Exception:
     if isinstance(error, CeremonyError):
         return coded(error.status, error.code, error.message)
     return coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable")
 
 
-def _decoded(text: str, code: str) -> bytes:
+def decoded(text: str, code: str) -> bytes:
     try:
         return from_b64url(text)
     except ValueError:
@@ -117,7 +129,10 @@ def _decoded(text: str, code: str) -> bytes:
 
 
 def _key_body(key: RecoveryKeyRecord) -> dict[str, Any]:
+    holders, holders_transcript = key.current_holders
     return {
+        "holders_ceremony_id": holders,
+        "holders_transcript_hash": b64url(holders_transcript),
         "key_id": key.key_id,
         "recovery_public_key": b64url(key.recovery_public_key),
         "k": key.k,
@@ -129,7 +144,7 @@ def _key_body(key: RecoveryKeyRecord) -> dict[str, Any]:
     }
 
 
-def _ceremony_body(snapshot: CeremonySnapshot) -> dict[str, Any]:
+def ceremony_body(snapshot: CeremonySnapshot) -> dict[str, Any]:
     ceremony = snapshot.ceremony
     transcript = ceremony.transcript_hash
     return {
@@ -155,15 +170,17 @@ def _ceremony_body(snapshot: CeremonySnapshot) -> dict[str, Any]:
             }
             for p in snapshot.participants
         ],
-        "dealings": [
-            {
-                "dealer_index": d.dealer_index,
-                "commitments": [b64url(c) for c in d.commitments],
-                "c": b64url(d.proof_c.to_bytes(32, "big")),
-                "s": b64url(d.proof_s.to_bytes(32, "big")),
-                "signature": b64url(d.signature),
-            }
-            for d in snapshot.dealings
+        "dealings": generation_body(snapshot)["dealings"],
+        "kind": ceremony.kind,
+        "recovery_key_id": ceremony.recovery_key_id,
+        "previous_transcript_hash": (
+            None
+            if ceremony.previous_transcript_hash is None
+            else b64url(ceremony.previous_transcript_hash)
+        ),
+        "dealers": [
+            {"dealer_index": d.dealer_index, "holder_ref": d.holder_ref, "kind": d.kind}
+            for d in snapshot.dealers
         ],
         "confirmed": [c.holder_index for c in snapshot.confirmations],
         "paper_confirmed": ceremony.paper_confirmed_at is not None,
@@ -171,11 +188,26 @@ def _ceremony_body(snapshot: CeremonySnapshot) -> dict[str, Any]:
     }
 
 
-def _state_body(state: CeremonyState) -> dict[str, Any]:
+def _holder_body(holder: HolderView) -> dict[str, Any]:
+    return {
+        "holder_index": holder.holder_index,
+        "holder_ref": holder.holder_ref,
+        "kind": holder.kind,
+        "display_name": holder.display_name,
+        "state": holder.state,
+        "left": holder.left,
+    }
+
+
+def _state_body(state: CeremonyState, admin: bool) -> dict[str, Any]:
     return {
         "recovery_key": None if state.recovery_key is None else _key_body(state.recovery_key),
         "usable_shares": state.usable_shares,
-        "ceremony": None if state.ceremony is None else _ceremony_body(state.ceremony),
+        # Who holds a share now, for an admin choosing a resharing's dealers.
+        "holders": [_holder_body(h) for h in state.holders] if admin else [],
+        "previous_had_paper": state.previous_had_paper,
+        "chain": [generation_body(snapshot) for snapshot in state.chain],
+        "ceremony": None if state.ceremony is None else ceremony_body(state.ceremony),
         "last_failed": (
             None
             if state.last_failed is None
@@ -188,14 +220,32 @@ def _state_body(state: CeremonyState) -> dict[str, Any]:
     }
 
 
+def _dealer_view(state: CeremonyState, sub: str) -> dict[str, Any]:
+    """For a dealer without the custodian permission: the resharing it deals in, nothing more.
+
+    Who the custodians are, and how many shares still work, are not every recording
+    user's business (§9.7).
+    """
+    ceremony = state.ceremony
+    if ceremony is None or ceremony.custodian_dealer(sub) is None:
+        raise coded(403, "PERMISSION_REQUIRED", "This view needs another permission")
+    limited = replace(state, usable_shares=None, holders=(), previous_had_paper=False)
+    return _state_body(limited, False)
+
+
 @router.get("")
 async def ceremony_state(
-    context: TenantContext, claims: Participant, service: Ceremonies
+    context: TenantContext, claims: Staff, service: Ceremonies
 ) -> dict[str, Any]:
+    held = permissions_of(claims)
     try:
-        return _state_body(await service.state(context.tenant_id))
+        if TENANT_MANAGE in held or CUSTODIAN in held:
+            state = await service.state(context.tenant_id, admin=TENANT_MANAGE in held)
+            return _state_body(state, TENANT_MANAGE in held)
+        state = await service.state(context.tenant_id)
     except RecordingStorageUnavailable as error:
-        raise _refused(error) from None
+        raise refused(error) from None
+    return _dealer_view(state, claims["sub"])
 
 
 @router.get("/candidates")
@@ -205,7 +255,7 @@ async def candidates(
     try:
         found = await service.candidates(context.tenant_id, correlation_id_from_request(request))
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
+        raise refused(error) from None
     return {
         "candidates": [
             {
@@ -231,7 +281,7 @@ async def start(
     device = (
         None
         if body.paper_device_pub is None
-        else _decoded(body.paper_device_pub, "INVALID_CEREMONY")
+        else decoded(body.paper_device_pub, "INVALID_CEREMONY")
     )
     start_request = StartRequest(body.k, tuple(body.custodians), device)
     try:
@@ -239,8 +289,8 @@ async def start(
             context.tenant_id, claims["sub"], start_request, correlation_id_from_request(request)
         )
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
-    return _ceremony_body(snapshot)
+        raise refused(error) from None
+    return ceremony_body(snapshot)
 
 
 @router.post("/{ceremony_id}/dealings", status_code=status.HTTP_201_CREATED, dependencies=StepUp)
@@ -248,20 +298,26 @@ async def deal(
     ceremony_id: uuid.UUID,
     body: DealingBody,
     context: TenantContext,
-    claims: Custodian,
+    claims: Staff,
     service: Ceremonies,
 ) -> dict[str, str]:
     submission = DealingSubmission(
-        commitments=tuple(_decoded(c, "INVALID_DEALING") for c in body.commitments),
-        proof_c=scalar_from_bytes(_decoded(body.c, "INVALID_DEALING")),
-        proof_s=scalar_from_bytes(_decoded(body.s, "INVALID_DEALING")),
-        signature=_decoded(body.signature, "INVALID_DEALING"),
+        commitments=tuple(decoded(c, "INVALID_DEALING") for c in body.commitments),
+        proof_c=scalar_from_bytes(decoded(body.c, "INVALID_DEALING")),
+        proof_s=scalar_from_bytes(decoded(body.s, "INVALID_DEALING")),
+        signature=decoded(body.signature, "INVALID_DEALING"),
         subshares=body.subshares,
     )
     try:
-        after = await service.deal(context.tenant_id, claims["sub"], str(ceremony_id), submission)
+        after = await service.deal(
+            context.tenant_id,
+            claims["sub"],
+            str(ceremony_id),
+            submission,
+            custodian=CUSTODIAN in permissions_of(claims),
+        )
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
+        raise refused(error) from None
     return {"status": "confirming" if after.all_dealt() else "dealing"}
 
 
@@ -272,7 +328,7 @@ async def subshares(
     try:
         received = await service.subshares(context.tenant_id, claims["sub"], str(ceremony_id))
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
+        raise refused(error) from None
     return {
         "subshares": {
             str(index): {str(dealer): sealed for dealer, sealed in by_dealer.items()}
@@ -291,13 +347,24 @@ async def confirm(
     claims: Custodian,
     service: Ceremonies,
 ) -> dict[str, str]:
-    signature = _decoded(body.transcript_signature, "INVALID_CONFIRMATION")
+    signature = decoded(body.transcript_signature, "INVALID_CONFIRMATION")
+    proof = None
+    if body.share_proof_c is not None and body.share_proof_s is not None:
+        proof = (
+            scalar_from_bytes(decoded(body.share_proof_c, "INVALID_CONFIRMATION")),
+            scalar_from_bytes(decoded(body.share_proof_s, "INVALID_CONFIRMATION")),
+        )
     try:
         result = await service.confirm(
-            context.tenant_id, claims["sub"], str(ceremony_id), signature, body.encrypted_share
+            context.tenant_id,
+            claims["sub"],
+            str(ceremony_id),
+            signature,
+            body.encrypted_share,
+            proof,
         )
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
+        raise refused(error) from None
     return {"status": result}
 
 
@@ -309,13 +376,13 @@ async def confirm_paper(
     claims: Admin,
     service: Ceremonies,
 ) -> dict[str, str]:
-    transcript = _decoded(body.transcript_hash, "TRANSCRIPT_MISMATCH")
+    transcript = decoded(body.transcript_hash, "TRANSCRIPT_MISMATCH")
     try:
         result = await service.confirm_paper(
             context.tenant_id, claims["sub"], str(ceremony_id), transcript
         )
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
+        raise refused(error) from None
     return {"status": result}
 
 
@@ -324,10 +391,17 @@ async def abort(
     ceremony_id: uuid.UUID,
     body: AbortBody,
     context: TenantContext,
-    claims: Participant,
+    claims: Staff,
     service: Ceremonies,
 ) -> None:
+    held = permissions_of(claims)
     try:
-        await service.abort(context.tenant_id, claims["sub"], str(ceremony_id), body.reason)
+        await service.abort(
+            context.tenant_id,
+            claims["sub"],
+            str(ceremony_id),
+            body.reason,
+            privileged=TENANT_MANAGE in held or CUSTODIAN in held,
+        )
     except (CeremonyError, RecordingStorageUnavailable) as error:
-        raise _refused(error) from None
+        raise refused(error) from None

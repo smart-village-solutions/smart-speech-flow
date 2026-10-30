@@ -244,6 +244,7 @@ def _partials_body(served: ServedPartials) -> dict[str, Any]:
             }
             for a in served.approvals
         ],
+        "holders_ceremony_id": served.holders_ceremony_id,
     }
 
 

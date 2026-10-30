@@ -126,6 +126,8 @@ jobs:
             tests/integration/test_recording_archive_access_database.py \
             tests/integration/test_recording_recovery_requests_database.py \
             tests/integration/test_recording_key_recovery_database.py \
+            tests/integration/test_recording_resharing_database.py \
+            tests/integration/test_recording_leavers_database.py \
             tests/integration/test_recording_retention_database.py \
             tests/integration/test_recording_retention_store.py \
             tests/integration/test_recording_retention_expiry_database.py

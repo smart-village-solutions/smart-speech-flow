@@ -28,7 +28,14 @@ export function PaperSheets({ ceremony, tenantId, sheets }: Readonly<PaperSheets
             <dt>{t('admin.ceremony.sheetTenant')}</dt>
             <dd>{tenantId}</dd>
             <dt>{t('admin.ceremony.sheetKey')}</dt>
-            <dd>{ceremony.ceremonyId}</dd>
+            <dd>{ceremony.recoveryKeyId ?? ceremony.ceremonyId}</dd>
+            {ceremony.kind === 'resharing' && (
+              // Old and new sheets of the same key can be told apart (spec §9.7).
+              <>
+                <dt>{t('admin.ceremony.reshare.sheetCeremony')}</dt>
+                <dd>{ceremony.ceremonyId}</dd>
+              </>
+            )}
             <dt>{t('admin.ceremony.sheetHolder')}</dt>
             <dd>{t('admin.ceremony.sheetHolderValue', { ref: sheet.holderRef, index: sheet.holderIndex, n })}</dd>
           </dl>

@@ -97,6 +97,30 @@ def dealing_fields(
     )
 
 
+def participants_digest(participants: Sequence[tuple[int, str, bytes]]) -> bytes:
+    """The new holder set a resharing dealer consents to: index, ref, fingerprint (§9.7)."""
+    ordered = sorted(participants)
+    return hashlib.sha256(enc(*(field for person in ordered for field in person))).digest()
+
+
+def reshare_dealing_fields(
+    tenant_id: str,
+    ceremony_id: str,
+    dealer_index: int,
+    commitments: Sequence[bytes],
+    proof_c: int,
+    proof_s: int,
+    previous_transcript: bytes,
+    digest: bytes,
+) -> tuple[Field, ...]:
+    """A first-ceremony dealing's fields, bound to the generation it leaves and the one it makes."""
+    return (
+        *dealing_fields(tenant_id, ceremony_id, dealer_index, commitments, proof_c, proof_s),
+        previous_transcript,
+        digest,
+    )
+
+
 def request_fields(
     tenant_id: str,
     request_id: str,

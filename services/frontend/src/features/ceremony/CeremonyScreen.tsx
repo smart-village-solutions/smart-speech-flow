@@ -4,9 +4,10 @@ import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
+import { KeyPanel } from './KeyPanel';
 import { LastFailedNotice } from './LastFailedNotice';
+import { LeaversPanel } from './LeaversPanel';
 import { OpenCeremony } from './OpenCeremony';
-import { RecoveryKeyCard } from './RecoveryKeyCard';
 import { StartForm } from './StartForm';
 import { TENANT_MANAGE, useCeremonyState } from './useCeremony';
 
@@ -24,8 +25,10 @@ function CeremonyPanel({ onOpenKeys }: Readonly<{ onOpenKeys: () => void }>) {
   }
   if (state.isPending) return null;
   const { recoveryKey, ceremony, lastFailed } = state.data;
-  if (recoveryKey !== null) return <RecoveryKeyCard recoveryKey={recoveryKey} />;
-  if (ceremony !== null) return <OpenCeremony ceremony={ceremony} owner={owner} onOpenKeys={onOpenKeys} />;
+  if (recoveryKey !== null) {
+    return <KeyPanel recoveryKey={recoveryKey} state={state.data} owner={owner} onOpenKeys={onOpenKeys} />;
+  }
+  if (ceremony !== null) return <OpenCeremony ceremony={ceremony} chain={null} owner={owner} onOpenKeys={onOpenKeys} />;
   return (
     <>
       {lastFailed !== null && <LastFailedNotice failed={lastFailed} />}
@@ -70,6 +73,7 @@ export function CeremonyScreen({ onBack, onOpenKeys, onSignOut, accountUrl, stud
           <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.intro')}</p>
         </div>
         <CeremonyPanel onOpenKeys={onOpenKeys} />
+        {hasPermission(TENANT_MANAGE) && <LeaversPanel />}
       </div>
     </ScreenShell>
   );

@@ -189,7 +189,14 @@ describe('tenant login routes', () => {
             confirmed: [],
             paper_confirmed: false,
             transcript_hash: null,
+            kind: 'generation',
+            recovery_key_id: null,
+            previous_transcript_hash: null,
+            dealers: [{ dealer_index: 1, holder_ref: 'anna', kind: 'custodian' }],
           },
+          holders: [],
+          previous_had_paper: false,
+          chain: [],
         })
       ),
       http.get('*/api/admin/recording/keys/me', () =>

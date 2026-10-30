@@ -45,7 +45,9 @@ class KeyUnreadableError(Exception):
 class KeyStore(Protocol):
     async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None: ...
 
-    async def enrol_user_key(self, record: UserKeyRecord, audit: AuditEvent) -> None: ...
+    async def enrol_user_key(self, record: UserKeyRecord) -> int:
+        """Inserts the user's next version, with its audit event; returns that version."""
+        ...
 
     async def record_audit(self, event: AuditEvent) -> None: ...
 
@@ -180,11 +182,11 @@ class KeyEnrolmentService:
         """Returns the key fingerprint. KeyAlreadyEnrolledError if a key is active."""
         validate_enrolment(enrolment)
         now = self._clock()
+        # The version is the store's to pick; nothing sealed here binds it.
         record = sealed_record(
             self._server_layer, tenant_id, user_sub, enrolment, version=1, now=now
         )
-        audit = AuditEvent(tenant_id, user_sub, "key_enrolled", "user-key:1", now)
-        await self._repository.enrol_user_key(record, audit)
+        await self._repository.enrol_user_key(record)
         return record.fingerprint
 
     async def own_key(self, tenant_id: str, user_sub: str) -> OwnKey | None:

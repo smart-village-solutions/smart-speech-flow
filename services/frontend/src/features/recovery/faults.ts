@@ -8,6 +8,7 @@ const CHECKS = new Set([
   'trust',
   'step_up',
   'fingerprint_changed',
+  'custodians_changed',
 ]);
 const REFUSALS = new Set([
   'REQUEST_EXISTS',

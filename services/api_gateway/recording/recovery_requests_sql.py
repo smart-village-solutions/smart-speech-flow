@@ -114,7 +114,7 @@ SHARE_FRESH = (
 HOLDER = (
     f"SELECT s.holder_index, s.encrypted_share, p.sig_pub, {SHARE_FRESH} AS fresh"
     " FROM recovery_shares s"
-    " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id"
+    " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.ceremony_id"
     "  AND p.holder_index = s.holder_index"
     " WHERE s.key_id = $1 AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
     " AND p.kind = 'custodian'"
@@ -135,13 +135,24 @@ OWN_REQUESTS = (
     " WHERE r.requester_sub = $1 AND ($2::text IS NULL OR r.kind = $2)"
     " ORDER BY r.created_at DESC LIMIT 100"
 )
+# Whether $2 was a custodian of the generation $1, the holders a request was filed under.
+LISTED_HOLDER = (
+    "SELECT EXISTS (SELECT 1 FROM ceremony_participants WHERE ceremony_id = $1"
+    " AND holder_ref = $2 AND kind = 'custodian')"
+)
+# The key's current holders; held shared by a filing, so a resharing's activation either
+# sees the new request and closes it, or the request is filed under the new holders (§9.7).
+KEY_HOLDERS = (
+    "SELECT holders_ceremony_id FROM recovery_keys"
+    " WHERE key_id = $1 AND status = 'active' FOR SHARE"
+)
 # Open requests a custodian ($2) of the key ($1) may still decide on, never their own.
 APPROVABLE = (
     f"SELECT r.*, {CONVERSATION_COUNT} FROM recovery_requests r"
     " JOIN recovery_shares s ON s.tenant_id = r.tenant_id AND s.key_id = r.recovery_key_id"
     "  AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
     # The same holder rule as HOLDER, so a listed request always opens.
-    " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id"
+    " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.ceremony_id"
     "  AND p.holder_index = s.holder_index AND p.kind = 'custodian'"
     " WHERE r.recovery_key_id = $1 AND r.status = 'open' AND r.expires_at > $3"
     f" AND r.requester_sub <> $2 AND {SHARE_FRESH}"
@@ -158,16 +169,23 @@ APPROVABLE = (
 # A share of the key ($1) held by the caller ($2) that their active key cannot open; NULL if none.
 STALE_HOLDER = (
     f"SELECT NOT {SHARE_FRESH} FROM recovery_shares s JOIN ceremony_participants p"
-    " ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id AND p.holder_index = s.holder_index"
+    " ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.ceremony_id"
+    " AND p.holder_index = s.holder_index"
     " WHERE s.key_id = $1 AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
     " AND p.kind = 'custodian'"
+)
+# The current generation's custodians, by sub: one definition for the flags that name them.
+CURRENT_CUSTODIANS = (
+    " FROM recovery_keys r JOIN ceremony_participants p"
+    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
+    " AND p.kind = 'custodian' WHERE r.status = 'active'"
 )
 # k and the custodian shares of the active key that their holders can still open.
 USABLE_SHARES = (
     f"SELECT r.k, count(*) FILTER (WHERE {SHARE_FRESH}) AS usable"
     " FROM recovery_keys r JOIN ceremony_participants p ON p.tenant_id = r.tenant_id"
-    "  AND p.ceremony_id = r.key_id AND p.kind = 'custodian'"
-    " JOIN recovery_shares s ON s.tenant_id = p.tenant_id AND s.key_id = p.ceremony_id"
+    "  AND p.ceremony_id = r.holders_ceremony_id AND p.kind = 'custodian'"
+    " JOIN recovery_shares s ON s.tenant_id = p.tenant_id AND s.ceremony_id = p.ceremony_id"
     "  AND s.holder_index = p.holder_index AND s.encrypted_share IS NOT NULL"
     " WHERE r.status = 'active' GROUP BY r.k"
 )
@@ -186,6 +204,7 @@ def request_row(row: Any) -> RequestRow:
         created_at=row["created_at"],
         expires_at=row["expires_at"],
         closed_at=row["closed_at"],
+        holders_ceremony_id=str(row["holders_ceremony_id"]),
     )
 
 

@@ -93,7 +93,7 @@ function render(options: RenderOptions = {}) {
         (() => Promise.resolve({ partials: new Map(), signature: new Uint8Array(64) }))
     ),
   };
-  const ceremonyCrypto = { certifyTrust: vi.fn().mockResolvedValue({}) };
+  const ceremonyCrypto = { certifyChain: vi.fn().mockResolvedValue({}) };
   const archive = { trust: vi.fn().mockResolvedValue({}) };
   renderWithProviders(
     <RecoveryApprovalsScreen onBack={vi.fn()} onOpenKeys={vi.fn()} onSignOut={vi.fn()} />,

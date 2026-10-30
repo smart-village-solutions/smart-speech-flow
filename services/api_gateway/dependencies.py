@@ -106,6 +106,9 @@ class GatewayDependencies:
     recording_recovery_requests: Any = None
     # Employee key recovery's re-enrolment (#617b), wired with the keys.
     recording_reenrolment: Any = None
+    recording_resharing: Any = None
+    # Leavers (#617d), wired with the keys.
+    recording_leavers: Any = None
     # The archive sites' retention workers, as the gateway exports them (#618).
     retention_worker_metrics: Any = None
 

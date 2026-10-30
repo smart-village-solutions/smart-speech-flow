@@ -95,9 +95,7 @@ async def test_the_audit_log_refuses_update_and_delete(repository, app_connectio
 
 
 async def test_keys_and_audit_rows_stay_inside_their_tenant(repository, app_connection):
-    await repository.enrol_user_key(
-        _key("tenant-a", "alice"), AuditEvent("tenant-a", "alice", "key_enrolled", "k", NOW)
-    )
+    await repository.enrol_user_key(_key("tenant-a", "alice"))
     assert await repository.active_user_key("tenant-b", "alice") is None
     assert await repository.audit_rows("tenant-b") == []
     async with app_connection.transaction():
@@ -111,14 +109,10 @@ async def test_keys_and_audit_rows_stay_inside_their_tenant(repository, app_conn
 
 async def test_enrolment_round_trip_one_active_key_and_an_intact_chain(repository):
     record = _key("tenant-a", "alice")
-    await repository.enrol_user_key(
-        record, AuditEvent("tenant-a", "alice", "key_enrolled", "k", NOW)
-    )
+    assert await repository.enrol_user_key(record) == 1
     assert await repository.active_user_key("tenant-a", "alice") == record
     with pytest.raises(KeyAlreadyEnrolledError):
-        await repository.enrol_user_key(
-            record, AuditEvent("tenant-a", "alice", "key_enrolled", "k", NOW)
-        )
+        await repository.enrol_user_key(record)
     await repository.record_audit(AuditEvent("tenant-a", "alice", "key_blob_read", "k", NOW))
     rows = await repository.audit_rows("tenant-a")
     assert [row.seq for row in rows] == [1, 2]

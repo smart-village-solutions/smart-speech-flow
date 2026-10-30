@@ -16,11 +16,13 @@ WRAP_SIG: Final[str] = "ssf-rec/wrap-sig/v1"
 DEALING_SIG: Final[str] = "ssf-rec/dealing-sig/v1"
 REQUEST_SIG: Final[str] = "ssf-rec/request-sig/v1"
 APPROVAL_SIG: Final[str] = "ssf-rec/approval-sig/v1"
+RESHARE_DEALING_SIG: Final[str] = "ssf-rec/reshare-dealing-sig/v1"
 CHAIN_SIG: Final[str] = "ssf-rec/chain-sig/v1"
 VERIFICATION_SIG: Final[str] = "ssf-rec/verification-sig/v1"
 TRANSCRIPT: Final[str] = "ssf-rec/transcript/v1"
 DLEQ: Final[str] = "ssf-rec/dleq/v1"
 POK: Final[str] = "ssf-rec/pok/v1"
+SHARE_POK: Final[str] = "ssf-rec/share-pok/v1"
 FINGERPRINT: Final[str] = "ssf-rec/fpr/v1"
 
 SEALED_TYPES: Final[frozenset[str]] = frozenset({CK_WRAP, SHARE, SUBSHARE, PARTIAL})

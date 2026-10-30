@@ -212,6 +212,32 @@
             "title": "Encrypted Share",
             "type": "string"
           },
+          "share_proof_c": {
+            "anyOf": [
+              {
+                "maxLength": 43,
+                "minLength": 43,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Proof C"
+          },
+          "share_proof_s": {
+            "anyOf": [
+              {
+                "maxLength": 43,
+                "minLength": 43,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Proof S"
+          },
           "transcript_signature": {
             "maxLength": 86,
             "minLength": 86,
@@ -1503,6 +1529,22 @@
         "title": "LoginTenantResponse",
         "type": "object"
       },
+      "MarkBody": {
+        "additionalProperties": false,
+        "properties": {
+          "key_version": {
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Key Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key_version"
+        ],
+        "title": "MarkBody",
+        "type": "object"
+      },
       "PaperConfirmationBody": {
         "additionalProperties": false,
         "properties": {
@@ -1517,6 +1559,56 @@
           "transcript_hash"
         ],
         "title": "PaperConfirmationBody",
+        "type": "object"
+      },
+      "PaperDealingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "c": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "C",
+            "type": "string"
+          },
+          "commitments": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Commitments",
+            "type": "array"
+          },
+          "dealer_index": {
+            "maximum": 15.0,
+            "minimum": 1.0,
+            "title": "Dealer Index",
+            "type": "integer"
+          },
+          "s": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "S",
+            "type": "string"
+          },
+          "subshares": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 15,
+            "minProperties": 1,
+            "title": "Subshares",
+            "type": "object"
+          }
+        },
+        "required": [
+          "dealer_index",
+          "commitments",
+          "c",
+          "s",
+          "subshares"
+        ],
+        "title": "PaperDealingBody",
         "type": "object"
       },
       "PlaybackBody": {
@@ -1852,6 +1944,61 @@
           "fault"
         ],
         "title": "RejectionBody",
+        "type": "object"
+      },
+      "ResharingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "custodians": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 2,
+            "title": "Custodians",
+            "type": "array"
+          },
+          "dealers": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Dealers",
+            "type": "array"
+          },
+          "holders_ceremony_id": {
+            "format": "uuid",
+            "title": "Holders Ceremony Id",
+            "type": "string"
+          },
+          "k": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "K",
+            "type": "integer"
+          },
+          "paper_device_pub": {
+            "anyOf": [
+              {
+                "maxLength": 87,
+                "minLength": 87,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paper Device Pub"
+          }
+        },
+        "required": [
+          "k",
+          "custodians",
+          "dealers",
+          "holders_ceremony_id"
+        ],
+        "title": "ResharingBody",
         "type": "object"
       },
       "SessionCreateResponse": {
@@ -2888,6 +3035,49 @@
         ]
       }
     },
+    "/api/admin/recording/ceremony/resharing": {
+      "post": {
+        "operationId": "start_resharing_api_admin_recording_ceremony_resharing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResharingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Resharing Api Admin Recording Ceremony Resharing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Resharing",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
     "/api/admin/recording/ceremony/{ceremony_id}/abort": {
       "post": {
         "operationId": "abort_api_admin_recording_ceremony__ceremony_id__abort_post",
@@ -2986,6 +3176,51 @@
           }
         },
         "summary": "Confirm",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/dealer": {
+      "get": {
+        "operationId": "dealer_api_admin_recording_ceremony__ceremony_id__dealer_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Dealer Api Admin Recording Ceremony  Ceremony Id  Dealer Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dealer",
         "tags": [
           "recording"
         ]
@@ -3100,6 +3335,63 @@
           }
         },
         "summary": "Confirm Paper",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/paper-dealings": {
+      "post": {
+        "operationId": "paper_deal_api_admin_recording_ceremony__ceremony_id__paper_dealings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaperDealingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Paper Deal Api Admin Recording Ceremony  Ceremony Id  Paper Dealings Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Paper Deal",
         "tags": [
           "recording"
         ]
@@ -3525,6 +3817,84 @@
           }
         },
         "summary": "Reenrol Key",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/leavers": {
+      "get": {
+        "operationId": "candidates_api_admin_recording_leavers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Candidates Api Admin Recording Leavers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Candidates",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/leavers/{sub}": {
+      "post": {
+        "operationId": "mark_api_admin_recording_leavers__sub__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sub",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,254}$",
+              "title": "Sub",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mark Api Admin Recording Leavers  Sub  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark",
         "tags": [
           "recording"
         ]

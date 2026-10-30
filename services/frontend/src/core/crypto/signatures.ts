@@ -81,6 +81,28 @@ export async function sha256(data: Bytes): Promise<Bytes> {
   return fromBuffer(await crypto.subtle.digest('SHA-256', data));
 }
 
+export interface DigestedHolder {
+  index: number;
+  holderRef: string;
+  fingerprint: Bytes;
+}
+
+/** The new holder set a resharing dealer consents to, in index order (spec §9.7). */
+export function participantsDigest(holders: readonly DigestedHolder[]): Promise<Bytes> {
+  const ordered = [...holders].sort((left, right) => left.index - right.index);
+  return sha256(enc(...ordered.flatMap((holder) => [holder.index, holder.holderRef, holder.fingerprint])));
+}
+
+export interface ReshareDealingSignatureFields extends DealingSignatureFields {
+  previousTranscript: Bytes;
+  participantsDigest: Bytes;
+}
+
+/** A first-ceremony dealing's fields, bound to the generation it leaves and the one it makes. */
+export function reshareDealingFields(dealing: Readonly<ReshareDealingSignatureFields>): Field[] {
+  return [...dealingFields(dealing), dealing.previousTranscript, dealing.participantsDigest];
+}
+
 export interface ScopePair {
   conversationId: string;
   keyId: string;
