@@ -284,9 +284,7 @@ async def test_the_first_activation_issues_a_token_and_keeps_only_its_digest(
 ) -> None:
     key = await _pending(sessions)
 
-    activated = await SessionLifecycleService(sessions).activate(
-        key, "en", True, None, lambda: "c"
-    )
+    activated = await SessionLifecycleService(sessions).activate(key, "en", True, None, lambda: "c")
 
     assert activated.guest_token
     stored = await sessions.store.load(key)
@@ -410,3 +408,19 @@ async def test_a_claim_whose_save_fails_leaves_the_session_unclaimed(
 
     session = await sessions.get_session(key)
     assert session is not None and session.guest_token_hash is None
+
+
+@pytest.mark.parametrize("language", ["ti", "ku", "kmr", "ti-ER", "ku-TR", "kmr-TR"])
+@pytest.mark.parametrize("active", [False, True])
+async def test_removed_languages_cannot_activate_or_switch_a_session(sessions, language, active):
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+    token = None
+    if active:
+        token = (await lifecycle.activate(key, "en", True, None, lambda: "c")).guest_token
+    before = (await sessions.get_session(key)).to_dict(include_messages=True)
+
+    with pytest.raises(ValueError, match="Unsupported language"):
+        await lifecycle.activate(key, language, True, None, lambda: "c", guest_token=token)
+
+    assert (await sessions.get_session(key)).to_dict(include_messages=True) == before

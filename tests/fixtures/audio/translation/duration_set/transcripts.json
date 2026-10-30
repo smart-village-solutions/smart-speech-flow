@@ -154,27 +154,6 @@
       "text": "قرارداد کار من در سوم فوریه دو هزار و بیست و شش آغاز شد. برای تمدید اجازه اقامتم، ترجمه رسمی گواهی تولد و وقت ملاقات در بیست و هفتم مارس ساعت دو و نیم بعدازظهر لازم دارم."
     },
     {
-      "file": "ku_short.wav",
-      "language": "ku",
-      "duration_class": "short",
-      "duration_seconds": 4.464,
-      "text": "Silav, ez dixwazim navnîşana nû tomar bikim."
-    },
-    {
-      "file": "ku_medium.wav",
-      "language": "ku",
-      "duration_class": "medium",
-      "duration_seconds": 10.288,
-      "text": "Ji bo tomarkirinê, pasaport, belgeya xwediyê malê û belgeya dayikbûnê pêdivî me; xerca duwanzdeh euro ye."
-    },
-    {
-      "file": "ku_long.wav",
-      "language": "ku",
-      "duration_class": "long",
-      "duration_seconds": 16.0,
-      "text": "Peymana karê min di sêyemîn sibatê du hezar bîst û şeş de dest pê kir. Ji bo dirêjkirinê, wergera belgeya dayikbûnê û randevûya bîst û heftemîn adarê pêdivî me."
-    },
-    {
       "file": "ru_short.wav",
       "language": "ru",
       "duration_class": "short",
@@ -194,27 +173,6 @@
       "duration_class": "long",
       "duration_seconds": 16.608,
       "text": "Мой трудовой договор начался третьего февраля две тысячи двадцать шестого года. Для продления вида на жительство мне нужны перевод свидетельства о рождении и запись на двадцать седьмое марта в четырнадцать тридцать."
-    },
-    {
-      "file": "ti_short.wav",
-      "language": "ti",
-      "duration_class": "short",
-      "duration_seconds": 3.072,
-      "text": "ሰላም፣ ሎሚ ሓድሽ ኣድራሻይ ክምዝግብ እደሊ ኣለኹ።"
-    },
-    {
-      "file": "ti_medium.wav",
-      "language": "ti",
-      "duration_class": "medium",
-      "duration_seconds": 10.304,
-      "text": "ንምዝገባ ፓስፖርተይ፣ ማረጋገጺ ወናኒ ገዛን ምስክር ልደትን የድልዩኒ፤ እቲ ኣስተዳደራዊ ክፍሊት ዓሰርተ ክልተ ዩሮ እዩ ንሎሚ ድሕሪ ቐትሪ።"
-    },
-    {
-      "file": "ti_long.wav",
-      "language": "ti",
-      "duration_class": "long",
-      "duration_seconds": 13.296,
-      "text": "ውዕለይ ስራሕ ብሳልሳይ ለካቲት ክልተ ሽሕ ዕስራን ሽዱሽተን ጀመረ። ፍቓድ መንበሪየይ ንምንዋሕ ዝተረጋገጸ ትርጉም ምስክር ልደትን ኣብ መበል ዕስራን ሸውዓተን መጋቢት ሰዓት ክልተን ፈረቓን ቆጸራን የድልየኒ።"
     }
   ]
 }

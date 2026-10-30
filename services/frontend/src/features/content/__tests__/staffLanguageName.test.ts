@@ -30,7 +30,7 @@ describe('staffLanguageName', () => {
     expect(staffLanguageName('ar', sources)).toBe('Arabisch');
   });
 
-  it.each(['ku', 'ti', 'am'])(
+  it.each(['am'])(
     'falls back to the bundled English name when the engine cannot name %s',
     (code) => {
       expect(staffLanguageName(code, { ...sources, english: 'Bundled', displayName: echo })).toBe(
@@ -41,12 +41,12 @@ describe('staffLanguageName', () => {
 
   it('reads an echo in another case as no name', () => {
     expect(
-      staffLanguageName('ku', {
+      staffLanguageName('am', {
         ...sources,
-        english: 'Kurdish',
+        english: 'Amharic',
         displayName: (code) => code.toUpperCase(),
       })
-    ).toBe('Kurdish');
+    ).toBe('Amharic');
   });
 
   it('says the language is unknown when nothing names the code', () => {

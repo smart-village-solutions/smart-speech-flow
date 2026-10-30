@@ -12,13 +12,11 @@ import fr from './locales/fr.json';
 import hi from './locales/hi.json';
 import hu from './locales/hu.json';
 import it from './locales/it.json';
-import ku from './locales/ku.json';
 import pl from './locales/pl.json';
 import pt from './locales/pt.json';
 import ro from './locales/ro.json';
 import ru from './locales/ru.json';
 import sq from './locales/sq.json';
-import ti from './locales/ti.json';
 import tr from './locales/tr.json';
 import uk from './locales/uk.json';
 import zh from './locales/zh.json';
@@ -43,13 +41,11 @@ export const CATALOGUES = {
   hi,
   hu,
   it,
-  ku,
   pl,
   pt,
   ro,
   ru,
   sq,
-  ti,
   tr,
   uk,
   zh,
@@ -63,8 +59,7 @@ export type TextDirection = 'ltr' | 'rtl';
 
 /**
  * Of the gateway's languages only Arabic and Persian are written right to
- * left. Kurdish is served as Kurmancî, which uses the Latin alphabet, and
- * Amharic and Tigrinya use Ge'ez, which runs left to right.
+ * left. Amharic uses Ge'ez, which runs left to right.
  */
 const RTL_LOCALES = new Set(['ar', 'fa']);
 

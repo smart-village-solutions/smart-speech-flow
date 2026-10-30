@@ -110,8 +110,6 @@ SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
     "ru": {"name": "Russian", "native": "Русский"},
     "uk": {"name": "Ukrainian", "native": "Українська"},
     "am": {"name": "Amharic", "native": "አማርኛ"},
-    "ti": {"name": "Tigrinya", "native": "ትግርኛ"},
-    "ku": {"name": "Kurdish", "native": "Kurmancî"},
     "fa": {"name": "Persian", "native": "فارسی"},
     "it": {"name": "Italian", "native": "Italiano"},
     "ro": {"name": "Romanian", "native": "Română"},

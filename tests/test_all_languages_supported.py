@@ -1,17 +1,19 @@
 """
-Test zur Sicherstellung, dass alle 22 unterstützten Sprachen funktionieren
+Verify the supported product languages across services.
 """
 
-import pytest
 import os
+
+import pytest
+
 from services.api_gateway.message_models import SUPPORTED_LANGUAGES
 
 # Liste aller unterstützten Sprachen
 ALL_SUPPORTED_LANGUAGES = list(SUPPORTED_LANGUAGES.keys())
 
-# Erwartete 22 Sprachen gemäß Anforderungen
+# Expected product languages.
 REQUIRED_LANGUAGES = [
-    "de", "en", "ar", "tr", "ku", "ti", "am", "fa", "ru", "uk",
+    "de", "en", "ar", "tr", "am", "fa", "ru", "uk",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 ]  # fmt: skip
 
@@ -21,7 +23,7 @@ skip_service_msg = "Service tests disabled. Set TEST_SERVICES=true to enable."
 
 
 def test_all_required_languages_are_supported():
-    """Stelle sicher, dass alle 22 geforderten Sprachen unterstützt werden"""
+    """All required product languages are supported."""
     for lang in REQUIRED_LANGUAGES:
         assert lang in ALL_SUPPORTED_LANGUAGES, (
             f"Sprache '{lang}' fehlt in SUPPORTED_LANGUAGES. "
@@ -29,10 +31,10 @@ def test_all_required_languages_are_supported():
         )
 
 
-def test_exactly_22_languages_supported():
-    """Stelle sicher, dass genau 22 Sprachen unterstützt werden"""
-    assert len(ALL_SUPPORTED_LANGUAGES) == 22, (
-        f"Erwartet: 22 Sprachen, Gefunden: {len(ALL_SUPPORTED_LANGUAGES)} - "
+def test_exactly_20_languages_supported():
+    """Exactly 20 product languages are supported."""
+    assert len(ALL_SUPPORTED_LANGUAGES) == 20, (
+        f"Expected 20 languages, found: {len(ALL_SUPPORTED_LANGUAGES)} - "
         f"{ALL_SUPPORTED_LANGUAGES}"
     )
 
@@ -111,28 +113,23 @@ def test_language_consistency_across_services():
         if asr_response.status_code == 200:
             asr_langs = set(asr_response.json().get("languages", []))
             missing_in_asr = api_langs - asr_langs
-            assert len(missing_in_asr) == 0, (
-                f"ASR fehlen Sprachen: {missing_in_asr}"
-            )
+            assert len(missing_in_asr) == 0, f"ASR fehlen Sprachen: {missing_in_asr}"
 
         # TTS muss alle unterstützen
         tts_response = httpx.get("http://localhost:8003/supported-languages", timeout=2.0)
         if tts_response.status_code == 200:
             tts_langs = set(tts_response.json().get("languages", []))
             missing_in_tts = api_langs - tts_langs
-            assert len(missing_in_tts) == 0, (
-                f"TTS fehlen Sprachen: {missing_in_tts}"
-            )
+            assert len(missing_in_tts) == 0, f"TTS fehlen Sprachen: {missing_in_tts}"
     except (httpx.ConnectError, httpx.TimeoutException):
         pytest.skip("Services nicht erreichbar")
 
 
 @pytest.mark.integration
 def test_api_languages_endpoint_returns_all():
-    """
-    Stelle sicher, dass /api/languages/supported alle 10 Sprachen zurückgibt
-    """
+    """The language endpoint returns the supported product languages."""
     from fastapi.testclient import TestClient
+
     from services.api_gateway.app import app
 
     client = TestClient(app)
@@ -149,3 +146,18 @@ def test_api_languages_endpoint_returns_all():
         f"Erwartet: {REQUIRED_LANGUAGES}, "
         f"Bekommen: {list(returned_languages)}"
     )
+
+
+@pytest.mark.parametrize("language", ["ti", "ku"])
+@pytest.mark.parametrize("side", ["source", "target"])
+def test_removed_languages_are_rejected_for_new_messages(language, side):
+    from fastapi import HTTPException
+
+    from services.api_gateway.message_requests import _validate_supported_languages
+
+    source, target = (language, "de") if side == "source" else ("de", language)
+    with pytest.raises(HTTPException) as raised:
+        _validate_supported_languages(source, target)
+    assert raised.value.status_code == 400
+    assert raised.value.detail["error_code"] == "UNSUPPORTED_LANGUAGE"
+    assert language not in raised.value.detail["details"]["supported_languages"]

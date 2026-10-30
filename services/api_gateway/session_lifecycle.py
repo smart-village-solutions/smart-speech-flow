@@ -37,6 +37,10 @@ def _logged_language(code: Optional[str]) -> str:
     return _LOGGED_LANGUAGES.get(code or "", "unsupported")
 
 
+class UnsupportedLanguageError(ValueError):
+    """A removed conversation language cannot activate a session."""
+
+
 class SessionNotFoundError(LookupError):
     """No session under the key, or it disappeared while the request ran."""
 
@@ -196,6 +200,9 @@ class SessionLifecycleService:
         # check made before it, and the loser must not reach _reactivate.
         if not guest_token_admits(session.guest_token_hash, guest_token):
             raise GuestConflictError
+
+        if customer_language.split("-", 1)[0].lower() in {"ti", "ku", "kmr"}:
+            raise UnsupportedLanguageError("Unsupported language")
 
         if session.status == SessionStatus.ACTIVE:
             return await self._reactivate(key, session, customer_language)

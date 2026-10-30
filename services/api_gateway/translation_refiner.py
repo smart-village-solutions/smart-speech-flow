@@ -17,7 +17,7 @@ from .translation_facts import refinement_changes_facts
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SKIP_TARGET_LANGUAGES = "am,ti,ku,fa,pl,bg,el,sq,hi"
+DEFAULT_SKIP_TARGET_LANGUAGES = "am,fa,pl,bg,el,sq,hi"
 
 
 def _normalized_language(code: str) -> str:

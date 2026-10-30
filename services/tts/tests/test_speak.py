@@ -11,7 +11,7 @@ import pytest
 from services.tts.speech_text import UnspeakableTextError
 
 LANGS = [
-    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 ]  # fmt: skip
 
@@ -52,10 +52,11 @@ def test_language_codes_are_normalized(client, speakers):
     assert speakers["en"].calls
 
 
-def test_unknown_language_is_rejected(client):
-    response = client.post("/synthesize", json={"text": "Hallo", "lang": "xx"})
+@pytest.mark.parametrize("language", ["xx", "ti", "ku"])
+def test_unknown_language_is_rejected(client, language):
+    response = client.post("/synthesize", json={"text": "Hallo", "lang": language})
     assert response.status_code == 400
-    assert "xx" in response.json()["error"]
+    assert language in response.json()["error"]
 
 
 @pytest.mark.parametrize("text", ["  ", "", 42])

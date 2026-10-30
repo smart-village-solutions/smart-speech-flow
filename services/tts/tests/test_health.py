@@ -1,7 +1,7 @@
 import pytest
 
 LANGS = {
-    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 }  # fmt: skip
 

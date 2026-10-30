@@ -219,3 +219,33 @@ def test_malformed_customer_json_is_refused_by_the_tenant_selector_check(
     assert response.status_code == 400
     assert response.json() == {"detail": "The JSON request body must be valid"}
     assert speech_services.calls == []
+
+
+@pytest.mark.parametrize("language", ["ti", "ku"])
+@pytest.mark.parametrize("role", ["admin", "customer"])
+def test_existing_removed_language_session_keeps_history_but_rejects_processing(
+    client, conversations, gateway_dependencies, speech_services, language, role
+):
+    from services.api_gateway.tenant_session import TenantSessionKey
+    from tests.gateway_contract.contract_support import TENANT_A
+
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    assert conversations.send_text(session_id).status_code == 200
+    sessions = gateway_dependencies.session_manager
+    key = TenantSessionKey(TENANT_A, session_id)
+    client.portal.call(sessions.activate_session, key, language)
+    before = client.portal.call(sessions.get_session, key).to_dict(include_messages=True)
+    speech_services.calls.clear()
+
+    response = conversations.send_text(
+        session_id,
+        role=role,
+        source="de" if role == "admin" else language,
+        target=language if role == "admin" else "de",
+    )
+
+    assert response.status_code == 400
+    assert _error(response)["error_code"] == "UNSUPPORTED_LANGUAGE"
+    assert speech_services.calls == []
+    assert client.portal.call(sessions.get_session, key).to_dict(include_messages=True) == before

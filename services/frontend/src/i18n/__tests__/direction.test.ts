@@ -7,8 +7,7 @@ describe('directionFor', () => {
     expect(directionFor('fa')).toBe('rtl');
   });
 
-  // Kurmancî is written in the Latin alphabet, unlike Sorani Kurdish. Amharic
-  // and Tigrinya use Ge'ez, which also runs left to right.
+  // Amharic uses Ge'ez, which also runs left to right.
   it('reports left-to-right for every other supported locale', () => {
     for (const locale of SUPPORTED_UI_LOCALES) {
       if (locale === 'ar' || locale === 'fa') {

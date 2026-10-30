@@ -487,6 +487,7 @@ dtype = torch.float16 if (device.type == "cuda" and PREFER_FP16) else torch.floa
 
 model_loaded = False
 load_error = None
+REMOVED_LANGUAGES = frozenset({"ti", "ku"})
 supported_langs: List[str] = []
 
 if M2M100ForConditionalGeneration and M2M100Tokenizer:
@@ -497,7 +498,7 @@ if M2M100ForConditionalGeneration and M2M100Tokenizer:
         m2m_model.to(device)
         m2m_model.eval()
         model_loaded = True
-        supported_langs = sorted(m2m_tokenizer.lang_code_to_id.keys())
+        supported_langs = sorted(set(m2m_tokenizer.lang_code_to_id) - REMOVED_LANGUAGES)
         print(
             f"Loaded. Supported langs ({len(supported_langs)}): {', '.join(supported_langs[:10])} ..."
         )
@@ -518,7 +519,7 @@ _SENT_SPLIT = re.compile(r"(?<=[\.!?。？！])\s+")
 def _validate_lang(code: str) -> None:
     if not m2m_tokenizer:
         raise HTTPException(status_code=503, detail="Tokenizer unavailable")
-    if code not in m2m_tokenizer.lang_code_to_id:
+    if code in REMOVED_LANGUAGES or code not in m2m_tokenizer.lang_code_to_id:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported language code '{code}'. Use one of: {', '.join(supported_langs)}",

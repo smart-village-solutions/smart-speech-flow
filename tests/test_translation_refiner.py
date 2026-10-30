@@ -125,12 +125,10 @@ def test_prompt_uses_source_as_meaning_anchor_for_a_language_outside_the_skip_li
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
-        skip_target_languages=["ti", "ku"],
+        skip_target_languages=["am", "fa"],
     )
 
-    prompt = refiner._build_prompt(
-        "Hello", "de", "en", context={"original_text": "Hallo"}
-    )
+    prompt = refiner._build_prompt("Hello", "de", "en", context={"original_text": "Hallo"})
 
     assert "Original user input: Hallo" in prompt
     assert "Use the original input only to verify" in prompt
@@ -168,15 +166,15 @@ def test_prompt_omits_source_text_for_a_language_inside_the_skip_list():
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
-        skip_target_languages=["ti", "ku"],
+        skip_target_languages=["am", "fa"],
     )
 
     prompt = refiner._build_prompt(
-        "Hello", "ti", "en", context={"original_text": "\u12a8\u1218\u12ed"}
+        "Hello", "am", "en", context={"original_text": "\u1230\u120b\u121d"}
     )
 
     assert "Original user input:" not in prompt
-    assert "\u12a8\u1218\u12ed" not in prompt
+    assert "\u1230\u120b\u121d" not in prompt
 
 
 def test_skips_refinement_for_a_configured_target_language(monkeypatch):
@@ -189,12 +187,12 @@ def test_skips_refinement_for_a_configured_target_language(monkeypatch):
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
-        skip_target_languages=["am", "ti", "ku", "fa"],
+        skip_target_languages=["am", "fa"],
     )
 
-    outcome = refiner.refine("\u12a8\u1218\u12ed", "de", "ti")
+    outcome = refiner.refine("\u1230\u120b\u121d", "de", "am")
 
-    assert outcome.text == "\u12a8\u1218\u12ed"
+    assert outcome.text == "\u1230\u120b\u121d"
     assert outcome.changed is False
     assert outcome.latency_ms == 0.0
     post.assert_not_called()
@@ -208,11 +206,9 @@ def test_skips_a_configured_target_language(monkeypatch):
         timeout_seconds=4.0,
         temperature=0.7,
         max_retries=1,
-        skip_target_languages=["am", "ti"],
+        skip_target_languages=["am", "fa"],
     )
-    monkeypatch.setattr(
-        refiner, "_request", lambda prompt: pytest.fail("no request may be sent")
-    )
+    monkeypatch.setattr(refiner, "_request", lambda prompt: pytest.fail("no request may be sent"))
 
     outcome = refiner._perform_refinement("selam", "de", "am")
 
@@ -422,7 +418,7 @@ def test_shadow_comparison_candidate_skips_a_configured_target_language(monkeypa
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
-        skip_target_languages=["ti"],
+        skip_target_languages=["am"],
     )
     refiner.pending = 1
     post = Mock()
@@ -430,7 +426,7 @@ def test_shadow_comparison_candidate_skips_a_configured_target_language(monkeypa
     emitted = []
     monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: emitted.append(kwargs))
 
-    refiner._run_candidate("ከመይ", "de", "ti")
+    refiner._run_candidate("ሰላም", "de", "am")
 
     post.assert_not_called()
     assert emitted[0]["outcome"] is mod.RefinementOutcomeCode.SKIPPED_LANGUAGE
@@ -598,9 +594,7 @@ def test_vllm_refiner_accepts_a_normal_stop_response():
 
 def test_extract_text_reads_the_ollama_response_field():
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
-    refiner = mod.OllamaTranslationRefiner(
-        "http://ollama:11434", "phi4-mini", 4.0, 0.7, 1, False
-    )
+    refiner = mod.OllamaTranslationRefiner("http://ollama:11434", "phi4-mini", 4.0, 0.7, 1, False)
 
     assert refiner._extract_text({"response": "  Guten Tag.  "}) == "Guten Tag."
     assert refiner._extract_text({}) == ""

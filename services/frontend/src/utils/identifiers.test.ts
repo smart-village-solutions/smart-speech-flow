@@ -15,7 +15,7 @@ describe('path identifier validation', () => {
     expect(() => requirePathIdentifier('../admin', 'session')).toThrow('Invalid session identifier');
   });
 
-  it.each(['en', 'ku', 'fil'])('accepts the language code %s', (code) => {
+  it.each(['en', 'am', 'fil'])('accepts the language code %s', (code) => {
     expect(validatePathIdentifier(code, 'language')).toBe(true);
   });
 

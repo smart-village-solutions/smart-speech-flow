@@ -126,7 +126,7 @@ services:
     - LLM_REFINEMENT_MAX_TOKENS=${LLM_REFINEMENT_MAX_TOKENS:-256}
     # No colon before the dash: an explicitly empty value must survive so
     # "refine everything" is reachable through compose (see I4).
-    - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa,pl,bg,el,sq,hi}
+    - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,fa,pl,bg,el,sq,hi}
     - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
     - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}
     - MESSAGE_RATE_LIMIT=${MESSAGE_RATE_LIMIT:-50}
