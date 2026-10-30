@@ -52,7 +52,8 @@ GATEWAY_PUBLIC = ref.public_point(7)
 GATEWAY_ID = gateway_key_id(GATEWAY_PUBLIC)
 RECOVERY = Recipient("recovery", "rk-1", ref.public_point(31), b"\x31" * 32)
 _ARCHIVE_TABLES = (
-    "version_locks, site_clearances, retention_decisions, retention_worker_status,"
+    "recovery_unrecoverable_keys, recovery_rejections, recovery_partials, recovery_decisions,"
+    " recovery_request_keys, recovery_requests, version_locks, site_clearances, retention_decisions, retention_worker_status,"
     " chain_stamps, stored_objects, chain_entries, key_wraps, conversation_keys,"
     " recording_windows, conversations"
 )
@@ -223,7 +224,9 @@ async def test_a_second_entry_with_the_same_seq_is_refused(archive):
         "DELETE FROM stored_objects",
         "UPDATE conversations SET retention_until = now()",
         "UPDATE conversations SET employee_sub = 'mallory'",
-        "DELETE FROM key_wraps",
+        # Deleting a user wrap is re-enrolment's (#617b); a recovery wrap never goes:
+        # test_recording_key_recovery_database covers that policy.
+        "UPDATE key_wraps SET blob = blob",
         "UPDATE chain_stamps SET head_hash = head_hash",
         "DELETE FROM chain_stamps",
     ],

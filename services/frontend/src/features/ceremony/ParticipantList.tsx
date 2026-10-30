@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useServices } from '@/app/providers/services';
+import { toHex } from '@/core/crypto/bytes';
 import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
 import { displayFingerprint } from '@/core/crypto/transcript';
 import type { Ceremony, CeremonyParticipant } from '@/domain/recovery/recovery.types';
@@ -15,6 +16,8 @@ function statusKey(ceremony: Readonly<Ceremony>, participant: Readonly<CeremonyP
     return ceremony.paperConfirmed ? 'admin.ceremony.statusPrinted' : 'admin.ceremony.statusWaiting';
   }
   if (ceremony.confirmed.includes(participant.holderIndex)) return 'admin.ceremony.statusSigned';
+  // A resharing's dealers keep their old indices: a new holder's index says nothing about dealing.
+  if (ceremony.kind === 'resharing') return 'admin.ceremony.statusWaiting';
   const dealt = ceremony.dealings.some((dealing) => dealing.dealerIndex === participant.holderIndex);
   return dealt ? 'admin.ceremony.statusDealt' : 'admin.ceremony.statusWaiting';
 }
@@ -27,7 +30,14 @@ export function ParticipantList({ ceremony, facts }: Readonly<ParticipantListPro
   const { t } = useTranslation();
   const { ceremonyCrypto } = useServices();
   const fingerprints = useQuery({
-    queryKey: ['recording', 'ceremony', ceremony.ceremonyId, 'fingerprints', ceremony.participants.length],
+    // Keyed by the listed keys themselves, so a swapped key is recomputed, never shown from cache.
+    queryKey: [
+      'recording',
+      'ceremony',
+      ceremony.ceremonyId,
+      'fingerprints',
+      ceremony.participants.map((p) => `${p.holderIndex}:${toHex(p.encPub)}:${toHex(p.sigPub ?? new Uint8Array(0))}`),
+    ],
     queryFn: () => ceremonyCrypto.fingerprints(facts),
   });
 

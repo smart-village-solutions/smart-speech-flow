@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { fromBase64Url } from '@/core/crypto/bytes';
-import type { EnrolledKey, OwnKey } from './recording.types';
+import type { EnrolledKey, OwnKey, Reenrolled, ReenrolmentImpact } from './recording.types';
 
 const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/).transform(fromBase64Url);
 const point = base64Url.refine((value) => value.length === 65, 'expected a 65-byte point');
@@ -14,6 +14,7 @@ const ownKey = z.object({
   sig_pub: point,
   blob: z.string().min(1),
   created_at: z.string(),
+  key_version: z.number().int().min(1),
   ...fingerprint,
 });
 
@@ -27,6 +28,7 @@ export function toOwnKey(body: unknown): OwnKey {
     sigPub: parsed.sig_pub,
     blob: parsed.blob,
     createdAt: parsed.created_at,
+    keyVersion: parsed.key_version,
     fingerprint: parsed.fingerprint,
     fingerprintDisplay: parsed.fingerprint_display,
   };
@@ -35,4 +37,23 @@ export function toOwnKey(body: unknown): OwnKey {
 export function toEnrolledKey(body: unknown): EnrolledKey {
   const parsed = enrolledKey.parse(body);
   return { fingerprint: parsed.fingerprint, fingerprintDisplay: parsed.fingerprint_display };
+}
+
+export function toReenrolled(body: unknown): Reenrolled {
+  const parsed = enrolledKey
+    .extend({ status: z.enum(['active', 'pending_confirmation']) })
+    .parse(body);
+  return {
+    status: parsed.status,
+    fingerprint: parsed.fingerprint,
+    fingerprintDisplay: parsed.fingerprint_display,
+  };
+}
+
+export function toReenrolmentImpact(body: unknown): ReenrolmentImpact {
+  const count = z.number().int().min(0).nullable();
+  const parsed = z
+    .object({ custodian: z.boolean(), k: count, usable_after: count })
+    .parse(body);
+  return { custodian: parsed.custodian, k: parsed.k, usableAfter: parsed.usable_after };
 }

@@ -33,6 +33,9 @@ def _state() -> SimpleNamespace:
         recording_secrets=None,
         recording_ceremony=None,
         recording_retention=None,
+        recording_recovery_requests=None,
+        recording_reenrolment=None,
+        recording_resharing=None,
         studio_token_provider=None,
         studio_runtime_flow=None,
         recording_state_store=MemoryRecordingStateStore(),
@@ -163,6 +166,10 @@ async def test_without_an_archive_store_recording_is_wired_but_unavailable(
 
     assert state.recording_archive is None and state.recording_stamper is None
     assert state.recording_archive_access is None
+    # Exceptional access needs the keys only, not the store (#617a).
+    assert state.recording_recovery_requests is not None
+    assert state.recording_reenrolment is not None
+    assert state.recording_resharing is not None
     with pytest.raises(RecordingUnavailableError) as caught:
         await state.recording_sessions.check_available("tenant-test")
     assert caught.value.code == "ARCHIVE_UNAVAILABLE"
@@ -198,6 +205,9 @@ async def test_an_archive_store_wires_spools_that_stop_with_recording(
     await wiring.close_recording(state)
     assert spools._tasks == {} and state.recording_archive is None
     assert state.recording_archive_access is None
+    assert state.recording_recovery_requests is None
+    assert state.recording_reenrolment is None
+    assert state.recording_resharing is None
 
 
 async def test_the_archive_counts_a_session_live_until_it_ends(

@@ -257,6 +257,86 @@
       "signer": "BCOeribm-0uecM-w4cgbu7wPGXXhCAzCQe6gy3PvZ0CP_lF3zRG83xh0vbuvUfXDM6shtt432ZgUn9iUwL6BNS0",
       "digest": "Fx2e6dCoRjUhgyAsntsE46DMGN-0A31AuvTEpW9TouQ",
       "signature": "I3PKrjW1tKihOpBciYki_F3kjk9pitHQAURu6Na7OsltR42rboIZeNp8N_ad3GKiJO5QhxlUWPW-ioquMxRVww"
+    },
+    {
+      "tag": "ssf-rec/request-sig/v1",
+      "fields": [
+        {
+          "s": "tenant-kassel"
+        },
+        {
+          "s": "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+        },
+        {
+          "s": "access"
+        },
+        {
+          "s": "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+        },
+        {
+          "s": "sam"
+        },
+        {
+          "b": "PnJLXchAdrewikMMTR6RU608kuwOD56c6xQ2Xnt4SRU"
+        },
+        {
+          "i": 2
+        },
+        {
+          "s": "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+        },
+        {
+          "s": "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+        },
+        {
+          "s": "6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f"
+        },
+        {
+          "s": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+        }
+      ],
+      "signer_scalar": "81e576331be24c84a4636d173dfbe236f61cab4c7d43d1a110188b770637f6d2",
+      "signer_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQggeV2MxviTISkY20XPfviNvYcq0x9Q9GhEBiLdwY39tKhRANCAATgJATs2qpb2hJZxAAT4F90TQ1XuyegPgVuhi5oAyhlRC51RoLxa4dmbCC5jlKtNvf-t1eJUg0L7oD2Ry5QJQdp",
+      "signer": "BOAkBOzaqlvaElnEABPgX3RNDVe7J6A-BW6GLmgDKGVELnVGgvFrh2ZsILmOUq029_63V4lSDQvugPZHLlAlB2k",
+      "digest": "Q0Z6Gb_xoNiUPNzoM9z3kz7FjVULpdctESvVbykgwWw",
+      "signature": "3k32iEzzoILYACIlw0lSfVt-6fiHr0tojK3yvb3-Sfq7FuHLFoqqX2aSCQRCzbRja-PTJQIV-mL7HzEvFRUa9A"
+    },
+    {
+      "tag": "ssf-rec/approval-sig/v1",
+      "fields": [
+        {
+          "s": "tenant-kassel"
+        },
+        {
+          "s": "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+        },
+        {
+          "i": 3
+        },
+        {
+          "i": 1
+        },
+        {
+          "i": 2
+        },
+        {
+          "s": "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
+        },
+        {
+          "b": "K1RCeZ_Mw68ufnkAF2lzc5E7evyskz1y-1h23plPZZo"
+        },
+        {
+          "s": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+        },
+        {
+          "b": "r7-dDzVgsP13legcQqCnnua2_GfgZPd4Jq7mQsrSjZE"
+        }
+      ],
+      "signer_scalar": "400757d9e283676630a95aa6765303f2e8ff2aa6267677cda25745601e6fda13",
+      "signer_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgQAdX2eKDZ2YwqVqmdlMD8uj_KqYmdnfNoldFYB5v2hOhRANCAASOuEkI5X1-38rntsWI6lC7bglAaNKafD_vfWy4mb7ZVv6Qf5GQDJKlMSynf1W3RXgIIE5I_JG-l8vJ4xnPotaj",
+      "signer": "BI64SQjlfX7fyue2xYjqULtuCUBo0pp8P-99bLiZvtlW_pB_kZAMkqUxLKd_VbdFeAggTkj8kb6Xy8njGc-i1qM",
+      "digest": "ajpgND6fhKT_7TVLVCLmxIHRPz6x8yFF_z8spDAhFFI",
+      "signature": "TBfPTkg9oL81xDOcsEpiXXYXV-YEFgiIkK7rxsG0dTYRKSD2D27VAWkM6aSXp0aYJikwfN7Ji6l0YBwhrQOMvw"
     }
   ],
   "ceremony": {
@@ -384,6 +464,125 @@
     ],
     "shared_x": "PUEpxk7DdTe7MnNe9qtFkGQIf-30ikezgaT5jHPHbqc",
     "ck": "UBtalEBOy7o1OmuF_g1EjlfohPrSc1Yg3s9vjPcMwjc"
+  },
+  "resharing": {
+    "ceremony_id": "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918",
+    "k": 2,
+    "dealers": [
+      1,
+      3
+    ],
+    "previous_transcript_hash": "hHjRvaAbfE0XXbEqqTy7iOsfDR9221tjkb7jBSUObMc",
+    "participants": [
+      {
+        "holder_ref": "new-1",
+        "index": 1,
+        "fingerprint": "81mBAq-CyPmIhLO-_UBgkYWmeGSLSlT5kb2Vf5K2S-w"
+      },
+      {
+        "holder_ref": "new-2",
+        "index": 2,
+        "fingerprint": "tP83x596qSrKxYHF513F6125hog9JvDbAu_ROtPjO40"
+      },
+      {
+        "holder_ref": "new-3",
+        "index": 3,
+        "fingerprint": "aDtPT0SeH9Qlzvi2IUNkck9KjANVF5t8_wwjkuYZhuY"
+      }
+    ],
+    "lagrange": {
+      "1": "7fffffff800000007fffffffffffffffde737d56d38bcf4279dce5617e3192aa",
+      "3": "7fffffff800000007fffffffffffffffde737d56d38bcf4279dce5617e3192a8"
+    },
+    "contributions": {
+      "1": "BGuW4d20_wbEqYhSiT42jIf79yUvMl8WnSVb7LgLhdLLsPZ9TJnetNFUpFjpA5d3TskczCPf3lq1CeBA-m5YpUs",
+      "3": "BEExyIZ9b6hEwHZcSu4nAOr5PUmZSwrHSoefZA2LdrrBL7pY7O5bvWGmkGunnDQYVYt1V-8nXfa-o7P7zNpN3wo"
+    },
+    "polynomials": {
+      "1": [
+        "87237f23783caade3b8d7f7f1a9b8be5534d2b0b8817711586f819541540a2db",
+        "7e26b00b529c5e8147e2fb447384c4851b1581125e3d018e52d4c70409d0cdc6"
+      ],
+      "3": [
+        "97ccd37a91c7d558e210ead49be673e13a5478837202df5bb81a2bc9a22cfcae",
+        "521085c131b78d4cb8e6dd0beabe6a05bc95842c709b38e9ba31e6102d0fc402"
+      ]
+    },
+    "pok_nonces": {
+      "1": "58d2ef688bcaf23c3bde1d17875344c163243179b8b1106cdb9c4e242d2e690f",
+      "3": "3ca38421e19cce6d6d5279ff3b0f3cdfd094108125ec5ab5b2d700b186f6f819"
+    },
+    "dealings": [
+      {
+        "dealer_index": 1,
+        "commitments": [
+          "BGuW4d20_wbEqYhSiT42jIf79yUvMl8WnSVb7LgLhdLLsPZ9TJnetNFUpFjpA5d3TskczCPf3lq1CeBA-m5YpUs",
+          "BJk2FBdGkw-l3qGa1HnyFVMETvv0kHGyUbspo7OQQljCCRF0pcm6lvZ9DPW9xFu3xcP3pXvmdEWiYQneKRPpiSI"
+        ],
+        "c": "682a1ac1ca0c15748d4690f4bb9b2d60efabf4bd67237031e953a0b5bb25505a",
+        "s": "ca6b73a64a20f07499ea1c7e586d3c3b06ca9bb675a52be59593bf608f7a1229"
+      },
+      {
+        "dealer_index": 3,
+        "commitments": [
+          "BEExyIZ9b6hEwHZcSu4nAOr5PUmZSwrHSoefZA2LdrrBL7pY7O5bvWGmkGunnDQYVYt1V-8nXfa-o7P7zNpN3wo",
+          "BG6-DW12Yu95PTvNXngyNJPM4Xk21N4X_WInx69G484CMQFhyNpP5CyUEkB7e7e4kU8ExKajYJhYowcQhPgvaIk"
+        ],
+        "c": "4682b1612a3c418746d9864e8dbc009ef2ca72d4e7d69315d5121471f386a677",
+        "s": "6952ca5851b50f81f87414737d319edb376b568f078295059af44461b07fc8ab"
+      }
+    ],
+    "shares": {
+      "1": "ef27886b8e586c041e6842a414c52e51a865ae2021daec64585f276ef1eb0c00",
+      "2": "bf5ebe3912ac57d11f321af473085cdcc329b8b1499b885771ac09c02c687877",
+      "3": "8f95f4069700439e1ffbf344d14b8b67ddedc342715c244a8af8ec1166e5e4ee"
+    },
+    "holder_shares": [
+      "BBrHWR7I14OS3N-o0f7PYtv0tv10wPk-9EJxADbEePSEQwZTADNdQeji5d8MOA_qSyTucl6FOPKdZzk4zxjriPM",
+      "BLjPYXL5ctKWkXYxTHQOMJFkvD-EXfXbdmCee17aySVYHNlOS28pqSNU7yDkGijI0s6emvBMr2eAHeTKga1eKik",
+      "BIdRMBWDxCXRuwHUGNi0T1WfbqX1AJPGVLy3PXsjtlsoDfVSlrEx32AbrgXLR5VP5Zg5As_rKmJTjjBTsN8u5h0"
+    ],
+    "recovery_public_key": "BMUxPyDQ4kD7OyLHTK9uvSS-tIbVgDj-1xl5pLOZ-wOhaPX7HLBmUtxgS8pzab4PbnMm2sxcZBdBkb6ni46P-Q8",
+    "participants_digest": "H_-0e-wFf5a319Nox-oQ3C7ptyiigKNk9gF-YEodQPw",
+    "dealing_fields": [
+      {
+        "s": "tenant-kassel"
+      },
+      {
+        "s": "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918"
+      },
+      {
+        "i": 1
+      },
+      {
+        "i": 2
+      },
+      {
+        "b": "BGuW4d20_wbEqYhSiT42jIf79yUvMl8WnSVb7LgLhdLLsPZ9TJnetNFUpFjpA5d3TskczCPf3lq1CeBA-m5YpUs"
+      },
+      {
+        "b": "BJk2FBdGkw-l3qGa1HnyFVMETvv0kHGyUbspo7OQQljCCRF0pcm6lvZ9DPW9xFu3xcP3pXvmdEWiYQneKRPpiSI"
+      },
+      {
+        "b": "aCoawcoMFXSNRpD0u5stYO-r9L1nI3Ax6VOgtbslUFo"
+      },
+      {
+        "b": "ymtzpkog8HSZ6hx-WG08OwbKm7Z1pSvllZO_YI96Eik"
+      },
+      {
+        "b": "hHjRvaAbfE0XXbEqqTy7iOsfDR9221tjkb7jBSUObMc"
+      },
+      {
+        "b": "H_-0e-wFf5a319Nox-oQ3C7ptyiigKNk9gF-YEodQPw"
+      }
+    ],
+    "transcript_hash": "VJmUyjKBfOvsWIZ_iMb5iEsuU-PVfJj7PH9b6EqiEuk",
+    "share_proof": {
+      "holder_index": 1,
+      "nonce": "2a528cc85bf3f5622bc67aeff5664424cfa8a307492d6966323f11943f4132ca",
+      "c": "55065a4872fd3dc161bacfd99321412bd94f4a2d6c0fb64e6deaa93b44c42ef9",
+      "s": "4e7046ba78e24e6f42c5b9ae996853bca36d8dd33712009f8a7452ae3945ab5c"
+    }
   },
   "private_key_blob": {
     "passphrase": "Kanne Wolke Ferne Tisch 42",

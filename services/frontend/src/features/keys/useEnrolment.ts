@@ -28,10 +28,14 @@ function enrolmentError(caught: unknown): EnrolmentError {
   return caught instanceof AppError && caught.serverCode === STEP_UP_REQUIRED ? 'stepUp' : 'failed';
 }
 
-export function useEnrolment(owner: Readonly<KeyOwner>) {
-  const { archiveCrypto, recordingKeys, keyVault, passphraseStrength } = useServices();
-  const queryClient = useQueryClient();
-  const [error, setError] = useState<EnrolmentError | null>(null);
+/** The passphrase checks, the pending state and the error every new key shares (§8.3, §9.6). */
+export function useNewKeySubmit<E extends string>(
+  owner: Readonly<KeyOwner>,
+  work: (passphrase: string) => Promise<void>,
+  toError: (caught: unknown) => E
+) {
+  const { passphraseStrength } = useServices();
+  const [error, setError] = useState<EnrolmentError | E | null>(null);
   const [pending, setPending] = useState(false);
 
   const submit = async (passphrase: string, confirmation: string) => {
@@ -43,16 +47,28 @@ export function useEnrolment(owner: Readonly<KeyOwner>) {
         setError(problem);
         return;
       }
-      const created = await archiveCrypto.createKeys(passphrase, owner);
-      await recordingKeys.enrol(created.unlocked, created.blob);
-      keyVault.hold(created.unlocked);
-      await queryClient.invalidateQueries({ queryKey: OWN_KEY_QUERY });
+      await work(passphrase);
     } catch (caught) {
-      setError(enrolmentError(caught));
+      setError(toError(caught));
     } finally {
       setPending(false);
     }
   };
 
   return { submit, error, pending };
+}
+
+export function useEnrolment(owner: Readonly<KeyOwner>) {
+  const { archiveCrypto, recordingKeys, keyVault } = useServices();
+  const queryClient = useQueryClient();
+  return useNewKeySubmit(
+    owner,
+    async (passphrase) => {
+      const created = await archiveCrypto.createKeys(passphrase, owner);
+      await recordingKeys.enrol(created.unlocked, created.blob);
+      keyVault.hold(created.unlocked);
+      await queryClient.invalidateQueries({ queryKey: OWN_KEY_QUERY });
+    },
+    enrolmentError
+  );
 }

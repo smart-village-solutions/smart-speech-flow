@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { base64Url, dealing, participant, sized } from '@/domain/recovery/recovery.mapper';
+import { trustChain } from '@/domain/recovery/chain.mapper';
+import { base64Url, chainKey, generation, sized, toServedChain } from '@/domain/recovery/recovery.mapper';
 import type { ArchiveTrust, OpenedConversation, OwnConversation } from './archive.types';
 
 const uuid = z.string().uuid();
@@ -7,6 +8,9 @@ const verification = z.literal('not_verified');
 
 const own = z.object({
   conversation_id: uuid,
+  employee_sub: z.string(),
+  employee_name: z.string().nullable().optional(),
+  recovered: z.boolean(),
   started_at: z.string(),
   ended_at: z.string(),
   retention_until: z.string(),
@@ -72,17 +76,8 @@ const opened = z.object({
 });
 
 const trust = z.object({
-  recovery_key: z.object({ key_id: z.string(), transcript_hash: sized(32) }),
-  ceremony: z.object({
-    ceremony_id: uuid,
-    k: z.number().int().min(1),
-    gateway_keys: z.array(z.object({ key_id: z.string(), public_key: sized(65) })),
-    participants: z.array(participant).min(1),
-    dealings: z.array(dealing),
-    transcript_signatures: z.array(
-      z.object({ holder_index: z.number().int(), signature: sized(64) })
-    ),
-  }),
+  recovery_key: chainKey,
+  generations: z.array(generation).min(1),
 });
 
 /** Each throws on a body it cannot use; callers treat that like any failed request. */
@@ -92,6 +87,9 @@ export function toOwnConversations(body: unknown): OwnConversation[] {
     .parse(body)
     .conversations.map((row) => ({
       conversationId: row.conversation_id,
+      employeeSub: row.employee_sub,
+      employeeName: row.employee_name ?? null,
+      recovered: row.recovered,
       startedAt: row.started_at,
       endedAt: row.ended_at,
       retentionUntil: row.retention_until,
@@ -162,31 +160,5 @@ export function toOpened(body: unknown): OpenedConversation {
 
 export function toTrust(body: unknown, tenantId: string): ArchiveTrust {
   const parsed = trust.parse(body);
-  const c = parsed.ceremony;
-  return {
-    recoveryKeyId: parsed.recovery_key.key_id,
-    transcriptHash: parsed.recovery_key.transcript_hash,
-    facts: {
-      tenantId,
-      ceremonyId: c.ceremony_id,
-      k: c.k,
-      gatewayKeys: c.gateway_keys.map((k) => ({ keyId: k.key_id, publicKey: k.public_key })),
-      participants: c.participants.map((p) => ({
-        holderIndex: p.holder_index,
-        holderRef: p.holder_ref,
-        kind: p.kind,
-        displayName: p.display_name,
-        encPub: p.enc_pub,
-        sigPub: p.sig_pub,
-        fingerprint: p.fingerprint,
-      })),
-      dealings: c.dealings.map((d) => ({
-        dealerIndex: d.dealer_index,
-        commitments: d.commitments,
-        proof: { c: d.c, s: d.s },
-        signature: d.signature,
-      })),
-    },
-    signatures: new Map(c.transcript_signatures.map((s) => [s.holder_index, s.signature])),
-  };
+  return trustChain(tenantId, toServedChain(parsed.recovery_key, parsed.generations));
 }

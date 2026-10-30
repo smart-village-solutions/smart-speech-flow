@@ -31,6 +31,7 @@ describe('recording keys repository', () => {
           sig_pub: toBase64Url(publicPoint(6n)),
           blob: '{"v":1}',
           created_at: '2026-10-26T09:00:00+00:00',
+          key_version: 3,
           fingerprint,
           fingerprint_display: display,
         })
@@ -38,6 +39,7 @@ describe('recording keys repository', () => {
     );
     const key = await repository().ownKey();
     expect(key?.fingerprintDisplay).toBe(display);
+    expect(key?.keyVersion).toBe(3);
     expect(Array.from(key?.encPub ?? [])).toEqual(Array.from(publicPoint(5n)));
   });
 
@@ -77,5 +79,37 @@ describe('recording keys repository', () => {
       sig_pub: toBase64Url(publicPoint(6n)),
       blob: '{"v":1}',
     });
+  });
+
+  it('re-enrols under the version it replaces and reads the status', async () => {
+    let sent: unknown;
+    server.use(
+      http.post(`${BASE}/api/admin/recording/keys/reenrolment`, async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json(
+          { status: 'pending_confirmation', fingerprint, fingerprint_display: display },
+          { status: 201 }
+        );
+      }),
+      http.get(`${BASE}/api/admin/recording/keys/reenrolment`, () =>
+        HttpResponse.json({ custodian: true, k: 2, usable_after: 1 })
+      )
+    );
+    const repo = repository();
+    const done = await repo.reenrol({ encPub: publicPoint(5n), sigPub: publicPoint(6n) }, '{"v":1}', 2);
+    expect(done.status).toBe('pending_confirmation');
+    expect(sent).toMatchObject({ blob: '{"v":1}', replaces_version: 2 });
+    expect(await repo.reenrolmentImpact()).toEqual({ custodian: true, k: 2, usableAfter: 1 });
+  });
+
+  it('refuses a status it does not know', async () => {
+    server.use(
+      http.post(`${BASE}/api/admin/recording/keys/reenrolment`, () =>
+        HttpResponse.json({ status: 'maybe', fingerprint, fingerprint_display: display })
+      )
+    );
+    await expect(
+      repository().reenrol({ encPub: publicPoint(5n), sigPub: publicPoint(6n) }, '{"v":1}', 1)
+    ).rejects.toThrow();
   });
 });

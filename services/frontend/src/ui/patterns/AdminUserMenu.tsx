@@ -1,6 +1,16 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Archive, ExternalLink, KeyRound, LogOut, ShieldCheck, User } from 'lucide-react';
+import {
+  Archive,
+  BadgeCheck,
+  ExternalLink,
+  KeyRound,
+  KeySquare,
+  LifeBuoy,
+  LogOut,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
@@ -60,6 +70,11 @@ interface AdminUserMenuProps {
   onOpenCeremony?: () => void;
   /** The employee's own recordings; offered to holders of a recording permission. */
   onOpenArchive?: () => void;
+  /** The employee's own key recovery (#617b); offered to holders of a recording permission. */
+  onOpenKeyRecovery?: () => void;
+  /** Exceptional access: a supervisor's requests and a custodian's approvals (#617a). */
+  onOpenRecoveryRequests?: () => void;
+  onOpenRecoveryApprovals?: () => void;
 }
 
 /** Credentials are Keycloak's concern (#396): SSF only links to its account console. */
@@ -70,11 +85,23 @@ export function AdminUserMenu({
   onOpenKeys,
   onOpenCeremony,
   onOpenArchive,
+  onOpenKeyRecovery,
+  onOpenRecoveryRequests,
+  onOpenRecoveryApprovals,
 }: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
+  // In menu order; a screen whose callback is missing is not offered.
+  const screens = [
+    { label: 'admin.menu.archive', onOpen: onOpenArchive, Icon: Archive },
+    { label: 'admin.menu.keyRecovery', onOpen: onOpenKeyRecovery, Icon: KeySquare },
+    { label: 'admin.menu.recoveryRequests', onOpen: onOpenRecoveryRequests, Icon: LifeBuoy },
+    { label: 'admin.menu.recoveryApprovals', onOpen: onOpenRecoveryApprovals, Icon: BadgeCheck },
+    { label: 'admin.menu.keys', onOpen: onOpenKeys, Icon: KeyRound },
+    { label: 'admin.menu.ceremony', onOpen: onOpenCeremony, Icon: ShieldCheck },
+  ].flatMap((entry) => (entry.onOpen ? [{ ...entry, onOpen: entry.onOpen }] : []));
 
   useDismissOnOutsideTap(open, close);
 
@@ -100,44 +127,19 @@ export function AdminUserMenu({
             <MenuLink label={t('admin.menu.openStudio')} href={studioUrl} onClick={close} />
           )}
 
-          {onOpenArchive && (
+          {screens.map(({ label, onOpen, Icon }) => (
             <MenuRow
-              label={t('admin.menu.archive')}
+              key={label}
+              label={t(label)}
               onClick={() => {
                 close();
-                onOpenArchive();
+                onOpen();
               }}
               className="text-fg-body hover:bg-surface-row-hover"
             >
-              <Archive aria-hidden size={16} strokeWidth={2} />
+              <Icon aria-hidden size={16} strokeWidth={2} />
             </MenuRow>
-          )}
-
-          {onOpenKeys && (
-            <MenuRow
-              label={t('admin.menu.keys')}
-              onClick={() => {
-                close();
-                onOpenKeys();
-              }}
-              className="text-fg-body hover:bg-surface-row-hover"
-            >
-              <KeyRound aria-hidden size={16} strokeWidth={2} />
-            </MenuRow>
-          )}
-
-          {onOpenCeremony && (
-            <MenuRow
-              label={t('admin.menu.ceremony')}
-              onClick={() => {
-                close();
-                onOpenCeremony();
-              }}
-              className="text-fg-body hover:bg-surface-row-hover"
-            >
-              <ShieldCheck aria-hidden size={16} strokeWidth={2} />
-            </MenuRow>
-          )}
+          ))}
 
           <MenuRow
             label={t('admin.menu.signOut')}

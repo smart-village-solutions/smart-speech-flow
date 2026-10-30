@@ -1,96 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type Bytes, equalBytes, fromBuffer, scalarToBytes } from '@/core/crypto/bytes';
+import { equalBytes, scalarToBytes } from '@/core/crypto/bytes';
 import { contexts, seal, sealedToJson } from '@/core/crypto/ecies';
 import { TAGS } from '@/core/crypto/tags';
-import {
-  type CeremonyFacts,
-  type CeremonyParticipant,
-  type NewDealing,
-} from '@/core/crypto/ceremony-crypto.port';
 import { GENERATOR, ORDER, decodePoint, encodePoint, mod, multiply, publicPoint } from '@/core/crypto/curve';
 import { combinePartials, holderPublicShare, recoveryPublicKey } from '@/core/crypto/proofs';
-import { signFields } from '@/core/crypto/signatures';
-import { fingerprint, transcriptHash } from '@/core/crypto/transcript';
-import { createWebCeremonyCrypto } from '@/core/crypto/web-ceremony-crypto';
-
-const TENANT = 'tenant-kassel';
-const CEREMONY = '0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a';
-const ceremonyCrypto = createWebCeremonyCrypto();
-
-interface Custodian {
-  participant: CeremonyParticipant;
-  encPrivate: CryptoKey;
-  sigPrivate: CryptoKey;
-}
-
-async function custodian(index: number): Promise<Custodian> {
-  const enc = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
-  const sig = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
-  const encPub = fromBuffer(await crypto.subtle.exportKey('raw', enc.publicKey));
-  const sigPub = fromBuffer(await crypto.subtle.exportKey('raw', sig.publicKey));
-  const holderRef = `custodian-${index}`;
-  return {
-    participant: {
-      holderIndex: index,
-      holderRef,
-      kind: 'custodian',
-      displayName: holderRef,
-      encPub,
-      sigPub,
-      fingerprint: await fingerprint(TENANT, holderRef, encPub, sigPub),
-    },
-    encPrivate: enc.privateKey,
-    sigPrivate: sig.privateKey,
-  };
-}
-
-async function setUp() {
-  const custodians = [await custodian(1), await custodian(2), await custodian(3)];
-  const device = await ceremonyCrypto.createPaperDevice(TENANT);
-  const paper: CeremonyParticipant[] = [4, 5].map((index) => ({
-    holderIndex: index,
-    holderRef: `paper-${index - 3}`,
-    kind: 'paper',
-    displayName: null,
-    encPub: device.publicKey,
-    sigPub: null,
-    fingerprint: device.fingerprint,
-  }));
-  const facts: CeremonyFacts = {
-    tenantId: TENANT,
-    ceremonyId: CEREMONY,
-    k: 2,
-    participants: [...custodians.map((c) => c.participant), ...paper],
-    dealings: [],
-    gatewayKeys: [{ keyId: 'gk-1', publicKey: publicPoint(99n) }],
-  };
-  const dealt: NewDealing[] = [];
-  for (const c of custodians) dealt.push(await ceremonyCrypto.deal(facts, c.participant.holderIndex, c.sigPrivate));
-  const published: CeremonyFacts = {
-    ...facts,
-    dealings: dealt.map((d, i) => ({ dealerIndex: i + 1, commitments: d.commitments, proof: d.proof, signature: d.signature })),
-  };
-  // What the gateway serves each holder: every dealer's sub-share for that holder's index.
-  const subsharesFor = (...indices: number[]) =>
-    new Map(indices.map((index) => [index, new Map(dealt.map((d, i) => [i + 1, d.subshares.get(index) ?? '']))]));
-  return { custodians, device, published, dealt, subsharesFor };
-}
-
-/** The transcript as the gateway computes it from the same published facts. */
-function transcriptOf(world: Awaited<ReturnType<typeof setUp>>): Promise<Bytes> {
-  const { published } = world;
-  const lists = published.dealings.map((d) => d.commitments);
-  return transcriptHash({
-    tenantId: TENANT,
-    ceremonyId: CEREMONY,
-    k: 2,
-    participants: published.participants.map((p) => ({ holderRef: p.holderRef, index: p.holderIndex, fingerprint: p.fingerprint })),
-    dealings: published.dealings,
-    recoveryPublicKey: recoveryPublicKey(lists),
-    holderShares: published.participants.map((p) => holderPublicShare(p.holderIndex, lists)),
-    gatewayKeys: published.gatewayKeys,
-  });
-}
+import { CEREMONY, TENANT, ceremonyCrypto, chainOf, setUp, signedCeremony, transcriptOf } from './ceremony-world';
 
 function lagrange(index: number, indices: number[]): bigint {
   let numerator = 1n;
@@ -202,24 +116,27 @@ describe('recovery-key ceremony in the browser', () => {
   });
 });
 
-/** A closed ceremony as the archive serves it: every custodian signed its transcript. */
-async function signedCeremony() {
-  const world = await setUp();
-  const hash = await transcriptOf(world);
-  const signatures = new Map<number, Bytes>();
-  for (const c of world.custodians) {
-    signatures.set(
-      c.participant.holderIndex,
-      await signFields(c.sigPrivate, TAGS.transcript, [hash])
-    );
-  }
-  return { facts: world.published, hash, signatures };
-}
-
 describe('certify', () => {
+  it('certifies the facts a recovery needs: k, X and every X_i from the commitments', async () => {
+    const { facts, hash, signatures } = await signedCeremony();
+    const trust = await ceremonyCrypto.certifyChain(chainOf(facts, hash, signatures));
+    const lists = [...facts.dealings]
+      .sort((left, right) => left.dealerIndex - right.dealerIndex)
+      .map((dealing) => dealing.commitments);
+    expect(trust.recoveryKeyId).toBe(facts.ceremonyId);
+    expect(trust.k).toBe(facts.k);
+    expect(equalBytes(trust.transcriptHash, hash)).toBe(true);
+    expect(equalBytes(trust.recoveryPublicKey, recoveryPublicKey(lists))).toBe(true);
+    for (const participant of facts.participants) {
+      const share = trust.holderShares.get(participant.holderIndex) ?? new Uint8Array(0);
+      expect(equalBytes(share, holderPublicShare(participant.holderIndex, lists))).toBe(true);
+    }
+    expect([...trust.gatewayKeys.keys()]).toEqual(['gk-1']);
+  });
+
   it('returns the gateway keys a fully signed transcript lists', async () => {
     const { facts, hash, signatures } = await signedCeremony();
-    const keys = await ceremonyCrypto.certify(facts, hash, signatures);
+    const keys = (await ceremonyCrypto.certifyChain(chainOf(facts, hash, signatures))).gatewayKeys;
     expect([...keys.keys()]).toEqual(['gk-1']);
     expect(equalBytes(keys.get('gk-1') ?? new Uint8Array(0), publicPoint(99n))).toBe(true);
   });
@@ -231,7 +148,7 @@ describe('certify', () => {
       ...facts,
       participants: [{ ...first, sigPub: second.sigPub }, second, ...rest],
     };
-    await expect(ceremonyCrypto.certify(swapped, hash, signatures)).rejects.toMatchObject({
+    await expect(ceremonyCrypto.certifyChain(chainOf(swapped, hash, signatures))).rejects.toMatchObject({
       fault: 'fingerprint_mismatch',
     });
   });
@@ -240,12 +157,12 @@ describe('certify', () => {
     const { facts, hash, signatures } = await signedCeremony();
     const missing = new Map(signatures);
     missing.delete(2);
-    await expect(ceremonyCrypto.certify(facts, hash, missing)).rejects.toMatchObject({
+    await expect(ceremonyCrypto.certifyChain(chainOf(facts, hash, missing))).rejects.toMatchObject({
       fault: 'signature_invalid',
     });
     const foreign = new Map(signatures);
     foreign.set(2, signatures.get(1) ?? new Uint8Array(64));
-    await expect(ceremonyCrypto.certify(facts, hash, foreign)).rejects.toMatchObject({
+    await expect(ceremonyCrypto.certifyChain(chainOf(facts, hash, foreign))).rejects.toMatchObject({
       fault: 'signature_invalid',
     });
   });
@@ -256,7 +173,7 @@ describe('certify', () => {
       ...facts,
       participants: facts.participants.map((p) => ({ ...p, kind: 'paper' as const })),
     };
-    await expect(ceremonyCrypto.certify(relabelled, hash, new Map())).rejects.toMatchObject({
+    await expect(ceremonyCrypto.certifyChain(chainOf(relabelled, hash, new Map()))).rejects.toMatchObject({
       fault: 'signature_invalid',
     });
   });
@@ -264,7 +181,7 @@ describe('certify', () => {
   it('refuses a transcript other than the recovery key’s', async () => {
     const { facts, hash, signatures } = await signedCeremony();
     await expect(
-      ceremonyCrypto.certify(facts, new Uint8Array(32), signatures)
+      ceremonyCrypto.certifyChain(chainOf(facts, new Uint8Array(32), signatures))
     ).rejects.toMatchObject({
       fault: 'transcript_mismatch',
     });
@@ -272,7 +189,7 @@ describe('certify', () => {
       ...facts,
       gatewayKeys: [...facts.gatewayKeys, { keyId: 'gk-2', publicKey: publicPoint(7n) }],
     };
-    await expect(ceremonyCrypto.certify(moreKeys, hash, signatures)).rejects.toMatchObject({
+    await expect(ceremonyCrypto.certifyChain(chainOf(moreKeys, hash, signatures))).rejects.toMatchObject({
       fault: 'transcript_mismatch',
     });
   });

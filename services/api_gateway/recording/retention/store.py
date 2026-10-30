@@ -17,6 +17,8 @@ from typing import Any, Final, Self
 import asyncpg
 
 from ..audit import RETENTION_ACTOR, AuditEvent
+from ..recovery_requests_model import SYSTEM_ACTOR
+from ..recovery_requests_repository import close_request
 from ..repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
@@ -43,6 +45,9 @@ EXPIRY_DELETION_ORDER: Final[tuple[str, ...]] = (
     "stored_objects",
     "chain_entries",
     "key_wraps",
+    "recovery_partials",
+    "recovery_unrecoverable_keys",
+    "recovery_request_keys",
     "conversation_keys",
     "recording_windows",
     "conversations",
@@ -59,6 +64,10 @@ _DELETE: Final[dict[str, str]] = {
     "chain_entries": "DELETE FROM chain_entries WHERE conversation_id = $1",
     "key_wraps": "DELETE FROM key_wraps WHERE key_id IN"
     " (SELECT key_id FROM conversation_keys WHERE conversation_id = $1)",
+    "recovery_partials": "DELETE FROM recovery_partials WHERE conversation_id = $1",
+    "recovery_unrecoverable_keys": "DELETE FROM recovery_unrecoverable_keys"
+    " WHERE conversation_id = $1",
+    "recovery_request_keys": "DELETE FROM recovery_request_keys WHERE conversation_id = $1",
     "conversation_keys": "DELETE FROM conversation_keys WHERE conversation_id = $1",
     "recording_windows": "DELETE FROM recording_windows WHERE conversation_id = $1",
     "conversations": "DELETE FROM conversations WHERE conversation_id = $1",
@@ -121,6 +130,26 @@ _DELETABLE: Final[str] = (
     "SELECT c.conversation_id FROM conversations c WHERE c.shredded_at IS NOT NULL"
     " AND (SELECT count(*) FROM site_clearances s WHERE s.conversation_id = c.conversation_id)"
     " = 2 ORDER BY c.shredded_at"
+)
+
+# Closed, or past their date, with no scope left: the audit log keeps their IDs (§9.5).
+_SPENT_REQUESTS: Final[str] = (
+    "SELECT r.request_id FROM recovery_requests r"
+    " WHERE (r.status <> 'open' OR r.expires_at <= $1)"
+    " AND NOT EXISTS (SELECT 1 FROM recovery_request_keys k"
+    "  WHERE k.tenant_id = r.tenant_id AND k.request_id = r.request_id)"
+)
+_LAPSED_REQUESTS: Final[str] = (
+    "SELECT request_id FROM recovery_requests WHERE status = 'open' AND expires_at <= $1"
+    " ORDER BY request_id FOR UPDATE"
+)
+# The partials first: closing a request deletes its key material (§9.5).
+_FORGET_REQUEST: Final[tuple[str, ...]] = (
+    "DELETE FROM recovery_partials WHERE request_id = $1",
+    "DELETE FROM recovery_unrecoverable_keys WHERE request_id = $1",
+    "DELETE FROM recovery_rejections WHERE request_id = $1",
+    "DELETE FROM recovery_decisions WHERE request_id = $1",
+    "DELETE FROM recovery_requests WHERE request_id = $1",
 )
 
 _DISCOVER: Final[str] = (
@@ -466,6 +495,24 @@ class PostgresRetentionStore:
 
         return bool(await self._run(tenant_id, work))
 
+    async def settle_requests(self, tenant_id: str, now: datetime) -> None:
+        """Each pass: lapsed recovery requests close, spent ones go (spec §9.5).
+
+        Expiry is otherwise lazy, and an untouched lapsed request would keep its
+        partials, which are key material, until its requester came back.
+        """
+        self._primary_only()
+
+        async def work(connection: asyncpg.Connection) -> None:
+            for row in await connection.fetch(_LAPSED_REQUESTS, now):
+                # The one closing step the gateway's lazy expiry uses too.
+                await close_request(
+                    connection, tenant_id, str(row["request_id"]), "expired", SYSTEM_ACTOR, now
+                )
+            await _forget_spent_requests(connection, tenant_id, now)
+
+        await self._run(tenant_id, work)
+
     async def known_conversations(self, tenant_id: str) -> dict[str, bool]:
         """Each conversation that still has rows, and whether it is shredded."""
 
@@ -526,6 +573,15 @@ async def _audit(
     await append_audit(connection, AuditEvent(tenant_id, RETENTION_ACTOR, event_type, ref, at))
 
 
+async def _forget_spent_requests(
+    connection: asyncpg.Connection, tenant_id: str, now: datetime
+) -> None:
+    for row in await connection.fetch(_SPENT_REQUESTS, now):
+        for statement in _FORGET_REQUEST:
+            await connection.execute(statement, row["request_id"])
+        await _audit(connection, tenant_id, "recovery.request.deleted", str(row["request_id"]), now)
+
+
 async def _shred_in(
     connection: asyncpg.Connection,
     tenant_id: str,
@@ -546,6 +602,9 @@ async def _shred_in(
     if await connection.fetchval(_HELD_VERSION, conversation_id):
         return False
     await connection.execute(_DELETE["key_wraps"], conversation_id)
+    # A partial lets its requester compute Z for a recovery wrap: key material too (§9.5).
+    await connection.execute(_DELETE["recovery_partials"], conversation_id)
+    await connection.execute(_DELETE["recovery_unrecoverable_keys"], conversation_id)
     await connection.execute(
         "UPDATE conversations SET shredded_at = $2 WHERE conversation_id = $1",
         conversation_id,

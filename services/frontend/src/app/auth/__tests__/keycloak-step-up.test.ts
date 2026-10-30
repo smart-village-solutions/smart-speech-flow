@@ -47,6 +47,18 @@ describe('step-up login', () => {
     expect(auth.hasFreshStepUp(NOW)).toBe(fresh);
   });
 
+  it.each([
+    ['a login 100 s ago', { acr: 'mfa', auth_time: NOW - 100 }, 200, true],
+    ['a login 301 s ago', { acr: 'mfa', auth_time: NOW - 301 }, -1, false],
+    ['a password-only login', { acr: '1', auth_time: NOW - 5 }, -Infinity, false],
+  ])('counts what the gateway still accepts of %s', async (_reason, claims, left, accepted) => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, kassel);
+    clients[0].tokenParsed = claims;
+    expect(auth.stepUpSecondsLeft(NOW)).toBe(left);
+    expect(auth.hasAcceptedStepUp(NOW)).toBe(accepted);
+  });
+
   it('asks Keycloak for MFA with no reuse of the old login, returning to the tenant page', async () => {
     const auth = await import('../keycloak');
     await auth.requireKeycloakLogin(config, kassel);

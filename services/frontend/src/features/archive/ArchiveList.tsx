@@ -12,14 +12,17 @@ function Chip({ label, alert = false }: Readonly<{ label: string; alert?: boolea
   );
 }
 
-function Row({ row, onOpen }: Readonly<{ row: OwnConversation; onOpen: (id: string) => void }>) {
+function Row({
+  row,
+  onOpen,
+}: Readonly<{ row: OwnConversation; onOpen: (row: OwnConversation) => void }>) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
   return (
     <li>
       <button
         type="button"
-        onClick={() => onOpen(row.conversationId)}
+        onClick={() => onOpen(row)}
         className="flex w-full items-center gap-3 px-4 py-3 text-start hover:bg-surface-row-hover"
       >
         <span className="flex flex-col">
@@ -35,6 +38,11 @@ function Row({ row, onOpen }: Readonly<{ row: OwnConversation; onOpen: (id: stri
           {t('admin.archive.duration', { minutes: minutesBetween(row.startedAt, row.endedAt) })}
         </span>
         <span className="flex flex-wrap justify-end gap-2">
+          {row.recovered && (
+            <Chip
+              label={t('admin.archive.recovered', { name: row.employeeName ?? row.employeeSub })}
+            />
+          )}
           {row.incomplete && <Chip label={t('admin.archive.incomplete')} alert />}
           {row.legalHold && <Chip label={t('admin.archive.hold')} />}
           <Chip label={t(`admin.archive.verification.${row.verification}`)} />
@@ -45,7 +53,7 @@ function Row({ row, onOpen }: Readonly<{ row: OwnConversation; onOpen: (id: stri
 }
 
 /** Clear metadata only: the guest's name and languages are encrypted (§10.6). */
-export function ArchiveList({ onOpen }: Readonly<{ onOpen: (id: string) => void }>) {
+export function ArchiveList({ onOpen }: Readonly<{ onOpen: (row: OwnConversation) => void }>) {
   const { t } = useTranslation();
   const list = useArchiveList();
   if (list.isPending) return null;

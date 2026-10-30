@@ -137,15 +137,16 @@ function broken(deps: Readonly<OpenDeps>, conversationId: string, stage: Integri
 export async function openConversation(
   deps: Readonly<OpenDeps>,
   conversationId: string,
-  unlocked: UnlockedKeys
+  unlocked: UnlockedKeys,
+  employeeSub: string = deps.identity.userSub
 ): Promise<Opened> {
   const [opened, trust] = await Promise.all([
     deps.archive.open(conversationId),
     deps.archive.trust(deps.identity.tenantId),
   ]);
-  // The opening rule makes it the caller's; anything else was not what was asked for.
+  // The caller's own, or the listed employee's for a recovered one (§9.5); nothing else was asked for.
   const facts = opened.conversation;
-  if (facts.conversationId !== conversationId || facts.employeeSub !== deps.identity.userSub) {
+  if (facts.conversationId !== conversationId || facts.employeeSub !== employeeSub) {
     return broken(deps, conversationId, 'chain');
   }
   const verified = await verifyConversation({ ...deps, ...deps.identity, opened, trust, unlocked });

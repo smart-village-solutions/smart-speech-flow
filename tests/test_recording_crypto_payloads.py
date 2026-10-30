@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from services.api_gateway.recording.crypto import ecies, signatures, tags
@@ -50,3 +52,41 @@ def test_a_signature_does_not_verify_under_another_tag_or_field():
     assert not signatures.verify_fields(public, signature, tags.WRAP_SIG, "t", "d")
     assert not signatures.verify_fields(public, bytes(64), tags.WRAP_SIG, "t", "c")
     assert not signatures.verify_fields(public, signature[:63], tags.WRAP_SIG, "t", "c")
+
+
+def test_a_request_signature_covers_its_scope_in_code_point_order():
+    shuffled = signatures.request_fields(
+        "t", "r", "access", "k", "sam", "why", [("c2", "k2"), ("c1", "k1")]
+    )
+    ordered = signatures.request_fields(
+        "t", "r", "access", "k", "sam", "why", [("c1", "k1"), ("c2", "k2")]
+    )
+    assert shuffled == ordered
+    assert ordered[5] == hashlib.sha256(b"why").digest()
+    assert ordered[6:] == (2, "c1", "k1", "c2", "k2")
+
+
+def test_a_request_signature_breaks_when_its_scope_grows():
+    fields = signatures.request_fields("t", "r", "access", "k", "sam", "why", [("c1", "k1")])
+    signature = signatures.sign_fields(ref.private_key(9), tags.REQUEST_SIG, *fields)
+    grown = signatures.request_fields(
+        "t", "r", "access", "k", "sam", "why", [("c1", "k1"), ("c9", "k9")]
+    )
+    assert signatures.verify_fields(ref.public_point(9), signature, tags.REQUEST_SIG, *fields)
+    assert not signatures.verify_fields(ref.public_point(9), signature, tags.REQUEST_SIG, *grown)
+
+
+def test_an_approval_signature_covers_each_blob_text_exactly():
+    fields = signatures.approval_fields("t", "r", 2, 1, {"k2": '{"b":2}', "k1": '{"a":1}'})
+    assert fields == (
+        "t",
+        "r",
+        2,
+        1,
+        2,
+        "k1",
+        signatures.partial_hash('{"a":1}'),
+        "k2",
+        signatures.partial_hash('{"b":2}'),
+    )
+    assert signatures.partial_hash('{"a":1}') != signatures.partial_hash('{"a": 1}')

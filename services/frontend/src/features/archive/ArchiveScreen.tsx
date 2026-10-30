@@ -6,12 +6,16 @@ import { useUnlockedKeys } from '@/features/keys/useKeys';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { Button } from '@/ui/primitives/Button';
+import type { OwnConversation } from '@/domain/archive/archive.types';
+import { KeyRecoveryBanner } from '@/features/recovery/KeyRecoveryBanner';
 import { ArchiveList } from './ArchiveList';
 import { ConversationViewer } from './ConversationViewer';
 
 interface ArchiveScreenProps {
   onBack: () => void;
   onOpenKeys: () => void;
+  /** Offered when the employee's key cannot open some conversations (spec §9.6). */
+  onOpenKeyRecovery?: () => void;
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
@@ -37,6 +41,7 @@ function LockedNotice({ onOpenKeys }: Readonly<{ onOpenKeys: () => void }>) {
 export function ArchiveScreen({
   onBack,
   onOpenKeys,
+  onOpenKeyRecovery,
   onSignOut,
   accountUrl,
   studioUrl,
@@ -44,14 +49,14 @@ export function ArchiveScreen({
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
   const unlocked = useUnlockedKeys();
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [open, setOpen] = useState<OwnConversation | null>(null);
   useScreenLocale('de');
-  const viewing = openId !== null && unlocked !== null;
+  const viewing = open !== null && unlocked !== null;
 
   return (
     <ScreenShell>
       <AdminHeader
-        onBack={viewing ? () => setOpenId(null) : onBack}
+        onBack={viewing ? () => setOpen(null) : onBack}
         onHome={onBack}
         onFeedback={() => openFeedback({ kind: 'staff', sessionId: null })}
         onSignOut={onSignOut}
@@ -60,7 +65,12 @@ export function ArchiveScreen({
       />
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
         {viewing ? (
-          <ConversationViewer key={openId} conversationId={openId} unlocked={unlocked} />
+          <ConversationViewer
+            key={open.conversationId}
+            conversationId={open.conversationId}
+            employeeSub={open.employeeSub}
+            unlocked={unlocked}
+          />
         ) : (
           <>
             <div className="rounded-2xl border border-border-card bg-surface-card p-5">
@@ -72,7 +82,10 @@ export function ArchiveScreen({
             {unlocked === null ? (
               <LockedNotice onOpenKeys={onOpenKeys} />
             ) : (
-              <ArchiveList onOpen={setOpenId} />
+              <>
+                {onOpenKeyRecovery && <KeyRecoveryBanner onOpen={onOpenKeyRecovery} />}
+                <ArchiveList onOpen={setOpen} />
+              </>
             )}
           </>
         )}

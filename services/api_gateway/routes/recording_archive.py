@@ -15,14 +15,21 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from ..dependencies import optional_container
 from ..recording.archive_access import ArchiveAccess, ArchiveAccessError
 from ..recording.archive_access_repository import OpenedConversation
-from ..recording.ceremony_model import CeremonySnapshot, RecoveryKeyRecord
 from ..recording.ceremony_repository import PostgresCeremonyRepository
 from ..recording.crypto.encoding import b64url, from_b64url
-from ..recording.permissions import RECORDING_PERMISSIONS, coded, require_permission
+from ..recording.permissions import (
+    RECORDING_PERMISSIONS,
+    SUPERVISE,
+    coded,
+    permissions_of,
+    require_permission,
+)
 from ..recording.repository import RecordingStorageUnavailable
 from ..recording.storage.archive import OBJECT_TYPES
+from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
+from .recording_generations import trust_body
 
 router = APIRouter(
     prefix="/api/admin/recording/archive",
@@ -88,6 +95,11 @@ def _answer(error: ArchiveAccessError) -> HTTPException:
         # Committed to the chain but not spooled: the browser re-posts the same bytes.
         detail["committed"] = True
     return HTTPException(status_code=status, detail=detail)
+
+
+def _supervisor(claims: dict[str, Any]) -> bool:
+    """Opens conversations recovered through a completed request of the caller (§9.5)."""
+    return SUPERVISE in permissions_of(claims)
 
 
 def _time(value: Any) -> str | None:
@@ -162,50 +174,9 @@ def opened_body(opened: OpenedConversation) -> dict[str, Any]:
     }
 
 
-def trust_body(key: RecoveryKeyRecord, snapshot: CeremonySnapshot) -> dict[str, Any]:
-    """Public facts only: no sub-share and no encrypted share leaves here."""
-    return {
-        "recovery_key": {"key_id": key.key_id, "transcript_hash": b64url(key.transcript_hash)},
-        "ceremony": {
-            "ceremony_id": snapshot.ceremony.ceremony_id,
-            "k": snapshot.ceremony.k,
-            "gateway_keys": [
-                {"key_id": key_id, "public_key": b64url(public)}
-                for key_id, public in snapshot.ceremony.gateway_keys
-            ],
-            "participants": [
-                {
-                    "holder_index": p.holder_index,
-                    "holder_ref": p.holder_ref,
-                    "kind": p.kind,
-                    # Custodians' names are no business of every recording user.
-                    "display_name": None,
-                    "enc_pub": b64url(p.enc_pub),
-                    "sig_pub": None if p.sig_pub is None else b64url(p.sig_pub),
-                    "fingerprint": b64url(p.fingerprint),
-                }
-                for p in snapshot.participants
-            ],
-            "dealings": [
-                {
-                    "dealer_index": d.dealer_index,
-                    "commitments": [b64url(c) for c in d.commitments],
-                    "c": b64url(d.proof_c.to_bytes(32, "big")),
-                    "s": b64url(d.proof_s.to_bytes(32, "big")),
-                    "signature": b64url(d.signature),
-                }
-                for d in snapshot.dealings
-            ],
-            "transcript_signatures": [
-                {"holder_index": c.holder_index, "signature": b64url(c.transcript_signature)}
-                for c in snapshot.confirmations
-            ],
-        },
-    }
-
-
 @router.get("")
 async def list_own(
+    request: Request,
     context: TenantContext,
     claims: RecordingUser,
     access: Access,
@@ -221,10 +192,19 @@ async def list_own(
             limit=limit,
             started_before=started_before,
             before_id=None if before_id is None else str(before_id),
+            supervisor=_supervisor(claims),
         )
     except ArchiveAccessError as error:
         raise _answer(error) from None
-    return {"conversations": [row.public() for row in rows]}
+    sub = claims["sub"]
+    names = await access.employee_names(
+        context.tenant_id, sub, rows, correlation_id_from_request(request)
+    )
+    return {
+        "conversations": [
+            row.public(sub) | {"employee_name": names.get(row.employee_sub)} for row in rows
+        ]
+    }
 
 
 @router.get("/trust")
@@ -233,12 +213,12 @@ async def trust(
 ) -> dict[str, Any]:
     try:
         key = await source.active_recovery_key(context.tenant_id)
-        snapshot = None if key is None else await source.ceremony(context.tenant_id, key.key_id)
+        chain = [] if key is None else await source.chain(context.tenant_id, key.key_id)
     except RecordingStorageUnavailable:
         raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
-    if key is None or snapshot is None:
+    if key is None or not chain:
         raise coded(404, "RECOVERY_KEY_MISSING", "No active recovery key")
-    return trust_body(key, snapshot)
+    return trust_body(key, chain)
 
 
 @router.get("/{conversation_id}")
@@ -246,7 +226,9 @@ async def open_one(
     conversation_id: uuid.UUID, context: TenantContext, claims: RecordingUser, access: Access
 ) -> dict[str, Any]:
     try:
-        opened = await access.open(context.tenant_id, claims["sub"], str(conversation_id))
+        opened = await access.open(
+            context.tenant_id, claims["sub"], str(conversation_id), supervisor=_supervisor(claims)
+        )
     except ArchiveAccessError as error:
         raise _answer(error) from None
     return opened_body(opened)
@@ -265,7 +247,12 @@ async def one_object(
         raise _answer(ArchiveAccessError("not_found"))
     try:
         data = await access.object(
-            context.tenant_id, claims["sub"], str(conversation_id), str(entry_id), object_type
+            context.tenant_id,
+            claims["sub"],
+            str(conversation_id),
+            str(entry_id),
+            object_type,
+            supervisor=_supervisor(claims),
         )
     except ArchiveAccessError as error:
         raise _answer(error) from None
@@ -315,7 +302,13 @@ async def integrity_failure(
     access: Access,
 ) -> Response:
     try:
-        await access.report(context.tenant_id, claims["sub"], str(conversation_id), body.stage)
+        await access.report(
+            context.tenant_id,
+            claims["sub"],
+            str(conversation_id),
+            body.stage,
+            supervisor=_supervisor(claims),
+        )
     except ArchiveAccessError as error:
         raise _answer(error) from None
     return Response(status_code=204)

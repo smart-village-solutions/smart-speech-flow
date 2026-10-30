@@ -17,11 +17,15 @@ from services.api_gateway.recording.crypto.curve import decode_point
 from services.api_gateway.recording.crypto.encoding import Field, enc, from_b64url
 from services.api_gateway.recording.crypto.proofs import (
     holder_public_share,
+    lagrange_at_zero,
     recovery_public_key,
     verify_dleq,
     verify_schnorr,
+    verify_share_proof,
     verify_subshare,
 )
+from services.api_gateway.recording.crypto.signatures import participants_digest
+from services.api_gateway.recording.resharing_model import contribution
 from services.api_gateway.recording.crypto.transcript import (
     Dealing,
     Participant,
@@ -213,3 +217,32 @@ def test_the_timestamp_vector_names_the_chain_head():
     head = b(VECTORS["chain"]["entries"][-1]["hash"])
     assert b(v["imprint"]) == head
     assert head in fields_[2][2]
+
+
+def test_a_resharing_keeps_x_and_its_new_holders_prove_their_shares():
+    """Spec §9.7: C_i0 == λ_i·X_i, Σ C_i0 == X, and the share proof verifies."""
+    first, case = VECTORS["ceremony"], VECTORS["resharing"]
+    dealers = case["dealers"]
+    for dealer in dealers:
+        old_public = b(first["holder_shares"][dealer - 1])
+        assert b(case["contributions"][str(dealer)]) == contribution(dealer, dealers, old_public)
+        assert n(case["lagrange"][str(dealer)]) == lagrange_at_zero(dealer, dealers)
+    lists = [tuple(b(c) for c in d["commitments"]) for d in case["dealings"]]
+    assert recovery_public_key(lists) == b(first["recovery_public_key"])
+    for dealing in case["dealings"]:
+        index = dealing["dealer_index"]
+        assert b(dealing["commitments"][0]) == b(case["contributions"][str(index)])
+        assert verify_schnorr(
+            "tenant-kassel", case["ceremony_id"], index, b(dealing["commitments"][0]),
+            n(dealing["c"]), n(dealing["s"]),
+        )
+    proof = case["share_proof"]
+    public = b(case["holder_shares"][proof["holder_index"] - 1])
+    assert verify_share_proof(
+        "tenant-kassel", case["ceremony_id"], proof["holder_index"], public,
+        n(proof["c"]), n(proof["s"]),
+    )
+    digest = participants_digest(
+        [(p["index"], p["holder_ref"], b(p["fingerprint"])) for p in case["participants"]]
+    )
+    assert digest == b(case["participants_digest"])

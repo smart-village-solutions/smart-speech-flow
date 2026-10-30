@@ -39,6 +39,8 @@ class ExpiryRows(Protocol):
 
     async def delete_rows(self, tenant_id: str, conversation_id: str, now: datetime) -> bool: ...
 
+    async def settle_requests(self, tenant_id: str, now: datetime) -> None: ...
+
     async def known_conversations(self, tenant_id: str) -> dict[str, bool]: ...
 
 
@@ -83,6 +85,7 @@ class Expirer:
         for conversation_id in await self._store.deletable(tenant_id):
             if await self._store.delete_rows(tenant_id, conversation_id, now):
                 report.rows_deleted += 1
+        await self._store.settle_requests(tenant_id, now)
 
     async def sweep(self, tenant_id: str, now: datetime, report: ExpiryReport) -> None:
         """Versions of conversations that have no rows at all, as after a late upload."""

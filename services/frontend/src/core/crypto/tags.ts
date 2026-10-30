@@ -8,11 +8,15 @@ export const TAGS = {
   partial: 'ssf-rec/partial/v1',
   wrapSig: 'ssf-rec/wrap-sig/v1',
   dealingSig: 'ssf-rec/dealing-sig/v1',
+  requestSig: 'ssf-rec/request-sig/v1',
+  approvalSig: 'ssf-rec/approval-sig/v1',
+  reshareDealingSig: 'ssf-rec/reshare-dealing-sig/v1',
   chainSig: 'ssf-rec/chain-sig/v1',
   verificationSig: 'ssf-rec/verification-sig/v1',
   transcript: 'ssf-rec/transcript/v1',
   dleq: 'ssf-rec/dleq/v1',
   pok: 'ssf-rec/pok/v1',
+  sharePok: 'ssf-rec/share-pok/v1',
   fingerprint: 'ssf-rec/fpr/v1',
 } as const;
 

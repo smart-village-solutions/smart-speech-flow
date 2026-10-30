@@ -37,7 +37,14 @@ export function useCustodianActions(
       const receiver = { privateKey: keys.encPrivate, publicKey: keys.encPub };
       const received = await ceremonyCrypto.receive(facts, receiver, subshares, expected);
       const share = heldShare(received, participant.holderIndex);
-      const confirmation = await ceremonyCrypto.confirm(facts, participant, share, received.transcriptHash, keys.sigPrivate);
+      const confirmation = await ceremonyCrypto.confirm(
+        facts,
+        participant,
+        share,
+        received.transcriptHash,
+        keys.sigPrivate,
+        receiver
+      );
       await recoveryCeremony.confirm(ceremony.ceremonyId, confirmation);
     });
 

@@ -3,24 +3,38 @@ import path from 'node:path';
 import { p256 } from '@noble/curves/nist.js';
 import { describe, expect, it } from 'vitest';
 import { aesKey, objectAad, openEnvelope, sealEnvelope } from '@/core/crypto/aead';
-import { type Bytes, bytesToBigInt, fromBase64Url, toBase64Url, toHex } from '@/core/crypto/bytes';
-import { publicPoint } from '@/core/crypto/curve';
+import { type Bytes, bytesToBigInt, fromBase64Url, toBase64Url, toHex, utf8 } from '@/core/crypto/bytes';
+import { mod, publicPoint } from '@/core/crypto/curve';
 import { type Field, enc } from '@/core/crypto/encoding';
 import { openWithSharedX, parseSealed, seal, sealedToJson } from '@/core/crypto/ecies';
 import { openPrivateKeys, sealPrivateKeys } from '@/core/crypto/private-key-blob';
 import {
   combinePartials,
   commitmentsOf,
+  contribution,
   dleqProve,
   evaluatePolynomial,
   holderPublicShare,
+  lagrangeAtZero,
   recoveryPublicKey,
   schnorrProve,
+  shareProofProve,
   verifyDleq,
   verifySchnorr,
+  verifyShareProof,
   verifySubshare,
 } from '@/core/crypto/proofs';
-import { dealingFields, signedDigest, verifyFields, wrapFields } from '@/core/crypto/signatures';
+import {
+  approvalFields,
+  dealingFields,
+  participantsDigest,
+  requestFields,
+  reshareDealingFields,
+  sha256,
+  signedDigest,
+  verifyFields,
+  wrapFields,
+} from '@/core/crypto/signatures';
 import { type SealedType, TAGS } from '@/core/crypto/tags';
 import { displayFingerprint, fingerprint, paperDeviceFingerprint, transcriptHash } from '@/core/crypto/transcript';
 
@@ -111,6 +125,48 @@ describe('shared crypto vectors', () => {
     expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...fields(wrap.fields))));
   });
 
+  it('orders request-signature fields as the gateway does', async () => {
+    const v = vectors.signatures.find((item: { tag: string }) => item.tag === TAGS.requestSig);
+    const f = fields(v.fields);
+    const pairs: { conversationId: string; keyId: string }[] = [];
+    for (let i = 7; i < f.length; i += 2) pairs.push({ conversationId: f[i] as string, keyId: f[i + 1] as string });
+    const rebuilt = requestFields({
+      tenantId: f[0] as string,
+      requestId: f[1] as string,
+      kind: 'access',
+      recoveryKeyId: f[3] as string,
+      requesterSub: f[4] as string,
+      reasonHash: await sha256(utf8('Employee left; the authority needs the record.')),
+      scope: [...pairs].reverse(),
+    });
+    expect(pairs).toHaveLength(2);
+    expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...f)));
+  });
+
+  it('orders approval-signature fields as the gateway does', () => {
+    const v = vectors.signatures.find((item: { tag: string }) => item.tag === TAGS.approvalSig);
+    const f = fields(v.fields);
+    const rebuilt = approvalFields({
+      tenantId: f[0] as string,
+      requestId: f[1] as string,
+      holderIndex: f[2] as number,
+      attempt: f[3] as number,
+      partials: [
+        { keyId: f[7] as string, hash: f[8] as Bytes },
+        { keyId: f[5] as string, hash: f[6] as Bytes },
+      ],
+    });
+    expect(f[4]).toBe(2);
+    expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...f)));
+  });
+
+  it('hashes a partial blob over its exact text', async () => {
+    const v = vectors.signatures.find((item: { tag: string }) => item.tag === TAGS.approvalSig);
+    const f = fields(v.fields);
+    const at = f.indexOf('9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d');
+    same(await sha256(utf8('{"v":1}')), f[at + 1] as Bytes);
+  });
+
   it('orders dealing-signature fields as the gateway does', () => {
     const dealing = vectors.signatures.find((v: { tag: string }) => v.tag === TAGS.dealingSig);
     const signed = fields(dealing.fields);
@@ -173,6 +229,71 @@ describe('shared crypto vectors', () => {
       })),
     });
     expect(toBase64Url(hash)).toBe(c.transcript_hash);
+  });
+
+  it('checks a resharing that keeps X (spec §9.7)', async () => {
+    const r = vectors.resharing;
+    const c = vectors.ceremony;
+    const dealers: number[] = r.dealers;
+    for (const dealer of dealers) {
+      expect(lagrangeAtZero(dealer, dealers)).toBe(n(r.lagrange[dealer]));
+      same(contribution(dealer, dealers, b(c.holder_shares[dealer - 1])), b(r.contributions[dealer]));
+      expect(mod(n(c.shares[dealer]) * lagrangeAtZero(dealer, dealers))).toBe(n(r.polynomials[dealer][0]));
+    }
+    const lists = r.dealings.map((d: { commitments: string[] }) => d.commitments.map(b));
+    expect(toBase64Url(recoveryPublicKey(lists))).toBe(c.recovery_public_key);
+    for (const dealing of r.dealings) {
+      const proof = await schnorrProve(
+        c.tenant_id,
+        r.ceremony_id,
+        dealing.dealer_index,
+        n(r.polynomials[dealing.dealer_index][0]),
+        n(r.pok_nonces[dealing.dealer_index])
+      );
+      expect(proof).toEqual({ c: n(dealing.c), s: n(dealing.s) });
+    }
+    const participants = r.participants.map((p: { holder_ref: string; index: number; fingerprint: string }) => ({
+      holderRef: p.holder_ref,
+      index: p.index,
+      fingerprint: b(p.fingerprint),
+    }));
+    const digest = await participantsDigest(participants);
+    same(digest, b(r.participants_digest));
+    const first = r.dealings[0];
+    const signed = reshareDealingFields({
+      tenantId: c.tenant_id,
+      ceremonyId: r.ceremony_id,
+      dealerIndex: first.dealer_index,
+      commitments: first.commitments.map(b),
+      proof: { c: n(first.c), s: n(first.s) },
+      previousTranscript: b(r.previous_transcript_hash),
+      participantsDigest: digest,
+    });
+    same(enc(...signed), enc(...fields(r.dealing_fields)));
+    const hash = await transcriptHash({
+      tenantId: c.tenant_id,
+      ceremonyId: r.ceremony_id,
+      k: r.k,
+      participants,
+      dealings: r.dealings.map((d: { dealer_index: number; commitments: string[]; c: string; s: string }) => ({
+        dealerIndex: d.dealer_index,
+        commitments: d.commitments.map(b),
+        proof: { c: n(d.c), s: n(d.s) },
+      })),
+      recoveryPublicKey: b(c.recovery_public_key),
+      holderShares: r.holder_shares.map(b),
+      gatewayKeys: c.gateway_keys.map((g: { key_id: string; public_key: string }) => ({
+        keyId: g.key_id,
+        publicKey: b(g.public_key),
+      })),
+      previousTranscript: b(r.previous_transcript_hash),
+    });
+    expect(toBase64Url(hash)).toBe(r.transcript_hash);
+    const share = n(r.shares[r.share_proof.holder_index]);
+    const proof = await shareProofProve(c.tenant_id, r.ceremony_id, 1, share, n(r.share_proof.nonce));
+    expect(proof).toEqual({ c: n(r.share_proof.c), s: n(r.share_proof.s) });
+    expect(await verifyShareProof(c.tenant_id, r.ceremony_id, 1, b(r.holder_shares[0]), proof)).toBe(true);
+    expect(await verifyShareProof(c.tenant_id, r.ceremony_id, 2, b(r.holder_shares[0]), proof)).toBe(false);
   });
 
   it('recovers a conversation key from k partials', async () => {

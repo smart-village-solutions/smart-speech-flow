@@ -8,6 +8,9 @@ import { KEYS_VIEW } from './useKeys';
 const BODY = {
   keys: 'admin.keys.stepUpBody',
   ceremony: 'admin.ceremony.stepUpBody',
+  recoveryRequests: 'admin.recovery.stepUpBody',
+  recoveryApprovals: 'admin.recovery.stepUpBody',
+  keyRecovery: 'admin.keyRecovery.stepUpBody',
 } as const;
 
 interface StepUpPromptProps {
@@ -27,7 +30,8 @@ export function StepUpPrompt({ returnTo = KEYS_VIEW }: Readonly<StepUpPromptProp
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5">
+    // Never on paper: the ceremony screen prints its sheets.
+    <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5 print:hidden">
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.keys.stepUpTitle')}</h2>
       <p className="text-note leading-chat text-fg-muted">{t(BODY[returnTo])}</p>
       {failed && (

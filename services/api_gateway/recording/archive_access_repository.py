@@ -28,10 +28,10 @@ from .repository import (
 )
 
 
-def _openable(sub: str, now: str) -> str:
-    """The opening rule; `sub` and `now` are the query's parameter placeholders."""
+def _readable(sub: str, now: str) -> str:
+    """Ended, not shredded, within its date or held, and wrapped for the caller."""
     return (
-        f"c.employee_sub = {sub} AND c.ended_at IS NOT NULL AND c.shredded_at IS NULL"
+        f"c.ended_at IS NOT NULL AND c.shredded_at IS NULL"
         f" AND (c.retention_until > {now} OR c.legal_hold)"
         " AND EXISTS (SELECT 1 FROM key_wraps w JOIN conversation_keys k"
         "  ON k.tenant_id = w.tenant_id AND k.key_id = w.key_id"
@@ -40,20 +40,56 @@ def _openable(sub: str, now: str) -> str:
     )
 
 
+# The status alone is a string the requester's own call sets; k approvals are not (§9.5).
+_APPROVED = (
+    "(SELECT count(DISTINCT d.holder_index) FROM recovery_decisions d"
+    "  WHERE d.tenant_id = r.tenant_id AND d.request_id = r.request_id"
+    "  AND d.decision = 'approved' AND NOT EXISTS (SELECT 1 FROM recovery_rejections j"
+    "   WHERE j.tenant_id = d.tenant_id AND j.request_id = d.request_id"
+    "   AND j.holder_index = d.holder_index AND j.attempt = d.attempt))"
+    # The k of the holders it was filed under: a later resharing never revokes it (§9.7).
+    " >= (SELECT g.k FROM recovery_ceremonies g"
+    "  WHERE g.tenant_id = r.tenant_id AND g.ceremony_id = r.holders_ceremony_id)"
+)
+
+
+def _own(sub: str, now: str) -> str:
+    """The employee-only rule: amendments stay the employee's own (spec §10.4)."""
+    return f"c.employee_sub = {sub} AND {_readable(sub, now)}"
+
+
+def _openable(sub: str, now: str, supervisor: str) -> str:
+    """The opening rule (§10.6), widened by §9.5: the employee, or a supervisor
+    whose request for the conversation completed. Arguments are placeholders."""
+    return (
+        f"(c.employee_sub = {sub} OR ({supervisor} AND EXISTS (SELECT 1"
+        " FROM recovery_request_keys rk JOIN recovery_requests r"
+        "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
+        f"  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = {sub}"
+        f"  AND r.status = 'completed' AND {_APPROVED}))) AND {_readable(sub, now)}"
+    )
+
+
 _LIST = (
-    "SELECT c.conversation_id, c.started_at, c.ended_at, c.retention_until, c.legal_hold,"
+    "SELECT c.conversation_id, c.employee_sub, c.started_at, c.ended_at, c.retention_until, c.legal_hold,"
     " c.incomplete,"
     " (SELECT count(*) FROM chain_entries e WHERE e.conversation_id = c.conversation_id"
     "  AND e.kind IN ('message', 'failed')) AS messages,"
     " (SELECT count(*) FROM chain_entries e WHERE e.conversation_id = c.conversation_id"
     "  AND e.kind = 'amendment') AS amendments"
-    f" FROM conversations c WHERE {_openable('$1', '$2')}"
+    f" FROM conversations c WHERE {_openable('$1', '$2', '$6')}"
     " AND ($3::timestamptz IS NULL OR c.started_at < $3"
     "  OR (c.started_at = $3 AND c.conversation_id < $5::uuid))"
     " ORDER BY c.started_at DESC, c.conversation_id DESC LIMIT $4"
 )
-_ONE = f"SELECT c.* FROM conversations c WHERE c.conversation_id = $3 AND {_openable('$1', '$2')}"
-_ONE_LOCKED = _ONE + " FOR UPDATE"
+_ONE = (
+    "SELECT c.* FROM conversations c WHERE c.conversation_id = $3"
+    f" AND {_openable('$1', '$2', '$4')}"
+)
+_ONE_OWN_LOCKED = (
+    "SELECT c.* FROM conversations c WHERE c.conversation_id = $3"
+    f" AND {_own('$1', '$2')} FOR UPDATE"
+)
 
 
 class ArchiveAccessRefusedError(Exception):
@@ -65,6 +101,7 @@ class ArchiveAccessRefusedError(Exception):
 @dataclass(frozen=True)
 class OwnConversation:
     conversation_id: str
+    employee_sub: str
     started_at: datetime
     ended_at: datetime
     retention_until: datetime
@@ -73,9 +110,11 @@ class OwnConversation:
     messages: int
     amendments: int
 
-    def public(self) -> dict[str, Any]:
+    def public(self, caller: str) -> dict[str, Any]:
         return {
             "conversation_id": self.conversation_id,
+            "employee_sub": self.employee_sub,
+            "recovered": self.employee_sub != caller,
             "started_at": self.started_at.isoformat(),
             "ended_at": self.ended_at.isoformat(),
             "retention_until": self.retention_until.isoformat(),
@@ -198,13 +237,17 @@ class PostgresArchiveAccess:
         limit: int,
         started_before: datetime | None,
         before_id: str | None,
+        supervisor: bool = False,
     ) -> list[OwnConversation]:
         async def work(connection: asyncpg.Connection) -> Any:
-            return await connection.fetch(_LIST, sub, now, started_before, limit, before_id)
+            return await connection.fetch(
+                _LIST, sub, now, started_before, limit, before_id, supervisor
+            )
 
         return [
             OwnConversation(
                 conversation_id=str(row["conversation_id"]),
+                employee_sub=row["employee_sub"],
                 started_at=row["started_at"],
                 ended_at=row["ended_at"],
                 retention_until=row["retention_until"],
@@ -217,10 +260,16 @@ class PostgresArchiveAccess:
         ]
 
     async def open(
-        self, tenant_id: str, sub: str, conversation_id: str, now: datetime
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        now: datetime,
+        *,
+        supervisor: bool = False,
     ) -> OpenedConversation | None:
         async def work(connection: asyncpg.Connection) -> OpenedConversation | None:
-            row = await connection.fetchrow(_ONE, sub, now, conversation_id)
+            row = await connection.fetchrow(_ONE, sub, now, conversation_id, supervisor)
             if row is None:
                 await append_audit(
                     connection,
@@ -237,9 +286,17 @@ class PostgresArchiveAccess:
         result: OpenedConversation | None = await self._run(tenant_id, work)
         return result
 
-    async def openable(self, tenant_id: str, sub: str, conversation_id: str, now: datetime) -> bool:
+    async def openable(
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        now: datetime,
+        *,
+        supervisor: bool = False,
+    ) -> bool:
         async def work(connection: asyncpg.Connection) -> Any:
-            return await connection.fetchrow(_ONE, sub, now, conversation_id)
+            return await connection.fetchrow(_ONE, sub, now, conversation_id, supervisor)
 
         return await self._run(tenant_id, work) is not None
 
@@ -251,6 +308,8 @@ class PostgresArchiveAccess:
         entry_id: str,
         object_type: str,
         now: datetime,
+        *,
+        supervisor: bool = False,
     ) -> ObjectLocation | None:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetchrow(
@@ -259,7 +318,8 @@ class PostgresArchiveAccess:
                 "  AND c.conversation_id = e.conversation_id"
                 " LEFT JOIN stored_objects o ON o.tenant_id = e.tenant_id"
                 "  AND o.entry_id = e.entry_id AND o.object_type = $5"
-                f" WHERE e.conversation_id = $3 AND e.entry_id = $4 AND {_openable('$1', '$2')}"
+                f" WHERE e.conversation_id = $3 AND e.entry_id = $4"
+                f" AND {_openable('$1', '$2', '$6')}"
                 " AND EXISTS (SELECT 1 FROM key_wraps w WHERE w.tenant_id = e.tenant_id"
                 "  AND w.key_id = e.key_id AND w.recipient_kind = 'user' AND w.recipient_ref = $1)",
                 sub,
@@ -267,6 +327,7 @@ class PostgresArchiveAccess:
                 conversation_id,
                 entry_id,
                 object_type,
+                supervisor,
             )
 
         row = await self._run(tenant_id, work)
@@ -285,7 +346,7 @@ class PostgresArchiveAccess:
                 "SELECT e.* FROM chain_entries e JOIN conversations c"
                 " ON c.tenant_id = e.tenant_id AND c.conversation_id = e.conversation_id"
                 " WHERE e.entry_id = $4 AND e.conversation_id = $3 AND e.kind = 'amendment'"
-                f" AND {_openable('$1', '$2')}",
+                f" AND {_own('$1', '$2')}",
                 sub,
                 now,
                 conversation_id,
@@ -310,7 +371,7 @@ class PostgresArchiveAccess:
         audit_at: datetime,
     ) -> ChainEntry:
         async def work(connection: asyncpg.Connection) -> ChainEntry:
-            if await connection.fetchrow(_ONE_LOCKED, sub, now, conversation_id) is None:
+            if await connection.fetchrow(_ONE_OWN_LOCKED, sub, now, conversation_id) is None:
                 raise ArchiveAccessRefusedError("no_conversation")
             usable = await connection.fetchval(
                 "SELECT count(DISTINCT w.recipient_kind) = 2 FROM key_wraps w"

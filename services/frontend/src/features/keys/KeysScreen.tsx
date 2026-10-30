@@ -6,11 +6,12 @@ import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { EnrolForm } from './EnrolForm';
 import { FingerprintCard } from './FingerprintCard';
+import { ReenrolPanel } from './ReenrolPanel';
 import { StepUpPrompt } from './StepUpPrompt';
 import { UnlockForm } from './UnlockForm';
 import { useOwnKey, useUnlockedKeys } from './useKeys';
 
-function KeysPanel() {
+function KeysPanel({ onOpenKeyRecovery }: Readonly<{ onOpenKeyRecovery?: () => void }>) {
   const { t } = useTranslation();
   const owner = getAdminIdentity();
   const ownKey = useOwnKey();
@@ -24,20 +25,35 @@ function KeysPanel() {
     );
   }
   if (ownKey.isPending) return null;
-  if (unlocked !== null) return <FingerprintCard keys={unlocked} />;
-  if (ownKey.data === null) return hasFreshStepUp() ? <EnrolForm owner={owner} /> : <StepUpPrompt />;
-  return <UnlockForm owner={owner} ownKey={ownKey.data} />;
+  if (ownKey.data === null) {
+    if (unlocked !== null) return <FingerprintCard keys={unlocked} />;
+    return hasFreshStepUp() ? <EnrolForm owner={owner} /> : <StepUpPrompt />;
+  }
+  return (
+    <>
+      {unlocked === null ? <UnlockForm owner={owner} ownKey={ownKey.data} /> : <FingerprintCard keys={unlocked} />}
+      <ReenrolPanel owner={owner} ownKey={ownKey.data} onOpenKeyRecovery={onOpenKeyRecovery} />
+    </>
+  );
 }
 
 interface KeysScreenProps {
   onBack: () => void;
   onSignOut: () => void;
+  /** The employee's key recovery, offered once a new key is active (spec §9.6). */
+  onOpenKeyRecovery?: () => void;
   accountUrl?: string;
   studioUrl?: string;
 }
 
 /** Personal keys for opening archives (spec §8.3); recording itself never needs them. */
-export function KeysScreen({ onBack, onSignOut, accountUrl, studioUrl }: Readonly<KeysScreenProps>) {
+export function KeysScreen({
+  onBack,
+  onSignOut,
+  onOpenKeyRecovery,
+  accountUrl,
+  studioUrl,
+}: Readonly<KeysScreenProps>) {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
   useScreenLocale('de');
@@ -57,7 +73,7 @@ export function KeysScreen({ onBack, onSignOut, accountUrl, studioUrl }: Readonl
           <h1 className="mb-1.5 text-thanks font-semibold text-fg-strong">{t('admin.keys.title')}</h1>
           <p className="text-note leading-chat text-fg-muted">{t('admin.keys.intro')}</p>
         </div>
-        <KeysPanel />
+        <KeysPanel onOpenKeyRecovery={onOpenKeyRecovery} />
       </div>
     </ScreenShell>
   );

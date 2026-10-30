@@ -5,6 +5,7 @@ import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
+import { ThresholdSelect } from './ThresholdSelect';
 import { CEREMONY_VIEW } from './useCeremony';
 import { type StartError, useStartCeremony } from './useStartCeremony';
 
@@ -12,7 +13,6 @@ const ERROR_KEYS: Record<Exclude<StartError, 'stepUp'>, string> = {
   invalid: 'admin.ceremony.startInvalid',
   failed: 'admin.ceremony.startFailed',
 };
-const THRESHOLDS = [1, 2, 3, 4, 5];
 
 /** The tenant administrator names the custodians and the threshold (spec §9.1, §9.2). */
 export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
@@ -34,20 +34,7 @@ export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.ceremony.startTitle')}</h2>
       <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.startBody')}</p>
       <CandidateList chosen={chosen} onChange={setChosen} />
-      <label className="flex flex-col gap-1 text-note text-fg-strong">
-        {t('admin.ceremony.thresholdLabel')}
-        <select
-          value={k}
-          onChange={(event) => setK(Number(event.target.value))}
-          className="rounded-lg border border-border-card bg-surface-card p-2 text-fg-strong"
-        >
-          {THRESHOLDS.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ThresholdSelect k={k} onChange={setK} />
       <p className="text-meta text-fg-muted">{t(k === 1 ? 'admin.ceremony.modeStandard' : 'admin.ceremony.modeEnhanced')}</p>
       <Checkbox checked={paper} onCheckedChange={setPaper}>
         {t('admin.ceremony.paperLabel')}

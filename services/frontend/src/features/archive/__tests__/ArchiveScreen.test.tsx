@@ -23,6 +23,9 @@ const keys = { fingerprint: new Uint8Array(32) } as unknown as UnlockedKeys;
 function row(overrides: Partial<OwnConversation> = {}): OwnConversation {
   return {
     conversationId: '6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f',
+    employeeSub: 'alice',
+    employeeName: null,
+    recovered: false,
     startedAt: '2026-10-29T10:00:00+00:00',
     endedAt: '2026-10-29T10:20:00+00:00',
     retentionUntil: '2027-10-29T10:00:00+00:00',
@@ -35,7 +38,14 @@ function row(overrides: Partial<OwnConversation> = {}): OwnConversation {
   };
 }
 
-function render(options: { unlocked: UnlockedKeys | null; pages?: OwnConversation[][] }) {
+interface RenderOptions {
+  unlocked: UnlockedKeys | null;
+  pages?: OwnConversation[][];
+  locked?: number;
+  onOpenKeyRecovery?: () => void;
+}
+
+function render(options: RenderOptions) {
   const keyVault = createKeyVault();
   if (options.unlocked !== null) keyVault.hold(options.unlocked);
   const pages = [...(options.pages ?? [[row()]])];
@@ -48,14 +58,26 @@ function render(options: { unlocked: UnlockedKeys | null; pages?: OwnConversatio
     reportIntegrity: vi.fn().mockResolvedValue(undefined),
   } as unknown as ArchiveRepository;
   const onOpenKeys = vi.fn();
+  const locked = options.locked ?? 0;
+  const recoveryRequests = {
+    ownCandidates: vi.fn().mockResolvedValue({
+      conversations: locked > 0 ? [row()] : [],
+      remaining: { conversations: Math.max(locked - 1, 0), keys: 0 },
+    }),
+  };
   renderWithProviders(
-    <ArchiveScreen onBack={vi.fn()} onOpenKeys={onOpenKeys} onSignOut={vi.fn()} />,
+    <ArchiveScreen
+      onBack={vi.fn()}
+      onOpenKeys={onOpenKeys}
+      onOpenKeyRecovery={options.onOpenKeyRecovery}
+      onSignOut={vi.fn()}
+    />,
     {
       locale: 'de',
-      services: { archive, keyVault },
+      services: { archive, keyVault, recoveryRequests } as never,
     }
   );
-  return { archive, onOpenKeys };
+  return { archive, onOpenKeys, recoveryRequests };
 }
 
 // Staff screens render in German (useScreenLocale('de')).
@@ -109,5 +131,35 @@ describe('ArchiveScreen', () => {
     expect(archive.object).not.toHaveBeenCalled();
     expect(archive.reportIntegrity).toHaveBeenCalledWith(row().conversationId, 'chain');
     expect(screen.queryByText('Amira Haddad')).not.toBeInTheDocument();
+  });
+
+  it('tags a recovered conversation with its employee and opens it as theirs', async () => {
+    vi.mocked(verifyConversation).mockReturnValue(new Promise(() => undefined));
+    const recovered = row({ employeeSub: 'bob', employeeName: 'Bob Employee', recovered: true });
+    const { archive } = render({ unlocked: keys, pages: [[recovered]] });
+    const served = openedConversation();
+    served.conversation.employeeSub = 'bob';
+    vi.mocked(archive.open).mockResolvedValue(served);
+    await userEvent.click(await screen.findByText('Wiederhergestellt: Bob Employee'));
+    await waitFor(() => expect(archive.open).toHaveBeenCalledWith(recovered.conversationId));
+    // Checks start only for the employee the list named; bob's would be refused as alice's.
+    await waitFor(() => expect(verifyConversation).toHaveBeenCalled());
+  });
+
+  it('points to key recovery when the key cannot open some conversations', async () => {
+    const onOpenKeyRecovery = vi.fn();
+    render({ unlocked: keys, locked: 3, onOpenKeyRecovery });
+    const banner = de.admin.keyRecovery.banner.replace('{{count}}', '3');
+    expect(await screen.findByText(banner)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: de.admin.keyRecovery.open }));
+    expect(onOpenKeyRecovery).toHaveBeenCalledOnce();
+  });
+
+  it('shows no banner when the key opens everything', async () => {
+    const { recoveryRequests } = render({ unlocked: keys, onOpenKeyRecovery: vi.fn() });
+    await waitFor(() => expect(recoveryRequests.ownCandidates).toHaveBeenCalled());
+    expect(
+      screen.queryByRole('button', { name: de.admin.keyRecovery.open })
+    ).not.toBeInTheDocument();
   });
 });

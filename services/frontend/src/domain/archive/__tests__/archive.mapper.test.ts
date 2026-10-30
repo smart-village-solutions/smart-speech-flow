@@ -53,6 +53,8 @@ describe('archive mapper', () => {
       conversations: [
         {
           conversation_id: ID,
+          employee_sub: 'alice',
+          recovered: false,
           started_at: 's',
           ended_at: 'e',
           retention_until: 'r',
@@ -66,10 +68,35 @@ describe('archive mapper', () => {
     });
     expect(row).toMatchObject({
       conversationId: ID,
+      employeeSub: 'alice',
+      employeeName: null,
+      recovered: false,
       incomplete: true,
       messages: 3,
       verification: 'not_verified',
     });
+  });
+
+  it('maps a recovered row with its employee name', () => {
+    const [row] = toOwnConversations({
+      conversations: [
+        {
+          conversation_id: ID,
+          employee_sub: 'bob',
+          employee_name: 'Bob Employee',
+          recovered: true,
+          started_at: 's',
+          ended_at: 'e',
+          retention_until: 'r',
+          legal_hold: false,
+          incomplete: false,
+          messages: 1,
+          amendments: 0,
+          verification: 'not_verified',
+        },
+      ],
+    });
+    expect([row.recovered, row.employeeName]).toEqual([true, 'Bob Employee']);
   });
 
   it('keeps the signed objects text verbatim and decodes bytes', () => {
@@ -91,9 +118,18 @@ describe('archive mapper', () => {
   it('maps the trust body into ceremony facts for the tenant', () => {
     const trust = toTrust(
       {
-        recovery_key: { key_id: ID, transcript_hash: b(9, 32) },
-        ceremony: {
+        recovery_key: {
+          key_id: ID,
+          transcript_hash: b(9, 32),
+          holders_ceremony_id: ID,
+          holders_transcript_hash: b(9, 32),
+        },
+        generations: [{
           ceremony_id: ID,
+          kind: 'generation',
+          transcript_hash: b(9, 32),
+          previous_transcript_hash: null,
+          dealers: [1],
           k: 2,
           gateway_keys: [{ key_id: 'gk-1', public_key: toBase64Url(publicPoint(9n)) }],
           participants: [
@@ -117,16 +153,19 @@ describe('archive mapper', () => {
             },
           ],
           transcript_signatures: [{ holder_index: 1, signature: b(5, 64) }],
-        },
+        }],
       },
       'tenant-kassel'
     );
-    expect(trust.facts.tenantId).toBe('tenant-kassel');
-    expect(trust.facts.gatewayKeys[0].keyId).toBe('gk-1');
-    expect(trust.signatures.get(1)).toHaveLength(64);
+    const [first] = trust.generations;
+    expect(trust.recoveryKeyId).toBe(ID);
+    expect(first.facts.tenantId).toBe('tenant-kassel');
+    expect(first.facts.gatewayKeys[0].keyId).toBe('gk-1');
+    expect(first.facts.resharing).toBeUndefined();
+    expect(first.signatures.get(1)).toHaveLength(64);
     expect(() =>
       toTrust(
-        { recovery_key: { key_id: 'x', transcript_hash: b(1, 31) }, ceremony: {} },
+        { recovery_key: { key_id: 'x', transcript_hash: b(1, 31) }, generations: [] },
         'tenant-kassel'
       )
     ).toThrow();

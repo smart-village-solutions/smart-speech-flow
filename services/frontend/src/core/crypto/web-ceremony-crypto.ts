@@ -1,79 +1,21 @@
 import { type Bytes, bytesToBigInt, equalBytes, fromBuffer, scalarToBytes } from './bytes';
+import { certifyChain } from './chain-crypto';
+import { dealPolynomial, dealingSignatureFields, fail, fingerprints, transcriptOf, verifyFirstDealings } from './ceremony-checks';
 import {
   type CeremonyCrypto,
   type CeremonyFacts,
-  type CeremonyFault,
   type CeremonyParticipant,
-  CeremonyCheckError,
+  type Confirmation,
   type PublishedDealing,
   type Receiver,
 } from './ceremony-crypto.port';
 import { mod, randomScalar } from './curve';
 import { contexts, openWithPrivateKey, parseSealed, seal, sealedToJson } from './ecies';
-import {
-  commitmentsOf,
-  evaluatePolynomial,
-  holderPublicShare,
-  recoveryPublicKey,
-  schnorrProve,
-  verifySchnorr,
-  verifySubshare,
-} from './proofs';
-import { dealingFields, signFields, verifyFields } from './signatures';
+import { shareProofProve, verifySubshare } from './proofs';
+import { certifiedResharing, dealShare, openShare, verifyResharingDealings } from './resharing-crypto';
+import { signFields } from './signatures';
 import { TAGS } from './tags';
-import { type TranscriptInput, fingerprint, paperDeviceFingerprint, transcriptHash } from './transcript';
-
-function fail(fault: CeremonyFault): never {
-  throw new CeremonyCheckError(fault);
-}
-
-function expectedFingerprint(tenantId: string, participant: Readonly<CeremonyParticipant>): Promise<Bytes> {
-  if (participant.sigPub === null) return paperDeviceFingerprint(tenantId, participant.encPub);
-  return fingerprint(tenantId, participant.holderRef, participant.encPub, participant.sigPub);
-}
-
-async function fingerprints(facts: Readonly<CeremonyFacts>): Promise<Map<number, Bytes>> {
-  const computed = new Map<number, Bytes>();
-  for (const participant of facts.participants) {
-    const value = await expectedFingerprint(facts.tenantId, participant);
-    if (!equalBytes(value, participant.fingerprint)) fail('fingerprint_mismatch');
-    computed.set(participant.holderIndex, value);
-  }
-  return computed;
-}
-
-function dealingSignatureFields(facts: Readonly<CeremonyFacts>, dealing: Readonly<PublishedDealing>) {
-  return dealingFields({
-    tenantId: facts.tenantId,
-    ceremonyId: facts.ceremonyId,
-    dealerIndex: dealing.dealerIndex,
-    commitments: dealing.commitments,
-    proof: dealing.proof,
-  });
-}
-
-async function proofHolds(facts: Readonly<CeremonyFacts>, dealing: Readonly<PublishedDealing>): Promise<boolean> {
-  if (dealing.commitments.length !== facts.k) return false;
-  try {
-    return await verifySchnorr(facts.tenantId, facts.ceremonyId, dealing.dealerIndex, dealing.commitments[0], dealing.proof);
-  } catch {
-    return false; // a commitment that is not a point
-  }
-}
-
-/**
- * Each dealing proved and signed by its dealer (spec §9.2 step 4). A missing or
- * duplicated dealing changes the transcript, which `receive` compares next.
- */
-async function verifyDealings(facts: Readonly<CeremonyFacts>): Promise<void> {
-  const custodians = facts.participants.filter((participant) => participant.kind === 'custodian');
-  for (const dealing of facts.dealings) {
-    const dealer = custodians.find((custodian) => custodian.holderIndex === dealing.dealerIndex);
-    if (dealer?.sigPub == null || !(await proofHolds(facts, dealing))) fail('proof_invalid');
-    const signed = dealingSignatureFields(facts, dealing);
-    if (!(await verifyFields(dealer.sigPub, dealing.signature, TAGS.dealingSig, signed))) fail('signature_invalid');
-  }
-}
+import { paperDeviceFingerprint, transcriptHash } from './transcript';
 
 async function openSubshare(
   facts: Readonly<CeremonyFacts>,
@@ -109,36 +51,31 @@ async function shareFor(
   return total;
 }
 
-/** The transcript of spec A.8, with X and every X_i derived from the commitments here. */
-function transcriptOf(facts: Readonly<CeremonyFacts>): TranscriptInput {
-  const dealings = [...facts.dealings].sort((left, right) => left.dealerIndex - right.dealerIndex);
-  const lists = dealings.map((dealing) => dealing.commitments);
-  const participants = [...facts.participants].sort((left, right) => left.holderIndex - right.holderIndex);
-  return {
-    tenantId: facts.tenantId,
-    ceremonyId: facts.ceremonyId,
-    k: facts.k,
-    participants: participants.map((p) => ({ holderRef: p.holderRef, index: p.holderIndex, fingerprint: p.fingerprint })),
-    dealings: dealings.map((d) => ({ dealerIndex: d.dealerIndex, commitments: d.commitments, proof: d.proof })),
-    recoveryPublicKey: recoveryPublicKey(lists),
-    holderShares: participants.map((p) => holderPublicShare(p.holderIndex, lists)),
-    gatewayKeys: facts.gatewayKeys,
-  };
+/** A resharing's shares are sealed under the key's ID, as the certified chain names it (§9.7). */
+function shareContext(facts: Readonly<CeremonyFacts>, holder: Readonly<CeremonyParticipant>) {
+  const keyId = facts.resharing === undefined ? facts.ceremonyId : certifiedResharing(facts).previous.recoveryKeyId;
+  return contexts.share(facts.tenantId, keyId, holder.holderIndex, holder.holderRef);
 }
 
-/**
- * `kind` is not in the transcript; a signing key is, through the fingerprint. So a
- * holder with a signing key must have signed, and must be listed as a custodian.
- */
-async function participantVouches(
-  participant: Readonly<CeremonyParticipant>,
-  signature: Bytes | undefined,
-  transcript: Bytes
-): Promise<boolean> {
-  const custodian = participant.kind === 'custodian';
-  if (participant.sigPub === null) return !custodian;
-  if (!custodian || signature === undefined) return false;
-  return verifyFields(participant.sigPub, signature, TAGS.transcript, [transcript]);
+async function confirm(
+  facts: Readonly<CeremonyFacts>,
+  holder: Readonly<CeremonyParticipant>,
+  share: bigint,
+  hash: Bytes,
+  signingKey: CryptoKey,
+  receiver: Readonly<Receiver>
+): Promise<Confirmation> {
+  const context = shareContext(facts, holder);
+  const sealed = await seal(TAGS.share, holder.encPub, scalarToBytes(share), context);
+  const transcriptSignature = await signFields(signingKey, TAGS.transcript, [hash]);
+  if (facts.resharing === undefined) {
+    return { transcriptSignature, encryptedShare: sealedToJson(sealed), shareProof: null };
+  }
+  // Proven from what the stored blob gives back, so a blob that does not open fails here.
+  const reopened = bytesToBigInt(await openWithPrivateKey(sealed, receiver.privateKey, receiver.publicKey, context));
+  if (reopened !== share) fail('subshare_invalid');
+  const shareProof = await shareProofProve(facts.tenantId, facts.ceremonyId, holder.holderIndex, reopened, randomScalar());
+  return { transcriptSignature, encryptedShare: sealedToJson(sealed), shareProof };
 }
 
 export function createWebCeremonyCrypto(): CeremonyCrypto {
@@ -148,22 +85,18 @@ export function createWebCeremonyCrypto(): CeremonyCrypto {
     async deal(facts, dealerIndex, signingKey) {
       await fingerprints(facts);
       const coefficients = Array.from({ length: facts.k }, () => randomScalar());
-      const commitments = commitmentsOf(coefficients);
-      const proof = await schnorrProve(facts.tenantId, facts.ceremonyId, dealerIndex, coefficients[0], randomScalar());
-      const published = { dealerIndex, commitments, proof, signature: new Uint8Array(0) };
+      const { commitments, proof, subshares } = await dealPolynomial(facts, dealerIndex, coefficients);
+      const published = { dealerIndex, commitments, proof, signature: null };
       const signature = await signFields(signingKey, TAGS.dealingSig, dealingSignatureFields(facts, published));
-      const subshares = new Map<number, string>();
-      for (const participant of facts.participants) {
-        const value = scalarToBytes(evaluatePolynomial(coefficients, participant.holderIndex));
-        const context = contexts.subshare(facts.tenantId, facts.ceremonyId, dealerIndex, participant.holderIndex);
-        subshares.set(participant.holderIndex, sealedToJson(await seal(TAGS.subshare, participant.encPub, value, context)));
-      }
       return { commitments, proof, signature, subshares };
     },
 
+    dealShare,
+    openShare,
+
     async receive(facts, receiver, subshares, expectedTranscript) {
       await fingerprints(facts);
-      await verifyDealings(facts);
+      await (facts.resharing === undefined ? verifyFirstDealings(facts) : verifyResharingDealings(facts));
       const hash = await transcriptHash(transcriptOf(facts));
       if (!equalBytes(hash, expectedTranscript)) fail('transcript_mismatch');
       const shares = new Map<number, bigint>();
@@ -173,24 +106,8 @@ export function createWebCeremonyCrypto(): CeremonyCrypto {
       return { shares, transcriptHash: hash };
     },
 
-    async confirm(facts, holder, share, hash, signingKey) {
-      // The recovery key's ID is the ID of the ceremony that made it.
-      const context = contexts.share(facts.tenantId, facts.ceremonyId, holder.holderIndex, holder.holderRef);
-      const sealed = await seal(TAGS.share, holder.encPub, scalarToBytes(share), context);
-      const transcriptSignature = await signFields(signingKey, TAGS.transcript, [hash]);
-      return { transcriptSignature, encryptedShare: sealedToJson(sealed) };
-    },
-
-    async certify(facts, expectedTranscript, signatures) {
-      await fingerprints(facts);
-      const hash = await transcriptHash(transcriptOf(facts));
-      if (!equalBytes(hash, expectedTranscript)) fail('transcript_mismatch');
-      const vouched = await Promise.all(
-        facts.participants.map((p) => participantVouches(p, signatures.get(p.holderIndex), hash))
-      );
-      if (vouched.includes(false)) fail('signature_invalid');
-      return new Map(facts.gatewayKeys.map((key) => [key.keyId, key.publicKey]));
-    },
+    confirm,
+    certifyChain,
 
     async createPaperDevice(tenantId) {
       const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);

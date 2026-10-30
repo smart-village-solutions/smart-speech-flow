@@ -1,13 +1,18 @@
 import type { Bytes } from '@/core/crypto/bytes';
-import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
+import type { TrustChain } from '@/core/crypto/ceremony-crypto.port';
 import type { SignedEntry } from '@/core/crypto/chain';
 
 /** Derived until verification records exist (#619, spec §10.5). */
 export type VerificationSummary = 'not_verified';
 
-/** A row of the employee's own archive: clear metadata only (spec §10.6). */
+/** A row of the caller's archive: clear metadata only (spec §10.6, §9.5). */
 export interface OwnConversation {
   conversationId: string;
+  employeeSub: string;
+  /** The directory's name for a recovered row's employee; null for one's own or when unknown. */
+  employeeName: string | null;
+  /** Someone else's conversation, opened through a completed recovery request. */
+  recovered: boolean;
   startedAt: string;
   endedAt: string;
   retentionUntil: string;
@@ -72,11 +77,5 @@ export interface OpenedConversation {
   keys: KeyFacts[];
 }
 
-/** The active recovery key's ceremony: what certifies the gateway's signing keys (spec A.6). */
-export interface ArchiveTrust {
-  recoveryKeyId: string;
-  transcriptHash: Bytes;
-  facts: CeremonyFacts;
-  /** Holder index -> transcript signature, one per custodian. */
-  signatures: Map<number, Bytes>;
-}
+/** The recovery key's generations: what certifies the gateway's signing keys (spec A.6, §9.7). */
+export type ArchiveTrust = TrustChain;

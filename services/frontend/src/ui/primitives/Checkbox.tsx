@@ -6,19 +6,24 @@ interface CheckboxProps {
   onCheckedChange: (checked: boolean) => void;
   children: ReactNode;
   className?: string;
+  disabled?: boolean;
 }
 
-export function Checkbox({ checked, onCheckedChange, children, className }: Readonly<CheckboxProps>) {
+export function Checkbox({ checked, onCheckedChange, children, className, disabled = false }: Readonly<CheckboxProps>) {
   const id = useId();
 
   return (
-    <label htmlFor={id} className={cn('group flex cursor-pointer items-start gap-3', className)}>
+    <label
+      htmlFor={id}
+      className={cn('group flex cursor-pointer items-start gap-3', disabled && 'cursor-not-allowed opacity-50', className)}
+    >
       <span className="relative mt-0.5 shrink-0">
         <input
           id={id}
           type="checkbox"
           className="sr-only"
           checked={checked}
+          disabled={disabled}
           onChange={(event) => onCheckedChange(event.target.checked)}
         />
         <span

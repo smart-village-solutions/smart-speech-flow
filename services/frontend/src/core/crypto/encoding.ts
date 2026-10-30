@@ -26,3 +26,9 @@ export function enc(...fields: readonly Field[]): Bytes {
     })
   );
 }
+
+/** Code-point order, as Python's `sorted` uses; `localeCompare` would differ. */
+export function codePointOrder(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}

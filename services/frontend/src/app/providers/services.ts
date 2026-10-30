@@ -32,6 +32,8 @@ import { createKeyVault } from '@/core/crypto/key-vault';
 import { createPaperDeviceHolder } from '@/core/crypto/paper-device-holder';
 import { createWebArchiveCrypto } from '@/core/crypto/web-archive-crypto';
 import { createWebCeremonyCrypto } from '@/core/crypto/web-ceremony-crypto';
+import type { RecoveryCrypto } from '@/core/crypto/recovery-crypto.port';
+import { createWebRecoveryCrypto } from '@/core/crypto/web-recovery-crypto';
 import { createZxcvbnStrength } from '@/core/crypto/zxcvbn-strength';
 import { createResumeMemory } from '@/core/storage/resume-memory';
 import type { ResumeMemory } from '@/core/storage/resume-memory.port';
@@ -41,6 +43,8 @@ import { createRecordingSessionRepository } from '@/domain/recording/recordingSe
 import type { RecordingSessionRepository } from '@/domain/recording/recordingSession.repository';
 import { createRecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
 import type { RecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
+import { createRecoveryRequestsRepository } from '@/domain/recovery/requests.repository';
+import type { RecoveryRequestsRepository } from '@/domain/recovery/requests.repository';
 
 export interface Services {
   config: AppConfig;
@@ -66,6 +70,8 @@ export interface Services {
   recoveryCeremony: RecoveryCeremonyRepository;
   ceremonyCrypto: CeremonyCrypto;
   paperDevice: PaperDeviceHolder;
+  recoveryRequests: RecoveryRequestsRepository;
+  recoveryCrypto: RecoveryCrypto;
 }
 
 /** The composition root. The only place implementations are chosen. */
@@ -105,6 +111,8 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     ceremonyCrypto: createWebCeremonyCrypto(),
     // The ceremony device's key: in memory, like the key vault.
     paperDevice: createPaperDeviceHolder(),
+    recoveryRequests: createRecoveryRequestsRepository(http),
+    recoveryCrypto: createWebRecoveryCrypto(),
     createRealtime: () =>
       createWebSocketTransport({
         wsBaseUrl: config.wsBaseUrl,

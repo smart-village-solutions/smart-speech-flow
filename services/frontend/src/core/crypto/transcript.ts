@@ -1,5 +1,5 @@
 import { type Bytes, fromBuffer, scalarToBytes, toHex } from './bytes';
-import { type Field, enc } from './encoding';
+import { type Field, codePointOrder, enc } from './encoding';
 import type { Proof } from './proofs';
 import { TAGS } from './tags';
 
@@ -47,12 +47,6 @@ export interface TranscriptInput {
 
 const byIndex = <T extends { index: number }>(left: T, right: T) => left.index - right.index;
 
-/** Code-point order, as Python's `sorted` uses; `localeCompare` would differ. */
-function compareCodePoints(left: string, right: string): number {
-  if (left === right) return 0;
-  return left < right ? -1 : 1;
-}
-
 /** Every list in a fixed order: participants and dealings by index, keys by ID (spec A.8). */
 function transcriptFields(data: Readonly<TranscriptInput>): Field[] {
   const fields: Field[] = [data.tenantId, data.ceremonyId, data.k, data.participants.length];
@@ -63,7 +57,7 @@ function transcriptFields(data: Readonly<TranscriptInput>): Field[] {
     fields.push(dealing.dealerIndex, ...dealing.commitments, scalarToBytes(dealing.proof.c), scalarToBytes(dealing.proof.s));
   }
   fields.push(data.recoveryPublicKey, ...data.holderShares);
-  for (const key of [...data.gatewayKeys].sort((left, right) => compareCodePoints(left.keyId, right.keyId))) {
+  for (const key of [...data.gatewayKeys].sort((left, right) => codePointOrder(left.keyId, right.keyId))) {
     fields.push(key.keyId, key.publicKey);
   }
   fields.push(data.previousTranscript ?? new Uint8Array(0));
