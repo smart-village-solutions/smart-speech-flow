@@ -121,6 +121,7 @@ async def test_holders_lists_active_keys_with_activity_and_custodianship(archive
     holders = {h.sub: h for h in await leavers.holders(TENANT)}
 
     assert sorted(holders) == ["alice", "carol"]
+    assert await leavers.holder_subs(TENANT) == frozenset({"alice", "carol"})
     alice, carol = holders["alice"], holders["carol"]
     assert (alice.conversations, alice.custodian, alice.display_name) == (1, False, None)
     assert alice.last_conversation_at is not None and alice.key_version == 1
@@ -313,6 +314,33 @@ async def test_a_filing_racing_the_marking_leaves_no_open_request(
     else:
         assert filed == Refused("key_changed")
         assert status is None
+
+
+async def test_a_marking_that_waited_on_a_re_enrolment_says_the_key_changed(
+    archive, owner, leavers
+):
+    """Review: the row it waited on is retired, and the newer key was not the one shown."""
+    await enrol(owner, "alice")
+    holder = await asyncpg.connect(OWNER_DSN, password=OWNER_PASSWORD)
+    try:
+        transaction = holder.transaction()
+        await transaction.start()
+        await holder.execute("SELECT 1 FROM user_keys WHERE user_sub = 'alice' FOR UPDATE")
+        swap = asyncio.create_task(_reenrol(archive))
+        await _waiting(owner, 1)
+        marking = asyncio.create_task(_mark(leavers))
+        await _waiting(owner, 2)
+        await transaction.rollback()
+        swapped, marked = await asyncio.gather(swap, marking)
+    finally:
+        await holder.close()
+
+    assert swapped is None
+    assert marked == Refused("key_changed")
+    assert [(k["key_version"], k["left_at"]) for k in await _keys(owner, "alice")] == [
+        (1, None),
+        (2, None),
+    ]
 
 
 async def test_a_leaver_with_5000_wraps_is_marked_within_four_seconds(archive, owner, leavers):
@@ -561,6 +589,7 @@ async def test_acceptance_a_custodian_leaver_deals_and_activation_deletes_the_bl
     reshare_id = started.ceremony.ceremony_id
     material = await resharing.dealer(TENANT, "anna", reshare_id)
     assert (material.dealer_index, material.key.key_version) == (1, 1)
+    assert not material.has_active_key
     snapshot = (await ceremonies.state(TENANT)).ceremony
     await ceremonies.deal(
         TENANT, "anna", reshare_id, reshare_dealing(snapshot, 1, shares[1], [61], ANNA)

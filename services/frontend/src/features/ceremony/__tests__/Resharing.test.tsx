@@ -138,12 +138,13 @@ describe('changing custodians', () => {
   });
 
   it('names custodians who left and marks them among the dealers', async () => {
+    const names: Readonly<Record<string, string>> = { bernd: 'Bernd', carla: 'Carla' };
     const leftHolders = holders.map((h) =>
-      h.holderRef === 'bernd' ? { ...h, displayName: 'Bernd', left: true } : h
+      h.holderRef in names ? { ...h, displayName: names[h.holderRef], left: true } : h
     );
     render(withKey(null, { recoveryKey: activeKey({ holders: leftHolders }) }));
     expect(
-      await screen.findByText(/Ausgeschieden: Bernd\. Ihre Anteile gelten weiter/)
+      await screen.findByText(/Ausgeschieden: Bernd und Carla\. Ihre Anteile gelten weiter/)
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Verwahrende ändern' }));
     expect(

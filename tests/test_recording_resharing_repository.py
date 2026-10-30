@@ -127,11 +127,12 @@ async def test_dealer_material_is_the_share_and_the_listed_key():
         encrypted_private=b"blob",
         created_at=NOW,
         encrypted_share="{}",
+        has_active_key=True,
     )
     store, connection = _store({"AND s.holder_index = $1": key})
     material = await store.dealer_material(TENANT, 1, "anna")
-    encrypted_share, key = material
-    assert (encrypted_share, key.key_version) == ("{}", 1)
+    encrypted_share, key, has_active_key = material
+    assert (encrypted_share, key.key_version, has_active_key) == ("{}", 1, True)
     assert "u.retired_at IS NULL OR u.encrypted_private IS NOT NULL" in connection.calls[-1]
     empty, _ = _store({})
     assert await empty.dealer_material(TENANT, 1, "anna") is None

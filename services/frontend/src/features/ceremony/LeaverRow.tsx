@@ -12,7 +12,7 @@ const COPY = {
 
 interface LeaverRowProps {
   candidate: LeaverCandidate;
-  /** Until a fresh MFA login, and while a marking is sent. */
+  /** While a marking is sent. */
   disabled: boolean;
   confirming: boolean;
   onAsk: () => void;

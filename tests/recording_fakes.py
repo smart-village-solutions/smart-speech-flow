@@ -140,9 +140,6 @@ class FakeCeremonyRepository:
     async def record_audit(self, event: AuditEvent) -> None:
         self.audit.append(event)
 
-    async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None:
-        return None if user_sub in self.left else self.keys.get(user_sub)
-
     async def left_holders(self, tenant_id: str) -> frozenset[str]:
         return frozenset(self.left)
 
@@ -158,11 +155,11 @@ class FakeCeremonyRepository:
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> tuple[str, UserKeyRecord] | None:
+    ) -> tuple[str, UserKeyRecord, bool] | None:
         share = next(s for s in self.shares if s.holder_index == dealer_index)
         if holder_ref in self.unusable or share.encrypted_share is None:
             return None
-        return share.encrypted_share, self.keys[holder_ref]
+        return share.encrypted_share, self.keys[holder_ref], holder_ref not in self.left
 
     async def create_resharing(self, ceremony, participants, dealers, audit) -> None:
         if await self.open_ceremony(ceremony.tenant_id, ceremony.started_at) is not None:

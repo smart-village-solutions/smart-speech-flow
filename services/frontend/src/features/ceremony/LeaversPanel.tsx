@@ -8,19 +8,19 @@ import { useLeavers } from './useLeavers';
 
 /**
  * Users with a key whom Studio no longer gives a recording permission (spec §9.8).
- * Step-up is asked for first and latched, so its redirect never loses a chosen candidate.
+ * Step-up is asked for only once the admin asks to mark someone, and latched at mount.
  */
 export function LeaversPanel() {
   const { t } = useTranslation();
   const [fresh] = useState(() => hasFreshStepUp());
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [askedStale, setAskedStale] = useState(false);
   const leavers = useLeavers();
   const candidates = leavers.candidates ?? [];
-  const needsStepUp = (!fresh && candidates.length > 0) || leavers.stepUp;
 
   return (
     <>
-      {needsStepUp && <StepUpPrompt returnTo={CEREMONY_VIEW} />}
+      {(askedStale || leavers.stepUp) && <StepUpPrompt returnTo={CEREMONY_VIEW} />}
       <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5 print:hidden">
         <h2 className="text-body font-semibold text-fg-strong">
           {t('admin.ceremony.leavers.title')}
@@ -39,11 +39,12 @@ export function LeaversPanel() {
             <LeaverRow
               key={candidate.sub}
               candidate={candidate}
-              disabled={!fresh || leavers.pending}
+              disabled={leavers.pending}
               confirming={confirming === candidate.sub}
               onAsk={() => {
                 leavers.reset();
-                setConfirming(candidate.sub);
+                if (fresh) setConfirming(candidate.sub);
+                else setAskedStale(true);
               }}
               onCancel={() => setConfirming(null)}
               onConfirm={() => leavers.mark(candidate, () => setConfirming(null))}

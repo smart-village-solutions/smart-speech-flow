@@ -16,6 +16,7 @@ import asyncpg
 
 from .audit import AuditEvent
 from .recovery_requests_model import SYSTEM_ACTOR
+from .recovery_requests_sql import CURRENT_CUSTODIANS
 
 # A ceremony still dealing or confirming holds sub-shares sealed to this key, or, for a
 # resharing's dealer, relies on the key that opens the dealer's share (§9.7).
@@ -29,12 +30,7 @@ IN_CEREMONY = (
     "   AND d.holder_ref = $1)))"
 )
 # The active recovery key, if the key with this fingerprint is a current custodian's of it.
-CUSTODIAN_OF = (
-    "SELECT r.key_id FROM recovery_keys r JOIN ceremony_participants p"
-    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
-    " WHERE r.status = 'active' AND p.kind = 'custodian' AND p.holder_ref = $1"
-    " AND p.fingerprint = $2"
-)
+CUSTODIAN_OF = f"SELECT r.key_id{CURRENT_CUSTODIANS} AND p.holder_ref = $1 AND p.fingerprint = $2"
 
 
 @dataclass(frozen=True)

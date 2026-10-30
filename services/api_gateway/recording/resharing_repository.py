@@ -34,6 +34,7 @@ from .ceremony_rows import (
     snapshot_of,
 )
 from .recovery_requests_model import SYSTEM_ACTOR
+from .recovery_requests_sql import CURRENT_CUSTODIANS
 from .repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
@@ -50,7 +51,9 @@ T = TypeVar("T")
 # The current generation's custodian holding `index`, by `ref`, and the key that opens its
 # share: the active one, or a retired one whose blob re-enrolment kept (§9.6).
 _DEALER_KEY = (
-    "SELECT s.encrypted_share, u.* FROM recovery_keys r"
+    "SELECT s.encrypted_share, u.*, EXISTS (SELECT 1 FROM user_keys a"
+    "  WHERE a.tenant_id = p.tenant_id AND a.user_sub = p.holder_ref AND a.retired_at IS NULL)"
+    "  AS has_active_key FROM recovery_keys r"
     " JOIN recovery_shares s ON s.tenant_id = r.tenant_id"
     "  AND s.ceremony_id = r.holders_ceremony_id AND s.encrypted_share IS NOT NULL"
     " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id"
@@ -78,9 +81,7 @@ _HOLDER_STATES = (
 )
 
 _LEFT_HOLDERS = (
-    "SELECT p.holder_ref FROM recovery_keys r JOIN ceremony_participants p"
-    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
-    " AND p.kind = 'custodian' WHERE r.status = 'active'"
+    f"SELECT p.holder_ref{CURRENT_CUSTODIANS}"
     # An active key never has left_at (migration 009), so this also means no active key.
     " AND (SELECT u.left_at IS NOT NULL FROM user_keys u WHERE u.tenant_id = p.tenant_id"
     "  AND u.user_sub = p.holder_ref ORDER BY u.key_version DESC LIMIT 1)"
@@ -160,7 +161,7 @@ class ResharingRepositoryMixin:
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> tuple[str, UserKeyRecord] | None:
+    ) -> tuple[str, UserKeyRecord, bool] | None:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetchrow(
                 _DEALER_KEY + " AND s.holder_index = $1 AND p.holder_ref = $2"
@@ -172,7 +173,7 @@ class ResharingRepositoryMixin:
         row = await _run(self._pool, tenant_id, work)
         if row is None:
             return None
-        return row["encrypted_share"], user_key_from_row(row)
+        return row["encrypted_share"], user_key_from_row(row), row["has_active_key"]
 
     async def create_resharing(
         self,

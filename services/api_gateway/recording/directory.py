@@ -43,7 +43,8 @@ class StudioCustodianDirectory:
         return {sub: user.display_name for sub, user in directory.holders_of(CUSTODIAN).items()}
 
     async def members(self, tenant_id: str, correlation_id: str) -> frozenset[str] | None:
-        """Every sub the directory lists; None when Studio cannot answer, never an empty set."""
+        """Every sub the directory lists; None when Studio cannot answer, so that a failure
+        is never mistaken for an empty directory."""
         directory = await self._fetch(tenant_id, correlation_id)
         return None if directory is None else frozenset(user.sub for user in directory.users)
 

@@ -583,6 +583,7 @@ async def test_a_re_enrolled_dealer_deals_with_the_retired_key_until_its_blob_is
     )
     material = await resharing.dealer(TENANT, "anna", started.ceremony.ceremony_id)
     assert (material.dealer_index, material.key.key_version) == (1, 1)
+    assert material.has_active_key  # version 2, which is not the listed key
     assert material.encrypted_share.startswith("{")
 
     await owner.execute(

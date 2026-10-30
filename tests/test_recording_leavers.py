@@ -39,6 +39,9 @@ class FakeLeaverStore:
             raise RecordingStorageUnavailable("down")
         return self.holders_
 
+    async def holder_subs(self, tenant_id: str) -> frozenset[str]:
+        return frozenset(holder.sub for holder in await self.holders(tenant_id))
+
     async def mark(self, tenant_id, sub, key_version, actor, now):
         if self.refusal is not None:
             return Refused(self.refusal)
@@ -108,10 +111,12 @@ async def test_marking_passes_the_admin_and_version_and_maps_refusals():
 
 
 async def test_storage_failure_is_unavailable():
-    service, _, _ = _service(FakeLeaverStore(failing=True))
-    with pytest.raises(LeaverError) as raised:
-        await service.candidates(TENANT, "c")
-    assert raised.value.code == "unavailable"
+    service, store, _ = _service(FakeLeaverStore(failing=True))
+    for read in (service.candidates(TENANT, "c"), service.mark(TENANT, "admin", "alice", 1, "c")):
+        with pytest.raises(LeaverError) as raised:
+            await read
+        assert raised.value.code == "unavailable"
+    assert store.marked == []
 
 
 @pytest.fixture

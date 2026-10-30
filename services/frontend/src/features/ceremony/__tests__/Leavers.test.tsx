@@ -97,11 +97,25 @@ describe('leavers', () => {
     expect(recoveryCeremony.markLeaver).not.toHaveBeenCalled();
   });
 
-  it('asks for a fresh MFA login first and keeps marking disabled until then', async () => {
+  it('asks for a fresh MFA login only once a marking is asked for, never on paper', async () => {
+    vi.mocked(hasFreshStepUp).mockReturnValue(false);
+    const { recoveryCeremony } = render(withKey, {
+      repository: { leavers: vi.fn().mockResolvedValue([alice]) },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Als ausgeschieden markieren' })
+    );
+    const prompt = screen.getByText('Identität bestätigen').closest('section');
+    expect(prompt).toHaveClass('print:hidden');
+    expect(screen.queryByRole('button', { name: 'Endgültig markieren' })).not.toBeInTheDocument();
+    expect(recoveryCeremony.markLeaver).not.toHaveBeenCalled();
+  });
+
+  it('shows no login card for candidates nobody has asked to mark', async () => {
     vi.mocked(hasFreshStepUp).mockReturnValue(false);
     render(withKey, { repository: { leavers: vi.fn().mockResolvedValue([alice]) } });
-    expect(await screen.findByText('Identität bestätigen')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Als ausgeschieden markieren' })).toBeDisabled();
+    expect(await screen.findByText('7f1e2d3c-alice', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.queryByText('Identität bestätigen')).not.toBeInTheDocument();
   });
 
   it('asks for no login while nobody has left', async () => {

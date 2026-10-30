@@ -17,6 +17,7 @@ from .audit import AuditEvent
 from .key_retirement import IN_CEREMONY, retire_key
 from .leavers import KeyHolder, MarkedLeaver
 from .recovery_requests_model import Refused
+from .recovery_requests_sql import CURRENT_CUSTODIANS
 from .repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
@@ -28,18 +29,13 @@ from .repository import (
 T = TypeVar("T")
 
 _ACTIVITY = "c.employee_sub = u.user_sub AND c.shredded_at IS NULL"
-# The current generation's custodians, by sub and whichever key it listed for them.
-_LISTED = (
-    "SELECT p.holder_ref, p.display_name FROM recovery_keys r JOIN ceremony_participants p"
-    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
-    " AND p.kind = 'custodian' WHERE r.status = 'active'"
-)
+_LISTED = f"SELECT p.holder_ref, p.display_name{CURRENT_CUSTODIANS}"
 _HOLDERS = (
-    "SELECT u.user_sub, u.key_version, u.fingerprint, u.created_at,"
-    f" (SELECT count(*) FROM conversations c WHERE {_ACTIVITY}) AS conversations,"
-    f" (SELECT max(c.started_at) FROM conversations c WHERE {_ACTIVITY}) AS last_conversation_at,"
-    " h.holder_ref IS NOT NULL AS custodian, h.display_name"
+    "SELECT u.user_sub, u.key_version, u.fingerprint, u.created_at, a.conversations,"
+    " a.last_conversation_at, h.holder_ref IS NOT NULL AS custodian, h.display_name"
     f" FROM user_keys u LEFT JOIN ({_LISTED}) h ON h.holder_ref = u.user_sub"
+    " CROSS JOIN LATERAL (SELECT count(*) AS conversations,"
+    f" max(c.started_at) AS last_conversation_at FROM conversations c WHERE {_ACTIVITY}) a"
     " WHERE u.retired_at IS NULL ORDER BY u.user_sub"
 )
 # Its browser is the paper device: the ceremony cannot finish without the starter.
@@ -82,6 +78,14 @@ class PostgresLeavers:
             for row in await self._run(tenant_id, work)
         ]
 
+    async def holder_subs(self, tenant_id: str) -> frozenset[str]:
+        async def work(connection: asyncpg.Connection) -> list[Any]:
+            return list(
+                await connection.fetch("SELECT user_sub FROM user_keys WHERE retired_at IS NULL")
+            )
+
+        return frozenset(row["user_sub"] for row in await self._run(tenant_id, work))
+
     async def mark(
         self, tenant_id: str, sub: str, key_version: int, actor: str, now: datetime
     ) -> Refused | MarkedLeaver:
@@ -121,12 +125,19 @@ async def _refusal(
     connection: asyncpg.Connection, old: Any, sub: str, key_version: int, now: datetime
 ) -> Refused | None:
     if old is None:
-        left = await connection.fetchval(
-            "SELECT left_at IS NOT NULL FROM user_keys WHERE user_sub = $1"
+        # A swap may have retired the row this one waited on; its newer key is not the one shown.
+        newest = await connection.fetchrow(
+            "SELECT key_version, left_at FROM user_keys WHERE user_sub = $1"
             " ORDER BY key_version DESC LIMIT 1",
             sub,
         )
-        return Refused("already_left" if left else "key_not_enrolled")
+        if newest is None:
+            return Refused("key_not_enrolled")
+        if newest["left_at"] is not None:
+            return Refused("already_left")
+        return Refused(
+            "key_changed" if newest["key_version"] >= key_version else "key_not_enrolled"
+        )
     if old["key_version"] != key_version:
         return Refused("key_changed")
     if await connection.fetchval(IN_CEREMONY, sub, now) or await connection.fetchval(
