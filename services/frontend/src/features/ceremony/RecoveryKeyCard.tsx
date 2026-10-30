@@ -13,6 +13,7 @@ interface RecoveryKeyCardProps {
 
 export function RecoveryKeyCard({ recoveryKey, onReshare }: Readonly<RecoveryKeyCardProps>) {
   const { t } = useTranslation();
+  const left = recoveryKey.holders.filter((holder) => holder.left).map((holder) => holder.displayName ?? holder.holderRef);
 
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5">
@@ -32,6 +33,12 @@ export function RecoveryKeyCard({ recoveryKey, onReshare }: Readonly<RecoveryKey
       {recoveryKey.previousHadPaper && (
         <p role="alert" className="text-note text-fg-status-alert">
           {t('admin.ceremony.reshare.voidSheets')}
+        </p>
+      )}
+      {left.length > 0 && (
+        // Their share stays until a resharing replaces them (§9.8).
+        <p role="alert" className="text-note text-fg-status-alert">
+          {t('admin.ceremony.reshare.leftNotice', { names: left.join(', ') })}
         </p>
       )}
       {onReshare !== undefined && (

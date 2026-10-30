@@ -77,6 +77,15 @@ _HOLDER_STATES = (
     " WHERE r.status = 'active'"
 )
 
+_LEFT_HOLDERS = (
+    "SELECT p.holder_ref FROM recovery_keys r JOIN ceremony_participants p"
+    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
+    " AND p.kind = 'custodian' WHERE r.status = 'active'"
+    # An active key never has left_at (migration 009), so this also means no active key.
+    " AND (SELECT u.left_at IS NOT NULL FROM user_keys u WHERE u.tenant_id = p.tenant_id"
+    "  AND u.user_sub = p.holder_ref ORDER BY u.key_version DESC LIMIT 1)"
+)
+
 
 async def _run(
     pool: asyncpg.Pool, tenant_id: str, work: Callable[[asyncpg.Connection], Awaitable[T]]
@@ -140,6 +149,14 @@ class ResharingRepositoryMixin:
 
         rows = await _run(self._pool, tenant_id, work)
         return {row["holder_ref"]: row["state"] for row in rows}
+
+    async def left_holders(self, tenant_id: str) -> frozenset[str]:
+        """Current custodians marked a leaver: their newest key is the one that left (§9.8)."""
+
+        async def work(connection: asyncpg.Connection) -> list[Any]:
+            return list(await connection.fetch(_LEFT_HOLDERS))
+
+        return frozenset(row["holder_ref"] for row in await _run(self._pool, tenant_id, work))
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str

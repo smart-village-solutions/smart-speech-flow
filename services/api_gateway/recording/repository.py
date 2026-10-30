@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final, Self
 
@@ -170,17 +170,37 @@ class PostgresRecordingRepository:
             raise storage_unavailable(error) from None
         return None if row is None else user_key_from_row(row)
 
-    async def enrol_user_key(self, record: UserKeyRecord, audit: AuditEvent) -> None:
+    async def enrol_user_key(self, record: UserKeyRecord) -> int:
+        """Inserts `record` as the user's next version and returns it.
+
+        A returning leaver's retired keys stay, so their first key now is not version 1
+        (§9.8). A unique violation still means a concurrent enrolment.
+        """
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
                     await bind_tenant(connection, record.tenant_id)
-                    await insert_user_key(connection, record)
-                    await append_audit(connection, audit)
+                    version = await connection.fetchval(
+                        "SELECT coalesce(max(key_version), 0) + 1 FROM user_keys"
+                        " WHERE user_sub = $1",
+                        record.user_sub,
+                    )
+                    await insert_user_key(connection, replace(record, key_version=version))
+                    await append_audit(
+                        connection,
+                        AuditEvent(
+                            record.tenant_id,
+                            record.user_sub,
+                            "key_enrolled",
+                            f"user-key:{version}",
+                            record.created_at,
+                        ),
+                    )
         except asyncpg.UniqueViolationError:
             raise KeyAlreadyEnrolledError() from None
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
+        return int(version)
 
     async def record_audit(self, event: AuditEvent) -> None:
         try:

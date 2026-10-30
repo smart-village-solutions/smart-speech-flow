@@ -1,18 +1,20 @@
 import type { AxiosInstance } from 'axios';
 import { type Bytes, scalarToBytes, toBase64Url } from '@/core/crypto/bytes';
 import type { Confirmation } from '@/core/crypto/ceremony-crypto.port';
-import { toCandidates, toCeremony, toCeremonyState, toDealerKey, toSubshares } from './recovery.mapper';
+import { toCandidates, toCeremony, toCeremonyState, toDealerKey, toLeavers, toSubshares } from './recovery.mapper';
 import type {
   AbortReason,
   Ceremony,
   CeremonyState,
   CustodianCandidate,
   DealerKey,
+  LeaverCandidate,
   NewDealing,
   ReceivedSubshares,
 } from './recovery.types';
 
 const BASE = '/api/admin/recording/ceremony';
+const LEAVERS = '/api/admin/recording/leavers';
 
 export interface RecoveryCeremonyRepository {
   state(): Promise<CeremonyState>;
@@ -26,6 +28,10 @@ export interface RecoveryCeremonyRepository {
   startResharing(start: Readonly<ResharingStart>): Promise<Ceremony>;
   dealer(ceremonyId: string): Promise<DealerKey>;
   paperDeal(ceremonyId: string, dealerIndex: number, dealing: Readonly<NewDealing>): Promise<void>;
+  /** Users with a key whom Studio no longer gives a recording permission (spec §9.8). */
+  leavers(): Promise<LeaverCandidate[]>;
+  /** Retires `keyVersion`, the version the list showed; needs a fresh MFA login. */
+  markLeaver(sub: string, keyVersion: number): Promise<void>;
 }
 
 export interface ResharingStart {
@@ -111,6 +117,14 @@ export function createRecoveryCeremonyRepository(http: AxiosInstance): RecoveryC
 
     async paperDeal(ceremonyId, dealerIndex, dealing) {
       await http.post(`${BASE}/${ceremonyId}/paper-dealings`, { dealer_index: dealerIndex, ...dealingBody(dealing) });
+    },
+
+    async leavers() {
+      return toLeavers((await http.get<unknown>(LEAVERS)).data);
+    },
+
+    async markLeaver(sub, keyVersion) {
+      await http.post(`${LEAVERS}/${encodeURIComponent(sub)}`, { key_version: keyVersion });
     },
   };
 }

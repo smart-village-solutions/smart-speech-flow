@@ -42,6 +42,8 @@ export interface DealerKey {
   fingerprint: Bytes;
   fingerprintDisplay: string;
   blob: string;
+  /** False for a custodian who left: no vault to unlock, only this key (spec §9.8). */
+  hasActiveKey: boolean;
 }
 
 /** A current holder, for the admin choosing dealers. */
@@ -52,6 +54,21 @@ export interface CurrentHolder {
   displayName: string | null;
   /** 'kept': re-enrolled, the old key kept so the share can still deal; 'lost': it cannot. */
   state: 'fresh' | 'kept' | 'lost' | 'paper';
+  /** Marked a leaver; `state` still says whether the share can deal (spec §9.8). */
+  left: boolean;
+}
+
+/** A user with a key who no longer holds a recording permission in Studio (spec §9.8). */
+export interface LeaverCandidate {
+  sub: string;
+  keyVersion: number;
+  fingerprintDisplay: string;
+  enrolledAt: string;
+  conversations: number;
+  lastConversationAt: string | null;
+  custodian: boolean;
+  /** Recorded by the current custodians' ceremony; nobody else's name outlives the directory. */
+  displayName: string | null;
 }
 
 

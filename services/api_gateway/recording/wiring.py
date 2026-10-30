@@ -29,6 +29,8 @@ from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
+from .leavers import Leavers
+from .leavers_repository import PostgresLeavers
 from .recovery_requests import RecoveryRequests
 from .recovery_requests_repository import PostgresRecoveryRequests
 from .reenrolment import ImmediateConfirmation, KeyReenrolment
@@ -280,6 +282,9 @@ async def connect_recording(state: Any, dsn: str) -> bool:
         directory=_custodian_directory(state),
         server_layer=secrets.server_layer,
     )
+    state.recording_leavers = Leavers(
+        store=PostgresLeavers(repository.pool), directory=_custodian_directory(state)
+    )
     state.recording_retention = PostgresRetentionDecisions(repository.pool)
     state.recording_recovery_requests = RecoveryRequests(
         repository=PostgresRecoveryRequests(repository.pool),
@@ -317,6 +322,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_recovery_requests = None
     dependencies.recording_reenrolment = None
     dependencies.recording_resharing = None
+    dependencies.recording_leavers = None
     dependencies.recording_retention = None
     dependencies.recording_secrets = None
     sessions = dependencies.recording_sessions

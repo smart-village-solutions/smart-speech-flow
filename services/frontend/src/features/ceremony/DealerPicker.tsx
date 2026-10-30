@@ -38,6 +38,7 @@ export function DealerPicker({ holders, k, chosen, onChange }: Readonly<DealerPi
             className={`text-meta ${holder.state === 'lost' ? 'text-fg-status-alert' : 'text-fg-muted'}`}
           >
             {t(`admin.ceremony.reshare.state.${holder.state}`)}
+            {holder.left && ` · ${t('admin.ceremony.reshare.left')}`}
           </span>
         </div>
       ))}

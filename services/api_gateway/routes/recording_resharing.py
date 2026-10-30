@@ -116,6 +116,7 @@ async def dealer(
     return {
         "dealer_index": found.dealer_index,
         "encrypted_share": found.encrypted_share,
+        "has_active_key": found.has_active_key,
         "key": {
             "key_version": key.key_version,
             "enc_pub": b64url(key.enc_pub),

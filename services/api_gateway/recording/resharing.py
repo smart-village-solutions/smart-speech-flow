@@ -53,6 +53,8 @@ USABLE_STATES = frozenset({"fresh", "kept"})
 class ResharingStore(Protocol):
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None: ...
 
+    async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None: ...
+
     async def holder_generation(self, tenant_id: str) -> HolderGeneration | None: ...
 
     async def holder_states(self, tenant_id: str) -> dict[str, str]: ...
@@ -92,6 +94,8 @@ class DealerKey:
     encrypted_share: str
     key: UserKeyRecord
     blob: str
+    # False for a custodian who left: there is no vault to unlock, only this key (§9.8).
+    has_active_key: bool
 
 
 def _now() -> datetime:
@@ -212,7 +216,9 @@ class ResharingService:
                 tenant_id, user_sub, "key_blob_read", f"user-key:{key.key_version}", self._clock()
             )
         )
-        return DealerKey(dealer.dealer_index, encrypted_share, key, blob)
+        # A row read, not a blob download: it is not audited and needs no step-up of its own.
+        active = await self._repository.active_user_key(tenant_id, user_sub)
+        return DealerKey(dealer.dealer_index, encrypted_share, key, blob, active is not None)
 
     async def paper_deal(
         self,

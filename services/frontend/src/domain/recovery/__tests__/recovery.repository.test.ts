@@ -134,7 +134,7 @@ describe('recovery ceremony repository', () => {
           },
           ceremony: null,
           usable_shares: 1,
-          holders: [{ holder_index: 2, holder_ref: 'paper-1', kind: 'paper', display_name: null, state: 'paper' }],
+          holders: [{ holder_index: 2, holder_ref: 'paper-1', kind: 'paper', display_name: null, state: 'paper', left: false }],
           previous_had_paper: true,
           chain: [generationBody],
         })
@@ -147,6 +147,7 @@ describe('recovery ceremony repository', () => {
       kind: 'paper',
       displayName: null,
       state: 'paper',
+      left: false,
     });
     expect(state.recoveryKey?.previousHadPaper).toBe(true);
     expect(state.chain?.recoveryKeyId).toBe(CEREMONY);
@@ -167,6 +168,7 @@ describe('recovery ceremony repository', () => {
         HttpResponse.json({
           dealer_index: 1,
           encrypted_share: '{"v":1}',
+          has_active_key: false,
           key: {
             key_version: 2,
             enc_pub: b64(publicPoint(1n)),
@@ -195,6 +197,7 @@ describe('recovery ceremony repository', () => {
     expect(started.kind).toBe('resharing');
     const dealer = await repository().dealer(CEREMONY);
     expect([dealer.dealerIndex, dealer.keyVersion, dealer.blob]).toEqual([1, 2, '{"kdf":{}}']);
+    expect(dealer.hasActiveKey).toBe(false);
   });
 
   it('sends a paper dealing unsigned, and a confirmation with its share proof', async () => {
@@ -273,5 +276,49 @@ describe('recovery ceremony repository', () => {
     const started = repository().start(2, ['anna', 'bernd', 'carla'], null);
     await expect(started).rejects.toBeInstanceOf(AppError);
     await expect(started).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+  });
+
+  it('lists leavers and marks one by the version it showed', async () => {
+    const leavers = `${BASE}/api/admin/recording/leavers`;
+    let sent: unknown = null;
+    let path = '';
+    server.use(
+      http.get(leavers, () =>
+        HttpResponse.json({
+          candidates: [
+            {
+              sub: 'f3a1:x@y',
+              key_version: 2,
+              fingerprint: b64(new Uint8Array(32)),
+              fingerprint_display: '0000 0000',
+              enrolled_at: '2026-01-02T10:00:00+00:00',
+              conversations: 4,
+              last_conversation_at: null,
+              custodian: true,
+              display_name: 'Anna',
+            },
+          ],
+        })
+      ),
+      http.post(`${leavers}/:sub`, async ({ request, params }) => {
+        sent = await request.json();
+        path = String(params.sub);
+        return HttpResponse.json({ sub: path, key_version: 2, custodian: true, wraps_deleted: 4 });
+      })
+    );
+    const [candidate] = await repository().leavers();
+    expect(candidate).toEqual({
+      sub: 'f3a1:x@y',
+      keyVersion: 2,
+      fingerprintDisplay: '0000 0000',
+      enrolledAt: '2026-01-02T10:00:00+00:00',
+      conversations: 4,
+      lastConversationAt: null,
+      custodian: true,
+      displayName: 'Anna',
+    });
+    await repository().markLeaver(candidate.sub, candidate.keyVersion);
+    expect(sent).toEqual({ key_version: 2 });
+    expect(path).toBe('f3a1:x@y');
   });
 });

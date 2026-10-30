@@ -93,10 +93,7 @@ async def store(owner):
     secrets = SECRETS
     for holder in HOLDERS.values():
         blob = secrets.server_layer.seal(b"{}", tenant_id=TENANT, user_sub=holder.sub)
-        await repository.enrol_user_key(
-            replace(holder.key_record(TENANT), encrypted_private=blob),
-            AuditEvent(TENANT, holder.sub, "key_enrolled", "k", NOW),
-        )
+        await repository.enrol_user_key(replace(holder.key_record(TENANT), encrypted_private=blob))
     await repository.register_gateway_key(secrets.signing_key_id, secrets.signing_public_key, NOW)
     yield repository
     await repository.close()

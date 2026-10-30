@@ -1,0 +1,106 @@
+"""Leavers: an org admin retires the key of someone Studio no longer lists (spec §9.8).
+
+Nothing is retired automatically. Only a user missing from the recording
+directory can be marked, and the directory must look like the tenant's: an
+answer naming none of the tenant's key holders is a fault, never a list.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol
+
+from ..clock import utc_now
+from .recovery_requests_model import Refused
+from .repository import RecordingStorageUnavailable
+
+
+@dataclass(frozen=True)
+class KeyHolder:
+    """A user with an active key, with what lets an admin recognise them without a name."""
+
+    sub: str
+    key_version: int
+    fingerprint: bytes
+    enrolled_at: datetime
+    conversations: int
+    last_conversation_at: datetime | None
+    custodian: bool
+    # Recorded by the current generation for a custodian; no other name outlives the directory.
+    display_name: str | None
+
+
+@dataclass(frozen=True)
+class MarkedLeaver:
+    sub: str
+    key_version: int
+    custodian: bool
+    wraps_deleted: int
+
+
+class LeaverError(Exception):
+    """directory_unavailable, still_in_directory, the store's refusals, or unavailable."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+class LeaverStore(Protocol):
+    async def holders(self, tenant_id: str) -> list[KeyHolder]: ...
+
+    async def mark(
+        self, tenant_id: str, sub: str, key_version: int, actor: str, now: datetime
+    ) -> Refused | MarkedLeaver: ...
+
+
+class Members(Protocol):
+    async def members(self, tenant_id: str, correlation_id: str) -> frozenset[str] | None: ...
+
+
+class Leavers:
+    def __init__(
+        self,
+        *,
+        store: LeaverStore,
+        directory: Members,
+        clock: Callable[[], datetime] = utc_now,
+    ) -> None:
+        self._store = store
+        self._directory = directory
+        self._clock = clock
+
+    async def candidates(self, tenant_id: str, correlation_id: str) -> list[KeyHolder]:
+        present, holders = await self._read(tenant_id, correlation_id)
+        return [holder for holder in holders if holder.sub not in present]
+
+    async def mark(
+        self, tenant_id: str, actor: str, sub: str, key_version: int, correlation_id: str
+    ) -> MarkedLeaver:
+        present, _ = await self._read(tenant_id, correlation_id)
+        if sub in present:
+            raise LeaverError("still_in_directory")
+        try:
+            marked = await self._store.mark(tenant_id, sub, key_version, actor, self._clock())
+        except RecordingStorageUnavailable:
+            raise LeaverError("unavailable") from None
+        if isinstance(marked, Refused):
+            raise LeaverError(marked.code)
+        return marked
+
+    async def _read(
+        self, tenant_id: str, correlation_id: str
+    ) -> tuple[frozenset[str], list[KeyHolder]]:
+        present = await self._directory.members(tenant_id, correlation_id)
+        if present is None:
+            raise LeaverError("directory_unavailable")
+        try:
+            holders = await self._store.holders(tenant_id)
+        except RecordingStorageUnavailable:
+            raise LeaverError("unavailable") from None
+        # An empty or truncated answer would make every key holder a leaver.
+        if holders and not any(holder.sub in present for holder in holders):
+            raise LeaverError("directory_unavailable")
+        return present, holders
