@@ -6,6 +6,7 @@ import type {
   Rejection,
   RequestKind,
   ScopePair,
+  UnrecoverableKey,
 } from '@/core/crypto/recovery-crypto.port';
 import { AppError } from '@/core/http/AppError';
 import {
@@ -49,13 +50,13 @@ export interface RecoveryRequestsRepository {
   progress(requestId: string): Promise<RequestProgress>;
   partials(requestId: string): Promise<ServedPartials>;
   reject(requestId: string, rejection: Readonly<Rejection>): Promise<void>;
-  /** With a key ID, that key's recovery wrap is unusable and leaves the scope (§9.6). */
-  reportIntegrity(
+  reportIntegrity(requestId: string, stage: RecoveryIntegrityStage | 'trust'): Promise<void>;
+  /** The keys whose recovery wrap could not be used travel with the wraps, in one call (§9.6). */
+  storeWraps(
     requestId: string,
-    stage: RecoveryIntegrityStage | 'trust',
-    keyId?: string
-  ): Promise<void>;
-  storeWraps(requestId: string, wraps: readonly NewRecoveredWrap[]): Promise<string[]>;
+    wraps: readonly NewRecoveredWrap[],
+    unrecoverable?: readonly UnrecoverableKey[]
+  ): Promise<string[]>;
   cancel(requestId: string): Promise<void>;
   approvals(): Promise<ApprovalsList>;
   approval(requestId: string): Promise<ApprovalDetail>;
@@ -126,11 +127,10 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
         fault: rejection.fault,
       });
     },
-    reportIntegrity: async (requestId, stage, keyId) => {
-      const body = keyId === undefined ? { stage } : { stage, key_id: keyId };
-      await post(`/requests/${requestId}/integrity-failures`, body);
+    reportIntegrity: async (requestId, stage) => {
+      await post(`/requests/${requestId}/integrity-failures`, { stage });
     },
-    storeWraps: async (requestId, wraps) => {
+    storeWraps: async (requestId, wraps, unrecoverable = []) => {
       const body = await post(`/requests/${requestId}/wraps`, {
         wraps: wraps.map((w) => ({
           conversation_id: w.conversationId,
@@ -138,6 +138,7 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
           blob: w.blob,
           signature: toBase64Url(w.signature),
         })),
+        unrecoverable: unrecoverable.map((u) => ({ key_id: u.keyId, stage: u.stage })),
       });
       return (body as { dropped: string[] }).dropped;
     },

@@ -32,6 +32,7 @@ from .recovery_requests_model import (
     ScopeKey,
     ScopeVerifier,
     ServedPartials,
+    UnrecoverableKey,
     WrapVerifier,
 )
 from .repository import RecordingStorageUnavailable, UserKeyRecord
@@ -126,7 +127,6 @@ class RequestStore(Protocol):
         now: datetime,
         *,
         may_supervise: bool,
-        key_id: str | None = None,
     ) -> Refused | None: ...
 
     async def store_wraps(
@@ -140,6 +140,7 @@ class RequestStore(Protocol):
         now: datetime,
         *,
         may_supervise: bool,
+        unrecoverable: Sequence[UnrecoverableKey] = (),
     ) -> Refused | tuple[str, ...]: ...
 
     async def cancel(
@@ -414,17 +415,10 @@ class RecoveryRequests:
         stage: str,
         *,
         may_supervise: bool,
-        key_id: str | None = None,
     ) -> None:
         await _answer(
             self._repository.record_integrity_failure(
-                tenant_id,
-                sub,
-                request_id,
-                stage,
-                self._clock(),
-                may_supervise=may_supervise,
-                key_id=key_id,
+                tenant_id, sub, request_id, stage, self._clock(), may_supervise=may_supervise
             )
         )
 
@@ -436,6 +430,7 @@ class RecoveryRequests:
         wraps: Sequence[NewWrap],
         *,
         may_supervise: bool,
+        unrecoverable: Sequence[UnrecoverableKey] = (),
     ) -> tuple[str, ...]:
         own = await self._own_key(tenant_id, sub)
 
@@ -464,6 +459,7 @@ class RecoveryRequests:
                 verify,
                 self._clock(),
                 may_supervise=may_supervise,
+                unrecoverable=unrecoverable,
             )
         )
 

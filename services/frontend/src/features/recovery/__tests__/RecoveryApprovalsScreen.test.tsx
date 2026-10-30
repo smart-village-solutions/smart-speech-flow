@@ -1,7 +1,12 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasAcceptedStepUp, hasFreshStepUp } from '@/app/auth/keycloak';
+import {
+  getAdminIdentity,
+  hasAcceptedStepUp,
+  hasFreshStepUp,
+  stepUpSecondsLeft,
+} from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -18,6 +23,7 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   getAdminIdentity: vi.fn(),
   hasFreshStepUp: vi.fn(),
   hasAcceptedStepUp: vi.fn(),
+  stepUpSecondsLeft: vi.fn(),
 }));
 
 const keys = { fingerprint: new Uint8Array(32) } as unknown as UnlockedKeys;
@@ -108,6 +114,7 @@ describe('RecoveryApprovalsScreen', () => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
     vi.mocked(hasFreshStepUp).mockReturnValue(true);
     vi.mocked(hasAcceptedStepUp).mockReturnValue(true);
+    vi.mocked(stepUpSecondsLeft).mockReturnValue(300);
   });
 
   it('labels each request with its kind, in the list and in the review', async () => {

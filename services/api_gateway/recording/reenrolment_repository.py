@@ -130,11 +130,11 @@ class PostgresKeyReenrolment:
             custodian = current is not None and (
                 await connection.fetchval(_CUSTODIAN_OF, sub, bytes(current)) is not None
             )
-            # The count is for custodians and admins only (§9.6).
+            # Only for the custodian re-enrolling here; admins read it in the ceremony status.
             shares = await connection.fetchrow(USABLE_SHARES) if custodian else None
             if shares is None:
                 return ReenrolmentImpact(custodian, None, None)
-            usable = int(shares["usable"]) - (1 if custodian else 0)
+            usable = int(shares["usable"]) - 1  # the caller's own share goes stale
             return ReenrolmentImpact(custodian, int(shares["k"]), usable)
 
         return await self._run(tenant_id, work)

@@ -28,10 +28,10 @@ export function useReenrolment(owner: Readonly<KeyOwner>, replacesVersion: numbe
   const step = useNewKeySubmit(
     owner,
     async (passphrase) => {
-      // An old key still unlocked would sign for a key the gateway has retired.
-      keyVault.lock();
       const created = await archiveCrypto.createKeys(passphrase, owner);
       const done = await recordingKeys.reenrol(created.unlocked, created.blob, replacesVersion);
+      // Only once the gateway took it: a refused or failed re-enrolment leaves the old key
+      // unlocked, and a pending one keeps it in use until the link is opened.
       if (done.status === 'active') keyVault.hold(created.unlocked);
       setResult(done);
       await queryClient.invalidateQueries({ queryKey: OWN_KEY_QUERY });

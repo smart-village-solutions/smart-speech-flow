@@ -21,6 +21,7 @@ from services.api_gateway.recording.recovery_requests_model import (
     NewWrap,
     Refused,
     ScopeKey,
+    UnrecoverableKey,
 )
 from services.api_gateway.recording.recovery_requests_repository import (
     PostgresRecoveryRequests,
@@ -521,18 +522,14 @@ def test_a_batch_takes_whole_conversations_and_stops_at_the_first_that_does_not_
     big, small, later = _candidate(1500), _candidate(600), _candidate(10)
     too_large = _candidate(2001)
 
-    batch, conversations, keys = batched([big, small, later, too_large])
-
-    assert batch == [big]
-    assert (conversations, keys) == (2, 610)
+    assert batched([too_large, big, small, later]) == [big]
 
 
 def test_a_batch_may_fill_to_the_limit_exactly():
-    batch, conversations, _ = batched([_candidate(1999), _candidate(1)])
-    assert len(batch) == 2 and conversations == 0
+    assert len(batched([_candidate(1999), _candidate(1)])) == 2
 
 
-async def test_own_candidates_read_the_callers_conversations():
+async def test_own_candidates_read_a_bounded_batch_and_count_the_rest():
     row = {
         "conversation_id": uuid.UUID(CONVERSATION),
         "started_at": NOW,
@@ -542,10 +539,13 @@ async def test_own_candidates_read_the_callers_conversations():
         "incomplete": False,
         "key_ids": [KEY],
     }
-    requests, _ = repository({"AS key_ids": [row]})
+    requests, connection = repository(
+        {"AS key_ids": [row], "AS conversations, coalesce": {"conversations": 4, "keys": 9}}
+    )
     batch, conversations, keys = await requests.own_candidates(TENANT, "alice", RECOVERY, NOW)
     assert [c.conversation_id for c in batch] == [CONVERSATION]
-    assert (conversations, keys) == (0, 0)
+    assert (conversations, keys) == (3, 8)
+    assert any("LIMIT 2001" in call for call in connection.calls)
 
 
 async def test_filing_under_another_key_version_writes_nothing():
@@ -609,50 +609,41 @@ async def test_own_requests_may_be_narrowed_to_a_kind():
 REPORTED = "FROM recovery_unrecoverable_keys WHERE request_id"
 
 
-async def test_a_reported_key_is_recorded_and_audited_by_its_key():
-    requests, connection = repository({LOCK: _row(), REMAINING: SCOPE})
-    reported = await requests.record_integrity_failure(
-        TENANT, "sam", REQUEST, "wrap_damaged", NOW, may_supervise=True, key_id=KEY
+STORE_ANSWERS = {LOCK: _row(), REMAINING: SCOPE, K: 1, VALID: [{"holder_index": 1}]}
+
+
+async def test_a_lost_key_is_recorded_and_audited_with_the_wraps():
+    requests, connection = repository(STORE_ANSWERS)
+    dropped = await requests.store_wraps(
+        TENANT,
+        "sam",
+        REQUEST,
+        [],
+        1,
+        _always,
+        NOW,
+        may_supervise=True,
+        unrecoverable=[UnrecoverableKey(KEY, "wrap_damaged")],
     )
-    assert reported is None
+    assert dropped == ()
     assert any("INSERT INTO recovery_unrecoverable_keys" in call for call in connection.calls)
-    assert len(audited(connection)) == 1
+    assert any("SET status = $2" in call for call in connection.calls)
 
 
 @pytest.mark.parametrize(
-    ("stage", "key_id", "signed", "answer"),
+    ("lost", "answer"),
     [
-        ("partial_hash", KEY, False, Refused("bad_stage")),
-        ("wrap_damaged", "other", False, Refused("not_found")),
-        ("wrap_damaged", "other", True, None),
+        ([UnrecoverableKey(KEY, "partial_hash")], Refused("bad_stage")),
+        ([UnrecoverableKey("other", "wrap_damaged")], Refused("scope_not_covered")),
     ],
 )
-async def test_only_a_wrap_stage_for_a_key_in_scope_is_recorded(stage, key_id, signed, answer):
-    requests, connection = repository(
-        {LOCK: _row(), REMAINING: SCOPE, "FROM recovery_request_keys WHERE request_id = $1": signed}
-    )
-    result = await requests.record_integrity_failure(
-        TENANT, "sam", REQUEST, stage, NOW, may_supervise=True, key_id=key_id
+async def test_a_lost_key_is_a_wrap_stage_for_a_key_in_scope(lost, answer):
+    requests, connection = repository(STORE_ANSWERS)
+    result = await requests.store_wraps(
+        TENANT, "sam", REQUEST, [], 1, _always, NOW, may_supervise=True, unrecoverable=lost
     )
     assert result == answer
     assert not any("INSERT INTO recovery_unrecoverable_keys" in call for call in connection.calls)
-
-
-async def test_storing_needs_no_wrap_for_a_reported_key():
-    requests, connection = repository(
-        {
-            REPORTED: [{"key_id": uuid.UUID(KEY)}],
-            LOCK: _row(),
-            REMAINING: SCOPE,
-            K: 1,
-            VALID: [{"holder_index": 1}],
-        }
-    )
-    dropped = await requests.store_wraps(
-        TENANT, "sam", REQUEST, [], 1, _always, NOW, may_supervise=True
-    )
-    assert dropped == ()
-    assert any("SET status = $2" in call for call in connection.calls)
 
 
 async def test_a_key_recovery_may_list_more_than_fifty_conversations():

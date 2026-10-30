@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from .crypto.encoding import from_b64url
-from .recovery_requests_model import Candidate, DecisionRow, RequestRow, ScopeKey
+from .recovery_requests_model import LIMITS, Candidate, DecisionRow, RequestRow, ScopeKey
 
 # Ended, not shredded, within its date or held, and every key recovery-wrapped
 # for the active key ($2 now, $3 recovery key ID): what a request may list.
@@ -29,11 +29,13 @@ ACCESSIBLE = (
     "  AND NOT EXISTS (SELECT 1 FROM key_wraps w WHERE w.tenant_id = k.tenant_id"
     "   AND w.key_id = k.key_id AND w.recipient_kind = 'user' AND w.recipient_ref = $4))"
 )
-# A conversation whose recovery wrap this requester ($4) found unusable stays out (§9.6).
+# A conversation with a recovery wrap this requester ($4) found damaged stays out (§9.6).
+# A failed signature does not: a later transcript may certify the key that made it.
 UNREPORTED = (
     "NOT EXISTS (SELECT 1 FROM recovery_unrecoverable_keys u JOIN recovery_requests ur"
     "  ON ur.tenant_id = u.tenant_id AND ur.request_id = u.request_id"
-    "  WHERE u.conversation_id = c.conversation_id AND ur.requester_sub = $4)"
+    "  WHERE u.conversation_id = c.conversation_id AND ur.requester_sub = $4"
+    "  AND u.stage = 'wrap_damaged')"
 )
 # Not already in one of the requester's ($4) open requests.
 UNREQUESTED = (
@@ -53,11 +55,23 @@ CANDIDATES = (
     " AND c.started_at >= $5 AND c.started_at < $6"
     " ORDER BY c.started_at DESC, c.conversation_id DESC LIMIT 50"
 )
-# The requester's ($4) own conversations, all of them, newest first ($1 unused).
-OWN_CANDIDATES = (
-    f"{_CANDIDATE_COLUMNS} FROM conversations c WHERE $1::text IS NULL AND c.employee_sub = $4"
+_OWN = (
+    "FROM conversations c WHERE $1::text IS NULL AND c.employee_sub = $4"
     f" AND {RECOVERABLE} AND NOT {ACCESSIBLE} AND {UNREPORTED} AND {UNREQUESTED}"
-    " ORDER BY c.started_at DESC, c.conversation_id DESC"
+)
+_BATCH_KEYS = LIMITS["key_recovery"][1]
+# The requester's ($4) own conversations, newest first ($1 unused). A batch holds at most
+# one conversation per key, so one row beyond that is all a batch can ever need.
+OWN_CANDIDATES = (
+    f"{_CANDIDATE_COLUMNS} {_OWN} ORDER BY c.started_at DESC, c.conversation_id DESC"
+    f" LIMIT {_BATCH_KEYS + 1}"
+)
+# Everything the requester could still file, counted without reading it; a conversation
+# with more keys than a batch carries can never be filed, so it is not counted.
+OWN_TOTALS = (
+    "SELECT count(*) AS conversations, coalesce(sum(n), 0) AS keys FROM ("
+    " SELECT (SELECT count(*) FROM conversation_keys k"
+    f"  WHERE k.conversation_id = c.conversation_id) AS n {_OWN}) t WHERE n <= {_BATCH_KEYS}"
 )
 OPEN_KEY_RECOVERY = (
     "SELECT EXISTS (SELECT 1 FROM recovery_requests WHERE requester_sub = $1"

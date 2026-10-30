@@ -116,21 +116,26 @@ const STEP_UP_FRESH_SECONDS = 240;
 /** The gateway's own limit (STEP_UP_MAX_AGE_SECONDS). */
 const STEP_UP_ACCEPTED_SECONDS = 300;
 
-function stepUpWithin(seconds: number, nowSeconds: number): boolean {
+/** Seconds left of `limit` since the MFA login; -Infinity without one. */
+function stepUpLeft(limit: number, nowSeconds: number): number {
   const claims = authenticatedSession()?.client.tokenParsed;
   const authTime: unknown = claims?.auth_time;
-  return (
-    claims?.acr === STEP_UP_ACR && typeof authTime === 'number' && nowSeconds - authTime <= seconds
-  );
+  if (claims?.acr !== STEP_UP_ACR || typeof authTime !== 'number') return -Infinity;
+  return limit - (nowSeconds - authTime);
 }
 
 export function hasFreshStepUp(nowSeconds: number = Date.now() / 1000): boolean {
-  return stepUpWithin(STEP_UP_FRESH_SECONDS, nowSeconds);
+  return stepUpLeft(STEP_UP_FRESH_SECONDS, nowSeconds) >= 0;
+}
+
+/** How long the gateway still takes this step-up: long work checks it as it goes (§9.6). */
+export function stepUpSecondsLeft(nowSeconds: number = Date.now() / 1000): number {
+  return stepUpLeft(STEP_UP_ACCEPTED_SECONDS, nowSeconds);
 }
 
 /** Whether the gateway would still take it: checked after long work, before posting it (§9.6). */
 export function hasAcceptedStepUp(nowSeconds: number = Date.now() / 1000): boolean {
-  return stepUpWithin(STEP_UP_ACCEPTED_SECONDS, nowSeconds);
+  return stepUpSecondsLeft(nowSeconds) >= 0;
 }
 
 /** Redirects to Keycloak for a fresh MFA login, then back to this tenant's page. */

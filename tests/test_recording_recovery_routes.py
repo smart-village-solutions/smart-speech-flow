@@ -27,6 +27,7 @@ from services.api_gateway.recording.recovery_requests_model import (
     ServedApproval,
     ServedPartials,
     ServedWrap,
+    UnrecoverableKey,
 )
 from services.api_gateway.routes.recording_recovery import _ANSWERS, get_recovery_requests
 from services.api_gateway.tenant_context import require_studio_tenant_context
@@ -121,11 +122,11 @@ class FakeService:
     async def reject(self, tenant_id, sub, request_id, holder, fault, *, may_supervise):
         self._call("reject", holder, fault, may_supervise)
 
-    async def report(self, tenant_id, sub, request_id, stage, *, may_supervise, key_id=None):
-        self._call("report", stage, may_supervise, key_id)
+    async def report(self, tenant_id, sub, request_id, stage, *, may_supervise):
+        self._call("report", stage, may_supervise)
 
-    async def store(self, tenant_id, sub, request_id, wraps, *, may_supervise):
-        self._call("store", wraps, may_supervise)
+    async def store(self, tenant_id, sub, request_id, wraps, *, may_supervise, unrecoverable=()):
+        self._call("store", wraps, may_supervise, tuple(unrecoverable))
         return (KEY,)
 
     async def cancel(self, tenant_id, sub, request_id):
@@ -271,16 +272,21 @@ def test_bodies_carry_up_to_two_thousand_keys(client_for):
     assert (fits.status_code, too_many.status_code) == (201, 422)
 
 
-def test_an_empty_wraps_post_and_a_reported_key_pass_through(client_for):
+def test_unusable_keys_travel_with_the_wraps(client_for):
     service = FakeService()
     client = client_for(_claims(REQUEST_PERMISSION), service)
-    stored = client.post(f"{BASE}/requests/{REQUEST}/wraps", json={"wraps": []})
-    reported = client.post(
-        f"{BASE}/requests/{REQUEST}/integrity-failures",
-        json={"stage": "wrap_damaged", "key_id": KEY},
+    stored = client.post(
+        f"{BASE}/requests/{REQUEST}/wraps",
+        json={"wraps": [], "unrecoverable": [{"key_id": KEY, "stage": "wrap_damaged"}]},
     )
-    assert (stored.status_code, reported.status_code) == (200, 204)
-    assert ("report", ("wrap_damaged", False, KEY)) in service.calls
+    bad = client.post(
+        f"{BASE}/requests/{REQUEST}/wraps",
+        json={"wraps": [], "unrecoverable": [{"key_id": KEY, "stage": "partial_hash"}]},
+    )
+    assert (stored.status_code, bad.status_code) == (200, 422)
+    [(_, (_, may_supervise, lost))] = [c for c in service.calls if c[0] == "store"]
+    assert may_supervise is False
+    assert lost == (UnrecoverableKey(KEY, "wrap_damaged"),)
 
 
 @pytest.mark.parametrize(("method", "path", "body"), APPROVER_ROUTES)

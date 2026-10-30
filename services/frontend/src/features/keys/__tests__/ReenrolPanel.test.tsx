@@ -123,26 +123,26 @@ describe('re-enrolment', () => {
     expect(await screen.findByRole('button', { name: 'Erneut anmelden' })).toBeInTheDocument();
   });
 
-  it('locks the old key first, replaces the version shown, and offers key recovery', async () => {
+  it('holds the new key once accepted, replaces the version shown, and offers key recovery', async () => {
     const { recordingKeys, keyVault, order, onOpenKeyRecovery } = render();
     await throughTheWarning();
     await submitNewPassphrase();
 
     expect(await screen.findByText(r.done)).toBeInTheDocument();
-    expect(order).toEqual(['lock', 'create']);
+    expect(order).toEqual(['create']);
     expect(recordingKeys.reenrol).toHaveBeenCalledWith(fresh, '{"v":2}', 4);
     expect(keyVault.current()).toBe(fresh);
     await userEvent.click(screen.getByRole('button', { name: de.admin.keyRecovery.open }));
     expect(onOpenKeyRecovery).toHaveBeenCalled();
   });
 
-  it('says to open the email link while confirmation is pending, and holds no key', async () => {
+  it('says to open the email link while confirmation is pending, and keeps the old key', async () => {
     const pending = { ...active, status: 'pending_confirmation' as const };
     const { keyVault } = render({ reenrol: vi.fn().mockResolvedValue(pending) });
     await throughTheWarning();
     await submitNewPassphrase();
     expect(await screen.findByText(r.pending)).toBeInTheDocument();
-    expect(keyVault.current()).toBeNull();
+    expect(keyVault.current()).toBe(old);
   });
 
   it.each([
@@ -150,10 +150,12 @@ describe('re-enrolment', () => {
     ['CEREMONY_IN_PROGRESS', r.ceremony],
   ])('names the refusal %s', async (code, message) => {
     const refused = new AppError('validation', { status: 409, serverCode: code });
-    render({ reenrol: vi.fn().mockRejectedValue(refused) });
+    const { keyVault } = render({ reenrol: vi.fn().mockRejectedValue(refused) });
     await throughTheWarning();
     await submitNewPassphrase();
     await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
+    // Review point 3: a refusal costs no unlock.
+    expect(keyVault.current()).toBe(old);
   });
 
   it('offers no way on when the cost of a new key cannot be read', async () => {

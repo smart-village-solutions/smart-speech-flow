@@ -45,7 +45,10 @@ const CHUNK = 50;
 
 const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-/** `work` over `items` in order, a chunk at a time, yielding and reporting between chunks. */
+/**
+ * `work` over `items` in order, a chunk at a time, yielding and reporting between chunks.
+ * Within a chunk the items run together, so WebCrypto's own threads overlap.
+ */
 async function inChunks<T, R>(
   items: readonly T[],
   work: (item: T) => Promise<R>,
@@ -53,7 +56,7 @@ async function inChunks<T, R>(
 ): Promise<R[]> {
   const results: R[] = [];
   for (let start = 0; start < items.length; start += CHUNK) {
-    for (const item of items.slice(start, start + CHUNK)) results.push(await work(item));
+    results.push(...(await Promise.all(items.slice(start, start + CHUNK).map(work))));
     onProgress?.(results.length, items.length);
     await yieldToUi();
   }
@@ -131,10 +134,9 @@ async function checkRequest(facts: Readonly<ApprovalFacts>): Promise<void> {
   ) {
     fail('request_signature');
   }
+  const signedPairs = new Set(facts.signedScope.map((p) => `${p.conversationId}/${p.keyId}`));
   const inScope = (key: Readonly<RecoveryWrapRef>) =>
-    facts.signedScope.some(
-      (pair) => pair.keyId === key.keyId && pair.conversationId === key.conversationId
-    );
+    signedPairs.has(`${key.conversationId}/${key.keyId}`);
   if (!facts.keys.every(inScope)) fail('out_of_scope');
 }
 
@@ -202,13 +204,15 @@ async function signedAsServed(
   });
   if (!(await verifyFields(sigPub, approval.signature, TAGS.approvalSig, signed)))
     return 'approval_signature';
+  // A map, not a search per wrap: thousands of keys would make it quadratic.
+  const hashes = new Map(approval.signedPartials.map((item) => [item.keyId, item.hash]));
   for (const wrap of wraps) {
     const blob = approval.partials.get(wrap.keyId);
-    const listed = approval.signedPartials.find((item) => item.keyId === wrap.keyId);
+    const listed = hashes.get(wrap.keyId);
     if (
       blob === undefined ||
       listed === undefined ||
-      !equalBytes(await sha256(utf8(blob)), listed.hash)
+      !equalBytes(await sha256(utf8(blob)), listed)
     ) {
       return 'partial_hash';
     }

@@ -142,6 +142,8 @@ async def _insert_key(
 
 async def _still_active(connection: asyncpg.Connection, wrap: KeyWrap) -> bool:
     """Shared, so a re-enrolment's swap waits for this insert or this insert sees it (§9.6)."""
+    if wrap.recipient_fingerprint is None:
+        raise ValueError("a user wrap must name the key it is sealed to")
     current = await connection.fetchval(
         "SELECT fingerprint FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL FOR SHARE",
         wrap.recipient_ref,

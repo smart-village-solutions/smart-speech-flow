@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasAcceptedStepUp } from '@/app/auth/keycloak';
+import { hasAcceptedStepUp, stepUpSecondsLeft } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { CeremonyCheckError } from '@/core/crypto/ceremony-crypto.port';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -13,7 +13,7 @@ import {
   fileOnce,
 } from '@/features/recovery/steps';
 
-vi.mock('@/app/auth/keycloak', () => ({ hasAcceptedStepUp: vi.fn() }));
+vi.mock('@/app/auth/keycloak', () => ({ hasAcceptedStepUp: vi.fn(), stepUpSecondsLeft: vi.fn() }));
 
 const identity = { tenantId: 'tenant-kassel', userSub: 'sam' };
 const keys = { sigPrivate: {} as CryptoKey } as UnlockedKeys;
@@ -101,7 +101,7 @@ describe('combining', () => {
   it('stores the wraps once k approvals combine', async () => {
     const d = deps();
     expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done', unrecoverable: 0 });
-    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', []);
+    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', [], []);
   });
 
   it('reports each rejection and waits when too few remain', async () => {
@@ -121,32 +121,19 @@ describe('combining', () => {
 
   const wrapA = { conversationId: C1, keyId: 'k1', blob: '{}', signature: new Uint8Array(64) };
 
-  it('reports each unrecoverable key, then stores the others', async () => {
+  it('sends the unusable keys with the wraps, in one call', async () => {
     const d = deps();
+    const lost = [{ keyId: 'k2', stage: 'wrap_damaged' }];
     d.recoveryCrypto.combine.mockResolvedValue({
       wraps: [wrapA],
-      unrecoverable: [{ keyId: 'k2', stage: 'wrap_damaged' }],
+      unrecoverable: lost,
       rejections: [],
       integrity: [],
     });
 
     expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done', unrecoverable: 1 });
-    expect(d.recoveryRequests.reportIntegrity).toHaveBeenCalledWith('r1', 'wrap_damaged', 'k2');
-    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', [wrapA]);
-  });
-
-  it('stores nothing while an unrecoverable key was not accepted by the gateway', async () => {
-    const d = deps();
-    d.recoveryCrypto.combine.mockResolvedValue({
-      wraps: [wrapA],
-      unrecoverable: [{ keyId: 'k2', stage: 'wrap_signature' }],
-      rejections: [],
-      integrity: [],
-    });
-    d.recoveryRequests.reportIntegrity.mockRejectedValue(new Error('down'));
-
-    await expect(combineOnce(d, identity, keys, 'r1')).rejects.toThrow('down');
-    expect(d.recoveryRequests.storeWraps).not.toHaveBeenCalled();
+    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', [wrapA], lost);
+    expect(d.recoveryRequests.reportIntegrity).not.toHaveBeenCalled();
   });
 
   it('hands its progress callback to the crypto', async () => {
@@ -172,6 +159,30 @@ describe('combining', () => {
 describe('approving', () => {
   beforeEach(() => {
     vi.mocked(hasAcceptedStepUp).mockReset().mockReturnValue(true);
+    vi.mocked(stepUpSecondsLeft).mockReset().mockReturnValue(300);
+  });
+
+  const reportingFirstChunk = (d: ReturnType<typeof deps>) =>
+    d.recoveryCrypto.approve.mockImplementation(async (...args: unknown[]) => {
+      (args[4] as (done: number, total: number) => void)(50, 2000);
+      return { partials: new Map(), signature: new Uint8Array(64) };
+    });
+
+  it('stops after the first chunk when the rest would outlast the step-up', async () => {
+    const d = deps();
+    reportingFirstChunk(d);
+    vi.mocked(stepUpSecondsLeft).mockReturnValue(10);
+    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toMatchObject({
+      fault: 'step_up',
+    });
+    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
+  });
+
+  it('goes on while the projection fits the step-up', async () => {
+    const d = deps();
+    reportingFirstChunk(d);
+    await approveOnce(d, identity, keys, detail, new Uint8Array(32));
+    expect(d.recoveryRequests.approve).toHaveBeenCalled();
   });
 
   const detail = {

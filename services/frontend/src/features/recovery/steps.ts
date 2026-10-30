@@ -1,4 +1,4 @@
-import { hasAcceptedStepUp } from '@/app/auth/keycloak';
+import { hasAcceptedStepUp, stepUpSecondsLeft } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { Bytes } from '@/core/crypto/bytes';
 import {
@@ -133,10 +133,8 @@ export async function combineOnce(
   await report(deps, requestId, result.integrity);
   if (result.wraps === null)
     return { kind: 'waiting', rejected: result.rejections.map((r) => r.holderIndex) };
-  // Not swallowed: the gateway asks for every key it was not told about (§9.6).
-  for (const lost of result.unrecoverable)
-    await deps.recoveryRequests.reportIntegrity(requestId, lost.stage, lost.keyId);
-  await deps.recoveryRequests.storeWraps(requestId, result.wraps);
+  // One call: the gateway records the unusable keys with the wraps, or nothing at all (§9.6).
+  await deps.recoveryRequests.storeWraps(requestId, result.wraps, result.unrecoverable);
   return { kind: 'done', unrecoverable: result.unrecoverable.length };
 }
 
@@ -169,6 +167,23 @@ function approvalFacts(
   };
 }
 
+/** What the upload of the partials may take once they exist. */
+const POST_MARGIN_SECONDS = 15;
+
+/**
+ * Passes progress on, and stops the work as soon as its projected end falls outside
+ * the step-up window: a fresh step-up then costs one chunk, not the whole run (§9.6).
+ */
+function withinStepUp(onProgress?: OnProgress): OnProgress {
+  const started = performance.now();
+  return (done, total) => {
+    onProgress?.(done, total);
+    const elapsed = (performance.now() - started) / 1000;
+    const rest = (elapsed / done) * (total - done);
+    if (rest + POST_MARGIN_SECONDS > stepUpSecondsLeft()) throw new RecoveryCheckError('step_up');
+  };
+}
+
 /** Every check of spec §9.5 in this browser, then the signed partials go to the gateway. */
 export async function approveOnce(
   deps: Readonly<RecoveryDeps>,
@@ -185,7 +200,7 @@ export async function approveOnce(
     trust,
     keys,
     identity.userSub,
-    onProgress
+    withinStepUp(onProgress)
   );
   // Thousands of keys take a while: a lapsed step-up would only meet the gateway's 403 (§9.6).
   if (!hasAcceptedStepUp()) throw new RecoveryCheckError('step_up');

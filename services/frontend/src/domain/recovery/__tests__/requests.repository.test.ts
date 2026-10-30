@@ -83,6 +83,7 @@ describe('recovery requests repository', () => {
     expect(bodies.approve).toEqual({ partials: { [KEY]: '{"p":1}' }, signature: 'A'.repeat(86) });
     expect(bodies.wraps).toEqual({
       wraps: [{ conversation_id: ID, key_id: KEY, blob: '{}', signature: 'A'.repeat(86) }],
+      unrecoverable: [],
     });
     expect(bodies.reject).toEqual({ holder_index: 2, attempt: 1, fault: 'proof_invalid' });
     expect(dropped).toEqual([KEY]);
@@ -119,9 +120,9 @@ describe('recovery requests repository', () => {
     ]);
   });
 
-  it('reads the own batch, lists by kind and names an unrecoverable key', async () => {
+  it('reads the own batch, lists by kind and sends unusable keys with the wraps', async () => {
     let listed = '';
-    let reported: unknown;
+    let stored: unknown;
     server.use(
       http.get(`${URL}/own/candidates`, () =>
         HttpResponse.json({ conversations: [], remaining: { conversations: 2, keys: 4 } })
@@ -130,18 +131,18 @@ describe('recovery requests repository', () => {
         listed = new globalThis.URL(request.url).search;
         return HttpResponse.json({ requests: [] });
       }),
-      http.post(`${URL}/requests/${ID}/integrity-failures`, async ({ request }) => {
-        reported = await request.json();
-        return new HttpResponse(null, { status: 204 });
+      http.post(`${URL}/requests/${ID}/wraps`, async ({ request }) => {
+        stored = await request.json();
+        return HttpResponse.json({ dropped: [] });
       }),
       http.get(`${URL}/approvals`, () => HttpResponse.json({ requests: [], share_stale: true }))
     );
     const repo = repository();
     expect((await repo.ownCandidates()).remaining).toEqual({ conversations: 2, keys: 4 });
     await repo.requests('key_recovery');
-    await repo.reportIntegrity(ID, 'wrap_damaged', KEY);
+    await repo.storeWraps(ID, [], [{ keyId: KEY, stage: 'wrap_damaged' }]);
     expect(new URLSearchParams(listed).get('kind')).toBe('key_recovery');
-    expect(reported).toEqual({ stage: 'wrap_damaged', key_id: KEY });
+    expect(stored).toEqual({ wraps: [], unrecoverable: [{ key_id: KEY, stage: 'wrap_damaged' }] });
     expect((await repo.approvals()).shareStale).toBe(true);
   });
 });

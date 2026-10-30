@@ -35,6 +35,7 @@ from ..recording.recovery_requests_model import (
     Progress,
     RequestRow,
     ServedPartials,
+    UnrecoverableKey,
 )
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
@@ -136,8 +137,6 @@ class IntegrityBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stage: Literal["trust", "wrap_signature", "approval_signature", "partial_hash", "wrap_damaged"]
-    # Names one recovery wrap the requester could not use: it leaves their scope (§9.6).
-    key_id: uuid.UUID | None = None
 
 
 class WrapItem(BaseModel):
@@ -149,11 +148,20 @@ class WrapItem(BaseModel):
     signature: Signature
 
 
+class UnrecoverableItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key_id: uuid.UUID
+    stage: Literal["wrap_signature", "wrap_damaged"]
+
+
 class WrapsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Empty when every key of the scope was reported unrecoverable.
+    # Empty when no key of the scope could be used.
     wraps: list[WrapItem] = Field(max_length=MAX_BODY_KEYS)
+    # Keys whose recovery wrap the browser could not use, recorded with the wraps (§9.6).
+    unrecoverable: list[UnrecoverableItem] = Field(default_factory=list, max_length=MAX_BODY_KEYS)
 
 
 def _answer(error: RecoveryRequestError, *, not_found: str = "not_found") -> HTTPException:
@@ -443,7 +451,6 @@ async def integrity_failure(
             str(request_id),
             body.stage,
             may_supervise=_may_supervise(claims),
-            key_id=None if body.key_id is None else str(body.key_id),
         )
     except RecoveryRequestError as error:
         raise _answer(error) from None
@@ -469,6 +476,7 @@ async def store_wraps(
             str(request_id),
             wraps,
             may_supervise=_may_supervise(claims),
+            unrecoverable=[UnrecoverableKey(str(u.key_id), u.stage) for u in body.unrecoverable],
         )
     except RecoveryRequestError as error:
         raise _answer(error) from None

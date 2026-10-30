@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import uuid
 from datetime import timedelta
 
@@ -17,7 +18,11 @@ from services.api_gateway.recording.conversation_keys import (
     new_conversation_key,
     wrap_key,
 )
-from services.api_gateway.recording.recovery_requests_model import NewRequest, Refused
+from services.api_gateway.recording.recovery_requests_model import (
+    NewRequest,
+    Refused,
+    UnrecoverableKey,
+)
 from services.api_gateway.recording.recovery_requests_sql import USABLE_SHARES
 from services.api_gateway.recording.reenrolment_repository import PostgresKeyReenrolment
 from services.api_gateway.recording.repository import (
@@ -290,7 +295,21 @@ async def test_a_store_waits_for_a_key_change_and_then_refuses(archive, owner, r
         await swapper.close()
 
 
-async def test_a_reported_key_is_left_out_of_storing_and_of_later_candidates(
+async def _store_with_lost(requests, request, scope, lost: dict[str, str]):
+    return await requests.store_wraps(
+        TENANT,
+        "alice",
+        request.request_id,
+        [_wrap(k) for k in scope if k.key_id not in lost],
+        1,
+        _always,
+        NOW,
+        may_supervise=False,
+        unrecoverable=[UnrecoverableKey(key_id, stage) for key_id, stage in lost.items()],
+    )
+
+
+async def test_a_damaged_wrap_is_recorded_with_the_others_and_never_offered_again(
     archive, owner, requests
 ):
     first, _, _ = await _ended(archive, owner, employee="alice", wrapped=False)
@@ -298,98 +317,81 @@ async def test_a_reported_key_is_left_out_of_storing_and_of_later_candidates(
     request, scope = await _key_recovery(requests, owner, [first, second])
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
-    reported = await requests.record_integrity_failure(
-        TENANT,
-        "alice",
-        request.request_id,
-        "wrap_damaged",
-        NOW,
-        may_supervise=False,
-        key_id=bad_key,
-    )
-    good = [_wrap(k) for k in scope if k.key_id != bad_key]
-    dropped = await requests.store_wraps(
-        TENANT, "alice", request.request_id, good, 1, _always, NOW, may_supervise=False
-    )
+    dropped = await _store_with_lost(requests, request, scope, {bad_key: "wrap_damaged"})
     recovery = await recovery_key(owner)
     batch, _, _ = await requests.own_candidates(TENANT, "alice", recovery, NOW)
 
-    assert reported is None and dropped == ()
+    assert dropped == ()
     assert await owner.fetchval("SELECT status FROM recovery_requests") == "completed"
-    assert batch == []  # `first` is open to her now; `second` was reported
-    assert ("alice", "recovery.integrity_failure.wrap_damaged", bad_key) in await _audit(owner)
+    assert batch == []  # `first` is open to her now; `second` is damaged for good
+    events = [a[1:] for a in await _audit(owner)]
+    assert ("recovery.integrity_failure.wrap_damaged", bad_key) in events
+    assert events[-1] == ("recovery.request.completed", request.request_id)
 
 
-async def test_a_reported_conversation_cannot_be_filed_again(archive, owner, requests):
-    conversation, bad_key, _ = await _ended(archive, owner, employee="alice", wrapped=False)
-    request, _ = await _key_recovery(requests, owner, [conversation])
-    await requests.record_integrity_failure(
-        TENANT,
-        "alice",
-        request.request_id,
-        "wrap_signature",
-        NOW,
-        may_supervise=False,
-        key_id=bad_key,
-    )
-    await requests.cancel(TENANT, "alice", request.request_id, NOW)
+async def test_a_damaged_conversation_cannot_be_filed_again(archive, owner, requests):
+    first, _, _ = await _ended(archive, owner, employee="alice", wrapped=False)
+    second, bad_key, _ = await _ended(archive, owner, employee="alice", wrapped=False)
+    request, scope = await _key_recovery(requests, owner, [first, second])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
+    await _store_with_lost(requests, request, scope, {bad_key: "wrap_damaged"})
 
-    _, refused = await _key_recovery(requests, owner, [conversation])
+    _, refused = await _key_recovery(requests, owner, [second])
 
     assert refused == Refused("not_found")
 
 
-async def test_a_key_outside_the_request_or_a_wrong_stage_cannot_be_reported(
-    archive, owner, requests
-):
-    mine, key_id, _ = await _ended(archive, owner, employee="alice", wrapped=False)
-    _, other_key, _ = await _ended(archive, owner, employee="alice", wrapped=False)
-    request, _ = await _key_recovery(requests, owner, [mine])
+async def test_a_wrap_that_failed_its_signature_is_offered_again(archive, owner, requests):
+    """Review point 1: a later transcript may certify the key that signed it."""
+    conversation, bad_key, _ = await _ended(archive, owner, employee="alice", wrapped=False)
+    request, scope = await _key_recovery(requests, owner, [conversation])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
-    outside = await requests.record_integrity_failure(
+    await _store_with_lost(requests, request, scope, {bad_key: "wrap_signature"})
+    recovery = await recovery_key(owner)
+    batch, _, _ = await requests.own_candidates(TENANT, "alice", recovery, NOW)
+
+    assert await owner.fetchval("SELECT status FROM recovery_requests") == "completed"
+    assert [c.conversation_id for c in batch] == [conversation.conversation_id]
+
+
+async def test_a_refused_store_records_no_unrecoverable_key(archive, owner, requests):
+    first, _, _ = await _ended(archive, owner, employee="alice", wrapped=False)
+    second, bad_key, _ = await _ended(archive, owner, employee="alice", wrapped=False)
+    request, scope = await _key_recovery(requests, owner, [first, second])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
+
+    refused = await requests.store_wraps(
         TENANT,
         "alice",
         request.request_id,
-        "wrap_damaged",
+        [],
+        1,
+        _always,
         NOW,
         may_supervise=False,
-        key_id=other_key,
-    )
-    wrong_stage = await requests.record_integrity_failure(
-        TENANT,
-        "alice",
-        request.request_id,
-        "approval_signature",
-        NOW,
-        may_supervise=False,
-        key_id=key_id,
+        unrecoverable=[UnrecoverableKey(bad_key, "wrap_damaged")],
     )
 
-    assert outside == Refused("not_found") and wrong_stage == Refused("bad_stage")
+    assert refused == Refused("scope_not_covered")
     assert await owner.fetchval("SELECT count(*) FROM recovery_unrecoverable_keys") == 0
+    assert await owner.fetchval("SELECT status FROM recovery_requests") == "open"
 
 
-async def test_a_key_that_left_the_scope_needs_no_report(archive, owner, requests):
+async def test_a_lost_key_that_left_the_scope_needs_no_record(archive, owner, requests):
     first, _, _ = await _ended(archive, owner, employee="alice", wrapped=False)
     second, gone_key, _ = await _ended(archive, owner, employee="alice", wrapped=False)
-    request, _ = await _key_recovery(requests, owner, [first, second])
+    request, scope = await _key_recovery(requests, owner, [first, second])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
     await owner.execute(
         "UPDATE conversations SET shredded_at = $1 WHERE conversation_id = $2",
         NOW,
         uuid.UUID(second.conversation_id),
     )
 
-    answer = await requests.record_integrity_failure(
-        TENANT,
-        "alice",
-        request.request_id,
-        "wrap_damaged",
-        NOW,
-        may_supervise=False,
-        key_id=gone_key,
-    )
+    dropped = await _store_with_lost(requests, request, scope, {gone_key: "wrap_damaged"})
 
-    assert answer is None
+    assert dropped == ()
     assert await owner.fetchval("SELECT count(*) FROM recovery_unrecoverable_keys") == 0
 
 
@@ -616,7 +618,7 @@ async def test_the_impact_names_a_custodian_and_the_shares_left_after(archive, o
     assert (alice.custodian, alice.k, alice.usable_after) == (False, None, None)
 
 
-async def _second_epoch_for(archive, fingerprint_: bytes):
+async def _second_epoch_for(archive, fingerprint_: bytes, *, unnamed: bool = False):
     """A conversation armed before a key change, whose next key is first stored after it."""
     conversation, key_id, window_id, consent = await _opened(archive)
     key = new_conversation_key(2)
@@ -632,6 +634,8 @@ async def _second_epoch_for(archive, fingerprint_: bytes):
         )
         for recipient in (RECOVERY, alice)
     )
+    if unnamed:
+        wraps = (wraps[0], dataclasses.replace(wraps[1], recipient_fingerprint=None))
     entry = _entry(conversation, 2, consent.hash, key.key_id, window_id=window_id)
     await archive.append_entry(entry, NewKey(key.key_id, 2, NOW, wraps))
 
@@ -826,3 +830,10 @@ async def test_a_lapsed_access_request_read_without_supervise_changes_nothing(
     assert answer == Refused("forbidden")
     assert await owner.fetchval("SELECT status FROM recovery_requests") == "open"
     assert len(await _audit(owner)) == before
+
+
+async def test_a_user_wrap_that_names_no_key_is_refused_not_skipped(archive, owner):
+    """Review point 8: a wrap the gateway cannot check against the active key is a bug."""
+    await enrol(owner, "alice")
+    with pytest.raises(ValueError, match="must name the key"):
+        await _second_epoch_for(archive, bytes(32), unnamed=True)

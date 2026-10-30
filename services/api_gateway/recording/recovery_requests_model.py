@@ -16,8 +16,6 @@ REQUEST_LIFETIME: Final[timedelta] = timedelta(days=7)
 RequestKind = Literal["access", "key_recovery"]
 # (conversations, keys) a request of each kind may list (spec §9.5, §9.6).
 LIMITS: Final[dict[str, tuple[int, int]]] = {"access": (50, 500), "key_recovery": (2000, 2000)}
-MAX_CONVERSATIONS: Final[int] = LIMITS["access"][0]
-MAX_SCOPE_KEYS: Final[int] = LIMITS["access"][1]
 # What one approval or one wrap post may carry: the largest scope of any kind.
 MAX_BODY_KEYS: Final[int] = 2000
 SYSTEM_ACTOR: Final[str] = "system"
@@ -25,7 +23,8 @@ REJECTION_FAULTS: Final[frozenset[str]] = frozenset({"partial_unreadable", "proo
 INTEGRITY_STAGES: Final[frozenset[str]] = frozenset(
     {"trust", "wrap_signature", "approval_signature", "partial_hash", "wrap_damaged"}
 )
-# The stages that condemn one recovery wrap, so its key may be reported (§9.6).
+# The stages that let a request complete without one key (§9.6). Only damage is final:
+# a signature that failed may verify under a later transcript, so its key is offered again.
 UNRECOVERABLE_STAGES: Final[frozenset[str]] = frozenset({"wrap_signature", "wrap_damaged"})
 
 
@@ -44,9 +43,8 @@ class ScopeKey:
 
 @dataclass(frozen=True)
 class UnrecoverableKey:
-    """A key whose recovery wrap the requester could not use, as they reported it."""
+    """A key whose recovery wrap the requester could not use, posted with their wraps."""
 
-    request_id: str
     key_id: str
     stage: str
 

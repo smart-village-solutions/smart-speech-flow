@@ -21,7 +21,6 @@ from .crypto.signatures import partial_hash
 from .recovery_requests_model import (
     REQUEST_LIFETIME,
     SYSTEM_ACTOR,
-    UNRECOVERABLE_STAGES,
     Approval,
     ApproverScopeKey,
     DecisionRow,
@@ -439,53 +438,36 @@ async def insert_request(
     )
 
 
-async def report_unrecoverable(
+async def record_unrecoverable(
     connection: asyncpg.Connection,
     tenant_id: str,
     sub: str,
+    request_id: str,
     remaining: tuple[ScopeKey, ...],
-    failure: UnrecoverableKey,
+    lost: Sequence[UnrecoverableKey],
     now: datetime,
-) -> Refused | None:
-    """Recorded, so storing no longer needs this key and filing no longer offers it (§9.6).
+) -> list[AuditEvent]:
+    """One statement for every key the requester could not use; their audit, unappended.
 
     Only the requester reports, and it only narrows their own access: no proof is asked.
     """
-    if failure.stage not in UNRECOVERABLE_STAGES:
-        return Refused("bad_stage")
-    in_scope = {key.key_id: key for key in remaining}
-    if failure.key_id not in in_scope:
-        # A key that left the scope since the partials were served needs no report.
-        signed = await connection.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM recovery_request_keys WHERE request_id = $1"
-            " AND key_id = $2)",
-            failure.request_id,
-            failure.key_id,
-        )
-        if signed:
-            return None
-        return await not_found(connection, tenant_id, sub, failure.request_id, now)
+    if not lost:
+        return []
+    conversations = {key.key_id: key.conversation_id for key in remaining}
+    ordered = sorted(lost, key=lambda item: item.key_id)
     await connection.execute(
-        "INSERT INTO recovery_unrecoverable_keys VALUES ($1, $2, $3, $4, $5, $6)"
+        "INSERT INTO recovery_unrecoverable_keys"
+        " SELECT $1, $2, u.conversation_id, u.key_id, u.stage, $3"
+        " FROM unnest($4::uuid[], $5::uuid[], $6::text[]) AS u(conversation_id, key_id, stage)"
         " ON CONFLICT DO NOTHING",
         tenant_id,
-        failure.request_id,
-        in_scope[failure.key_id].conversation_id,
-        failure.key_id,
-        failure.stage,
+        request_id,
         now,
+        [conversations[item.key_id] for item in ordered],
+        [item.key_id for item in ordered],
+        [item.stage for item in ordered],
     )
-    event = f"recovery.integrity_failure.{failure.stage}"
-    await append_audit(connection, AuditEvent(tenant_id, sub, event, failure.key_id, now))
-    return None
-
-
-async def still_required(
-    connection: asyncpg.Connection, request_id: str, remaining: tuple[ScopeKey, ...]
-) -> tuple[ScopeKey, ...]:
-    """The remaining scope less the keys reported unrecoverable for this request."""
-    rows = await connection.fetch(
-        "SELECT key_id FROM recovery_unrecoverable_keys WHERE request_id = $1", request_id
-    )
-    reported = {str(row["key_id"]) for row in rows}
-    return tuple(key for key in remaining if key.key_id not in reported)
+    return [
+        AuditEvent(tenant_id, sub, f"recovery.integrity_failure.{item.stage}", item.key_id, now)
+        for item in ordered
+    ]

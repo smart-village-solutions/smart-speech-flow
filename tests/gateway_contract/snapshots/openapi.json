@@ -2137,6 +2137,30 @@
         "title": "UnprovidedGuestContent",
         "type": "object"
       },
+      "UnrecoverableItem": {
+        "additionalProperties": false,
+        "properties": {
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "wrap_signature",
+              "wrap_damaged"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "stage"
+        ],
+        "title": "UnrecoverableItem",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -2215,6 +2239,14 @@
       "WrapsBody": {
         "additionalProperties": false,
         "properties": {
+          "unrecoverable": {
+            "items": {
+              "$ref": "#/components/schemas/UnrecoverableItem"
+            },
+            "maxItems": 2000,
+            "title": "Unrecoverable",
+            "type": "array"
+          },
           "wraps": {
             "items": {
               "$ref": "#/components/schemas/WrapItem"
@@ -2254,18 +2286,6 @@
       "services__api_gateway__routes__recording_recovery__IntegrityBody": {
         "additionalProperties": false,
         "properties": {
-          "key_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Key Id"
-          },
           "stage": {
             "enum": [
               "trust",
