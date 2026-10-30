@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   ExternalLink,
   KeyRound,
+  KeySquare,
   LifeBuoy,
   LogOut,
   ShieldCheck,
@@ -69,6 +70,8 @@ interface AdminUserMenuProps {
   onOpenCeremony?: () => void;
   /** The employee's own recordings; offered to holders of a recording permission. */
   onOpenArchive?: () => void;
+  /** The employee's own key recovery (#617b); offered to holders of a recording permission. */
+  onOpenKeyRecovery?: () => void;
   /** Exceptional access: a supervisor's requests and a custodian's approvals (#617a). */
   onOpenRecoveryRequests?: () => void;
   onOpenRecoveryApprovals?: () => void;
@@ -82,6 +85,7 @@ export function AdminUserMenu({
   onOpenKeys,
   onOpenCeremony,
   onOpenArchive,
+  onOpenKeyRecovery,
   onOpenRecoveryRequests,
   onOpenRecoveryApprovals,
 }: Readonly<AdminUserMenuProps>) {
@@ -92,6 +96,7 @@ export function AdminUserMenu({
   // In menu order; a screen whose callback is missing is not offered.
   const screens = [
     { label: 'admin.menu.archive', onOpen: onOpenArchive, Icon: Archive },
+    { label: 'admin.menu.keyRecovery', onOpen: onOpenKeyRecovery, Icon: KeySquare },
     { label: 'admin.menu.recoveryRequests', onOpen: onOpenRecoveryRequests, Icon: LifeBuoy },
     { label: 'admin.menu.recoveryApprovals', onOpen: onOpenRecoveryApprovals, Icon: BadgeCheck },
     { label: 'admin.menu.keys', onOpen: onOpenKeys, Icon: KeyRound },

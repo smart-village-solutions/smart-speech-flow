@@ -60,6 +60,19 @@ describe('AdminUserMenu', () => {
     expect(requests).toHaveBeenCalledOnce();
   });
 
+  it('offers key recovery only where a screen can open it', async () => {
+    const onOpenKeyRecovery = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Meine Schlüsselwiederherstellung' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenKeyRecovery={onOpenKeyRecovery} />, { locale: 'de' });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Schlüsselwiederherstellung' }));
+    expect(onOpenKeyRecovery).toHaveBeenCalledOnce();
+  });
+
   it('opens and closes on the trigger', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
 

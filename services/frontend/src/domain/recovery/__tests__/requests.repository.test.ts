@@ -44,12 +44,14 @@ describe('recovery requests repository', () => {
     );
     const scope = await repository().file({
       requestId: ID,
+      kind: 'key_recovery',
       reason: 'why',
       conversationIds: [ID],
       signature: new Uint8Array(64),
     });
     expect(sent).toEqual({
       request_id: ID,
+      kind: 'key_recovery',
       reason: 'why',
       conversation_ids: [ID],
       signature: 'A'.repeat(86),
@@ -81,6 +83,7 @@ describe('recovery requests repository', () => {
     expect(bodies.approve).toEqual({ partials: { [KEY]: '{"p":1}' }, signature: 'A'.repeat(86) });
     expect(bodies.wraps).toEqual({
       wraps: [{ conversation_id: ID, key_id: KEY, blob: '{}', signature: 'A'.repeat(86) }],
+      unrecoverable: [],
     });
     expect(bodies.reject).toEqual({ holder_index: 2, attempt: 1, fault: 'proof_invalid' });
     expect(dropped).toEqual([KEY]);
@@ -115,5 +118,31 @@ describe('recovery requests repository', () => {
       '2026-10-01T00:00:00Z',
       '2026-10-31T00:00:00Z',
     ]);
+  });
+
+  it('reads the own batch, lists by kind and sends unusable keys with the wraps', async () => {
+    let listed = '';
+    let stored: unknown;
+    server.use(
+      http.get(`${URL}/own/candidates`, () =>
+        HttpResponse.json({ conversations: [], remaining: { conversations: 2, keys: 4 } })
+      ),
+      http.get(`${URL}/requests`, ({ request }) => {
+        listed = new globalThis.URL(request.url).search;
+        return HttpResponse.json({ requests: [] });
+      }),
+      http.post(`${URL}/requests/${ID}/wraps`, async ({ request }) => {
+        stored = await request.json();
+        return HttpResponse.json({ dropped: [] });
+      }),
+      http.get(`${URL}/approvals`, () => HttpResponse.json({ requests: [], share_stale: true }))
+    );
+    const repo = repository();
+    expect((await repo.ownCandidates()).remaining).toEqual({ conversations: 2, keys: 4 });
+    await repo.requests('key_recovery');
+    await repo.storeWraps(ID, [], [{ keyId: KEY, stage: 'wrap_damaged' }]);
+    expect(new URLSearchParams(listed).get('kind')).toBe('key_recovery');
+    expect(stored).toEqual({ wraps: [], unrecoverable: [{ key_id: KEY, stage: 'wrap_damaged' }] });
+    expect((await repo.approvals()).shareStale).toBe(true);
   });
 });

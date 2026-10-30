@@ -7,12 +7,15 @@ import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { Button } from '@/ui/primitives/Button';
 import type { OwnConversation } from '@/domain/archive/archive.types';
+import { KeyRecoveryBanner } from '@/features/recovery/KeyRecoveryBanner';
 import { ArchiveList } from './ArchiveList';
 import { ConversationViewer } from './ConversationViewer';
 
 interface ArchiveScreenProps {
   onBack: () => void;
   onOpenKeys: () => void;
+  /** Offered when the employee's key cannot open some conversations (spec §9.6). */
+  onOpenKeyRecovery?: () => void;
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
@@ -38,6 +41,7 @@ function LockedNotice({ onOpenKeys }: Readonly<{ onOpenKeys: () => void }>) {
 export function ArchiveScreen({
   onBack,
   onOpenKeys,
+  onOpenKeyRecovery,
   onSignOut,
   accountUrl,
   studioUrl,
@@ -78,7 +82,10 @@ export function ArchiveScreen({
             {unlocked === null ? (
               <LockedNotice onOpenKeys={onOpenKeys} />
             ) : (
-              <ArchiveList onOpen={setOpen} />
+              <>
+                {onOpenKeyRecovery && <KeyRecoveryBanner onOpen={onOpenKeyRecovery} />}
+                <ArchiveList onOpen={setOpen} />
+              </>
             )}
           </>
         )}

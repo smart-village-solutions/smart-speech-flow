@@ -89,6 +89,14 @@ export function RequestDetail({
           {t(combine.pending ? 'admin.recovery.detail.combining' : 'admin.recovery.detail.combine')}
         </Button>
       )}
+      {combine.pending && combine.progress !== null && (
+        <p role="status" className="text-label text-fg-muted">
+          {t('admin.keyRecovery.progress', {
+            done: combine.progress.done,
+            total: combine.progress.total,
+          })}
+        </p>
+      )}
       {combine.outcome !== null && (
         <CombineResult outcome={combine.outcome} decisions={found.decisions} />
       )}

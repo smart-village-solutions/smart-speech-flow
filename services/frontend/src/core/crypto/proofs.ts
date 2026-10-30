@@ -53,6 +53,41 @@ export async function verifySchnorr(
   return proof.c === (await schnorrChallenge(tenantId, ceremonyId, dealerIndex, commitment, encodePoint(nonce)));
 }
 
+function shareProofChallenge(
+  tenantId: string,
+  ceremonyId: string,
+  holderIndex: number,
+  publicShare: Bytes,
+  nonce: Bytes
+): Promise<bigint> {
+  return hashToScalar(enc(TAGS.sharePok, tenantId, ceremonyId, holderIndex, publicShare, nonce));
+}
+
+/** A resharing's custodian holds x'_j behind X'_j, proven from the share it sealed (spec §9.7). */
+export async function shareProofProve(
+  tenantId: string,
+  ceremonyId: string,
+  holderIndex: number,
+  share: bigint,
+  nonce: bigint
+): Promise<Proof> {
+  const c = await shareProofChallenge(tenantId, ceremonyId, holderIndex, publicPoint(share), publicPoint(nonce));
+  return { c, s: mod(nonce - c * share) };
+}
+
+export async function verifyShareProof(
+  tenantId: string,
+  ceremonyId: string,
+  holderIndex: number,
+  publicShare: Bytes,
+  proof: Readonly<Proof>
+): Promise<boolean> {
+  if (!inRange(proof.c, proof.s)) return false;
+  const nonce = combine(proof.s, GENERATOR, proof.c, decodePoint(publicShare));
+  if (nonce === null) return false;
+  return proof.c === (await shareProofChallenge(tenantId, ceremonyId, holderIndex, publicShare, encodePoint(nonce)));
+}
+
 export interface DleqStatement {
   holderShare: Bytes;
   ephemeral: Bytes;
@@ -145,7 +180,8 @@ export function holderPublicShare(index: number, dealings: readonly (readonly By
   );
 }
 
-function lagrangeAtZero(index: number, indices: readonly number[]): bigint {
+/** λ_index at 0 over `indices`, mod n; the indices are distinct and non-zero. */
+export function lagrangeAtZero(index: number, indices: readonly number[]): bigint {
   let numerator = 1n;
   let denominator = 1n;
   for (const other of indices) {
@@ -168,6 +204,11 @@ function modInverse(value: bigint): bigint {
     exponent >>= 1n;
   }
   return result;
+}
+
+/** λ_i·X_i: what a resharing dealer's C_i0 must be, so that Σ C_i0 is X (spec §9.7). */
+export function contribution(dealerIndex: number, dealers: readonly number[], publicShare: Bytes): Bytes {
+  return encodePoint(multiply(decodePoint(publicShare), lagrangeAtZero(dealerIndex, dealers)));
 }
 
 /** Σ λ_i·P_i = x·R; returns its x-coordinate, the Z of the recovery wrap (spec A.4). */

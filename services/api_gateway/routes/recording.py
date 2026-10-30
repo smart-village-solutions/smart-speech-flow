@@ -1,13 +1,13 @@
-"""Staff routes of recording mode: personal keys (spec §8.3).
+"""Staff routes of recording mode: personal keys (spec §8.3, §9.6).
 
-Any holder of an `ssf.recording.*` permission may hold keys. Enrolment needs
-a fresh MFA login, because whoever enrols first decides which key future
-recordings are wrapped for.
+Any holder of an `ssf.recording.*` permission may hold keys. Enrolment and
+re-enrolment need a fresh MFA login, because whoever enrols decides which key
+future recordings are wrapped for.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Final
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +22,7 @@ from ..recording.permissions import (
     require_permission,
     require_step_up,
 )
+from ..recording.reenrolment import KeyReenrolment, ReenrolmentError
 from ..recording.repository import KeyAlreadyEnrolledError, RecordingStorageUnavailable
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
@@ -46,12 +47,37 @@ def get_key_enrolment(request: Request) -> KeyEnrolmentService:
 KeyService = Annotated[KeyEnrolmentService, Depends(get_key_enrolment)]
 
 
+def get_reenrolment(request: Request) -> KeyReenrolment:
+    service: KeyReenrolment | None = getattr(
+        optional_container(request), "recording_reenrolment", None
+    )
+    if service is None:
+        raise coded(503, "RECORDING_UNAVAILABLE", "Recording is not available")
+    return service
+
+
+Reenrolment = Annotated[KeyReenrolment, Depends(get_reenrolment)]
+
+_REENROLMENT_ANSWERS: Final[dict[str, tuple[int, str]]] = {
+    "key_not_enrolled": (404, "KEY_NOT_ENROLLED"),
+    "key_changed": (409, "KEY_CHANGED"),
+    "ceremony_in_progress": (409, "CEREMONY_IN_PROGRESS"),
+    "invalid": (422, "INVALID_ENROLMENT"),
+    "unavailable": (503, "RECORDING_UNAVAILABLE"),
+}
+
+
 class EnrolmentBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enc_pub: str = Field(min_length=87, max_length=87)
     sig_pub: str = Field(min_length=87, max_length=87)
     blob: str = Field(min_length=1, max_length=4096)
+
+
+class ReenrolmentBody(EnrolmentBody):
+    # The version the browser was showing: a swap under it, never under a newer one.
+    replaces_version: int = Field(ge=1, le=10_000)
 
 
 def _fingerprint_body(raw: bytes) -> dict[str, str]:
@@ -61,7 +87,7 @@ def _fingerprint_body(raw: bytes) -> dict[str, str]:
 @router.get("/keys/me")
 async def own_key(
     context: TenantContext, claims: RecordingUser, service: KeyService
-) -> dict[str, str]:
+) -> dict[str, Any]:
     try:
         key = await service.own_key(context.tenant_id, claims["sub"])
     except RecordingStorageUnavailable:
@@ -75,6 +101,7 @@ async def own_key(
         "sig_pub": b64url(key.sig_pub),
         "blob": key.blob,
         "created_at": key.created_at.isoformat(),
+        "key_version": key.key_version,
         **_fingerprint_body(key.fingerprint),
     }
 
@@ -97,3 +124,36 @@ async def enrol_key(
     except RecordingStorageUnavailable:
         raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
     return _fingerprint_body(fingerprint)
+
+
+@router.post(
+    "/keys/reenrolment",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_step_up)],
+)
+async def reenrol_key(
+    body: ReenrolmentBody, context: TenantContext, claims: RecordingUser, service: Reenrolment
+) -> dict[str, str]:
+    try:
+        enrolment = Enrolment(from_b64url(body.enc_pub), from_b64url(body.sig_pub), body.blob)
+        done = await service.reenrol(
+            context.tenant_id, claims["sub"], enrolment, body.replaces_version
+        )
+    except ValueError:  # base64 that does not decode
+        raise coded(422, "INVALID_ENROLMENT", "The keys or the sealed blob are invalid") from None
+    except ReenrolmentError as error:
+        status_code, code = _REENROLMENT_ANSWERS[error.code]
+        raise coded(status_code, code, "The re-enrolment was refused") from None
+    return {"status": done.status, **_fingerprint_body(done.fingerprint)}
+
+
+@router.get("/keys/reenrolment")
+async def reenrolment_impact(
+    context: TenantContext, claims: RecordingUser, service: Reenrolment
+) -> dict[str, Any]:
+    """What re-enrolling would cost: a custodian learns how many usable shares remain."""
+    try:
+        impact = await service.impact(context.tenant_id, claims["sub"])
+    except ReenrolmentError:
+        raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
+    return {"custodian": impact.custodian, "k": impact.k, "usable_after": impact.usable_after}

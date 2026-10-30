@@ -157,7 +157,8 @@
       "ceremony": "Recovery key",
       "archive": "My recordings",
       "recoveryRequests": "Recovery requests",
-      "recoveryApprovals": "Recovery approvals"
+      "recoveryApprovals": "Recovery approvals",
+      "keyRecovery": "My key recovery"
     },
     "dashboard": {
       "welcome": {
@@ -249,7 +250,23 @@
       "unlockedTitle": "Your keys are unlocked",
       "fingerprintHint": "Compare this fingerprint by phone or in person when someone asks you to confirm your key.",
       "lockAction": "Lock",
-      "unavailable": "Archive keys are not available right now."
+      "unavailable": "Archive keys are not available right now.",
+      "reenrol": {
+        "start": "Forgot your passphrase? Set up a new key",
+        "warningTitle": "Before you set up a new key",
+        "warningLocked": "Your conversations stay locked until key recovery completes.",
+        "warningRecovered": "Access you recovered as a supervisor, and grants, need new requests.",
+        "warningRequests": "Your open requests are cancelled.",
+        "warningCustodian": "Your custodian share cannot be used until an administrator changes the custodians (Change custodians). {{usable}} of the {{k}} shares needed stay usable.",
+        "continue": "Continue",
+        "cancel": "Cancel",
+        "submit": "Set up a new key",
+        "pending": "Please open the confirmation link we emailed you. Your previous key stays in use until then.",
+        "done": "Your new key is active.",
+        "changed": "Your key has been replaced in the meantime. Please reload the page.",
+        "ceremony": "Not possible while a key ceremony you take part in is running.",
+        "failed": "The new key could not be set up."
+      }
     },
     "ceremony": {
       "title": "Recovery key",
@@ -311,7 +328,72 @@
       "abortTitle": "Abort the ceremony?",
       "abortBody": "Every contribution so far is lost. The ceremony must then be started again from the beginning.",
       "abortFailed": "The ceremony could not be aborted. Please try again.",
-      "keepGoing": "Keep going"
+      "keepGoing": "Keep going",
+      "usableShares": "{{usable}} of {{k}} needed shares usable",
+      "reshare": {
+        "start": "Change custodians",
+        "voidSheets": "The custodians were changed. Destroy the old paper sheets: together with others from the old set they would still open the archive.",
+        "lastAborted": "The last change of custodians was aborted ({{reason}}). The current custodians keep their shares.",
+        "lastExpired": "The last change of custodians lapsed after 24 hours. The current custodians keep their shares.",
+        "title": "Change custodians",
+        "intro": "Name the new custodians and how many shares open a conversation. Current holders hand their part over; the key and every archive stay as they are.",
+        "dealers": "Choose {{k}} current holders to hand over their shares",
+        "state": {
+          "fresh": "usable",
+          "kept": "usable with an earlier key",
+          "lost": "cannot be used",
+          "paper": "paper sheet"
+        },
+        "holderPaper": "Paper sheet {{ref}}",
+        "submit": "Start the change",
+        "pending": "Starting …",
+        "cancel": "Cancel",
+        "errorDealers": "Choose exactly as many current holders as shares are needed today.",
+        "errorUnusable": "One of the chosen holders can no longer open their share.",
+        "dealerTitle": "Hand over your share",
+        "newHolders": "Compare each new holder's fingerprint with them in person:",
+        "compared": "compared",
+        "retiredKey": "Your share is bound to your earlier key. Enter its passphrase.",
+        "unlockRetired": "Unlock the earlier key",
+        "unlockFailed": "This passphrase does not open the earlier key.",
+        "deal": "Hand over my share",
+        "paperTitle": "Paper sheets that hand over their shares",
+        "sheet": "Sheet {{ref}}",
+        "sheetValue": "The 64 characters printed on the sheet",
+        "sheetMismatch": "This does not match the sheet's share. Check what you typed.",
+        "dealSheet": "Hand over this sheet",
+        "sheetsDone": "Every sheet has handed over its share.",
+        "chainPending": "Checking the current custodians' transcripts …",
+        "sheetCeremony": "Issued by",
+        "errorChanged": "The custodians changed in the meantime. Close this form and choose again.",
+        "leftNotice": "Left: {{names}}. Their shares remain valid until the custodians are changed. Change the custodians.",
+        "left": "has left"
+      },
+      "leavers": {
+        "title": "Leavers",
+        "intro": "People with an archive key whom Studio no longer gives a recording permission. Remove the permissions there first. Only then does the person appear here.",
+        "none": "Nobody: everyone with an archive key still has a recording permission in Studio.",
+        "custodian": "Custodian",
+        "copySub": "Copy ID",
+        "copied": "Copied",
+        "copyFailed": "Cannot copy",
+        "fingerprint": "Fingerprint",
+        "activity": "Enrolled on {{enrolled}} · Conversations: {{conversations}} ·",
+        "lastConversation": "last on {{date}}",
+        "noConversation": "no conversation yet",
+        "mark": "Mark as leaver",
+        "confirmBody": "This person's archive key and all their access are deleted. Their conversations stay reachable through exceptional access.",
+        "confirmCustodian": "This person is a custodian. Their share stays until the custodians are changed. Change the custodians afterwards.",
+        "confirm": "Mark for good",
+        "cancel": "Cancel",
+        "errorDirectory": "The Studio directory is unreachable or incomplete right now. Try again later.",
+        "errorStillListed": "This person has a recording permission in Studio again.",
+        "errorAlreadyLeft": "This person is already marked as a leaver.",
+        "errorNoKey": "This person no longer has an active archive key.",
+        "errorKeyChanged": "This person's key has changed in the meantime. Reload the list.",
+        "errorCeremony": "This person takes part in a running key ceremony. Abort it first.",
+        "errorFailed": "That did not work. Please try again."
+      }
     },
     "recording": {
       "off": "Not recording",
@@ -549,7 +631,8 @@
         "fingerprintHint": "Read it out to the requester by phone or in person and compare every group.",
         "confirmed": "I confirmed this fingerprint with the requester by phone or in person.",
         "action": "Approve",
-        "approving": "Checking and approving…"
+        "approving": "Checking and approving…",
+        "askFiled": "Also ask whether they filed this request themselves. If not, decline it."
       },
       "decline": {
         "action": "Decline",
@@ -563,6 +646,7 @@
         "out_of_scope": "The request lists a conversation its requester did not sign. Do not approve.",
         "wrap_signature": "A recovery key wrap is not signed by a certified gateway key. Do not approve.",
         "share_mismatch": "Your share does not match the transcript. Do not approve.",
+        "custodians_changed": "The custodians changed since this request was filed. File it again.",
         "trust": "The recovery transcript does not verify. Do not approve; tell the other custodians.",
         "step_up": "Sign in again with your second factor first.",
         "unavailable": "Recovery is not available right now.",
@@ -580,9 +664,33 @@
         "REQUEST_CLOSED": "This request is closed.",
         "NOT_ENOUGH_APPROVALS": "Not enough custodians have approved yet.",
         "SCOPE_NOT_COVERED": "Not every conversation of the request was covered. Try again.",
-        "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer."
+        "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer.",
+        "SHARE_STALE": "Your share belongs to an earlier key and opens nothing any more. Ask an administrator to change the custodians (Change custodians); you can still hand this share over there with your earlier key.",
+        "KEY_CHANGED": "Your key has been replaced in the meantime. Please reload the page.",
+        "PERMISSION_REQUIRED": "You no longer hold the permission this needs."
       },
-      "retry": "Try again"
+      "retry": "Try again",
+      "kind": {
+        "access": "Access",
+        "key_recovery": "Key recovery"
+      }
+    },
+    "keyRecovery": {
+      "title": "My key recovery",
+      "intro": "Custodians recover the conversations your current key cannot open. Nobody but you sees any content.",
+      "batch": "Conversations in this request: {{count}}",
+      "remaining": "{{conversations}} conversations remain for another request after this one.",
+      "fingerprint": "Your key fingerprint",
+      "fingerprintHint": "The custodians ask you for this value by phone or in person. Only give it if you filed this request yourself.",
+      "reason": "Reason",
+      "file": "Sign and request",
+      "next": "File the next request",
+      "progress": "{{done}} of {{total}}",
+      "unrecoverable": "Keys that could not be recovered: {{count}}",
+      "none": "Your key opens all your conversations.",
+      "stepUpBody": "Requesting needs a fresh sign-in with your second factor.",
+      "open": "Recover access",
+      "banner": "Conversations your key can't open: {{count}}"
     }
   }
 }

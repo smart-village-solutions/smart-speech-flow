@@ -91,7 +91,7 @@ function render(options: { unlocked?: UnlockedKeys | null; progress?: RequestPro
       integrity: [],
     }),
   };
-  const ceremonyCrypto = { certifyTrust: vi.fn().mockResolvedValue({ k: 2 }) };
+  const ceremonyCrypto = { certifyChain: vi.fn().mockResolvedValue({ k: 2 }) };
   const archive = { trust: vi.fn().mockResolvedValue({ recoveryKeyId: 'rk-1' }) };
   const onOpenKeys = vi.fn();
   renderWithProviders(

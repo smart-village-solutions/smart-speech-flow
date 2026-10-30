@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { sized } from './recovery.mapper';
 import type {
   ApprovalDetail,
+  ApprovalsList,
+  OwnCandidates,
   RecoveryCandidate,
   RecoveryEmployee,
   RequestProgress,
@@ -12,9 +14,11 @@ import type {
 const uuid = z.string().uuid();
 const pair = z.object({ conversation_id: uuid, key_id: uuid });
 const status = z.enum(['open', 'completed', 'cancelled', 'expired', 'scope_gone']);
+const kind = z.enum(['access', 'key_recovery']);
 
 const summary = z.object({
   request_id: uuid,
+  kind,
   requester_sub: z.string(),
   status,
   reason: z.string(),
@@ -31,6 +35,7 @@ const toPair = (p: z.infer<typeof pair>) => ({
 function toSummary(row: z.infer<typeof summary>): RequestSummary {
   return {
     requestId: row.request_id,
+    kind: row.kind,
     requesterSub: row.requester_sub,
     status: row.status,
     reason: row.reason,
@@ -49,28 +54,49 @@ export function toEmployees(body: unknown): RecoveryEmployee[] {
     .employees.map((e) => ({ sub: e.sub, displayName: e.display_name }));
 }
 
-export function toCandidates(body: unknown): RecoveryCandidate[] {
-  const row = z.object({
-    conversation_id: uuid,
-    started_at: z.string(),
-    ended_at: z.string(),
-    retention_until: z.string(),
-    legal_hold: z.boolean(),
-    incomplete: z.boolean(),
-    key_ids: z.array(uuid).min(1),
-  });
+const candidate = z.object({
+  conversation_id: uuid,
+  started_at: z.string(),
+  ended_at: z.string(),
+  retention_until: z.string(),
+  legal_hold: z.boolean(),
+  incomplete: z.boolean(),
+  key_ids: z.array(uuid).min(1),
+});
+
+function toCandidate(c: z.infer<typeof candidate>): RecoveryCandidate {
+  return {
+    conversationId: c.conversation_id,
+    startedAt: c.started_at,
+    endedAt: c.ended_at,
+    retentionUntil: c.retention_until,
+    legalHold: c.legal_hold,
+    incomplete: c.incomplete,
+    keyIds: c.key_ids,
+  };
+}
+
+export function toRecoveryCandidates(body: unknown): RecoveryCandidate[] {
   return z
-    .object({ conversations: z.array(row) })
+    .object({ conversations: z.array(candidate) })
     .parse(body)
-    .conversations.map((c) => ({
-      conversationId: c.conversation_id,
-      startedAt: c.started_at,
-      endedAt: c.ended_at,
-      retentionUntil: c.retention_until,
-      legalHold: c.legal_hold,
-      incomplete: c.incomplete,
-      keyIds: c.key_ids,
-    }));
+    .conversations.map(toCandidate);
+}
+
+export function toOwnCandidates(body: unknown): OwnCandidates {
+  const count = z.number().int().min(0);
+  const parsed = z
+    .object({
+      conversations: z.array(candidate),
+      remaining: z.object({ conversations: count, keys: count }),
+    })
+    .parse(body);
+  return { conversations: parsed.conversations.map(toCandidate), remaining: parsed.remaining };
+}
+
+export function toApprovalsList(body: unknown): ApprovalsList {
+  const parsed = z.object({ requests: z.array(summary), share_stale: z.boolean() }).parse(body);
+  return { requests: parsed.requests.map(toSummary), shareStale: parsed.share_stale };
 }
 
 export function toSummaries(body: unknown): RequestSummary[] {
@@ -130,6 +156,7 @@ const approvalKey = pair.extend({
 
 const approval = z.object({
   request_id: uuid,
+  kind,
   recovery_key_id: uuid,
   requester_sub: z.string(),
   requester_name: z.string().nullable(),
@@ -150,6 +177,7 @@ export function toApprovalDetail(body: unknown): ApprovalDetail {
   const a = approval.parse(body);
   return {
     requestId: a.request_id,
+    kind: a.kind,
     recoveryKeyId: a.recovery_key_id,
     requesterSub: a.requester_sub,
     requesterName: a.requester_name,
@@ -189,6 +217,7 @@ const served = z.object({
       partials: z.record(uuid, z.string()),
     })
   ),
+  holders_ceremony_id: z.string(),
 });
 
 export function toServedPartials(body: unknown): ServedPartials {
@@ -207,5 +236,6 @@ export function toServedPartials(body: unknown): ServedPartials {
       signature: a.signature,
       partials: new Map(Object.entries(a.partials)),
     })),
+    holdersCeremonyId: s.holders_ceremony_id,
   };
 }

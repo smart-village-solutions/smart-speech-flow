@@ -189,7 +189,14 @@ describe('tenant login routes', () => {
             confirmed: [],
             paper_confirmed: false,
             transcript_hash: null,
+            kind: 'generation',
+            recovery_key_id: null,
+            previous_transcript_hash: null,
+            dealers: [{ dealer_index: 1, holder_ref: 'anna', kind: 'custodian' }],
           },
+          holders: [],
+          previous_had_paper: false,
+          chain: [],
         })
       ),
       http.get('*/api/admin/recording/keys/me', () =>
@@ -242,7 +249,9 @@ describe('tenant login routes', () => {
     );
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
     server.use(
-      http.get('*/api/admin/recording/recovery/approvals', () => HttpResponse.json({ requests: [] }))
+      http.get('*/api/admin/recording/recovery/approvals', () =>
+        HttpResponse.json({ requests: [], share_stale: false })
+      )
     );
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
 
@@ -256,6 +265,17 @@ describe('tenant login routes', () => {
     expect(await screen.findByText('Es warten keine Anträge auf Sie.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
     expect(await screen.findByRole('button', { name: 'Neues Gespräch starten' })).toBeInTheDocument();
+  });
+
+  it('opens key recovery for a recording permission from the menu', async () => {
+    vi.mocked(hasPermission).mockImplementation((permission) => permission === 'ssf.recording.request');
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Schlüsselwiederherstellung' }));
+    expect(await screen.findByRole('heading', { name: 'Meine Schlüsselwiederherstellung' })).toBeInTheDocument();
   });
 
   it('offers no recording archive without a recording permission', async () => {

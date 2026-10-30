@@ -45,6 +45,7 @@ CONVERSATION = "6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f"
 KEY_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
 CEREMONY = "0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a"
 REQUEST = "5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+RESHARING = "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918"
 WINDOW = "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f"
 _CHAIN_KINDS = (
     ("consent", "consent.json"),
@@ -351,6 +352,85 @@ def recovery_vector(ceremony: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def resharing_vector(ceremony: dict[str, Any]) -> dict[str, Any]:
+    """Holders 1 and 3 (a custodian and a paper share) deal to three new holders, k' = 2."""
+    k, dealers, holders = 2, (1, 3), (1, 2, 3)
+    shares = ceremony["_shares"]
+    weights = {i: ref.lagrange_at_zero(i, dealers) for i in dealers}
+    polynomials = {i: [weights[i] * shares[i] % ORDER, scalar(f"g{i}-1")] for i in dealers}
+    dealings = []
+    for i in dealers:
+        c, s = ref.schnorr_prove(TENANT, RESHARING, i, polynomials[i][0], scalar(f"rpok-{i}"))
+        dealings.append(Dealing(i, ref.commitments(polynomials[i]), c, s))
+    lists = [d.commitments for d in dealings]
+    new_shares = {j: sum(ref.evaluate(polynomials[i], j) for i in dealers) % ORDER for j in holders}
+    public_shares = tuple(holder_public_share(j, lists) for j in holders)
+    participants = tuple(Participant(f"new-{j}", j, label_bytes(f"nfpr-{j}", 32)) for j in holders)
+    digest = signatures.participants_digest(
+        [(p.index, p.holder_ref, p.fingerprint) for p in participants]
+    )
+    previous = from_b64url(ceremony["transcript_hash"])
+    gateway_keys = (("gk-1", ref.public_point(scalar("gateway-key"))),)
+    transcript = TranscriptInput(
+        TENANT,
+        RESHARING,
+        k,
+        participants,
+        tuple(dealings),
+        recovery_public_key(lists),
+        public_shares,
+        gateway_keys,
+        previous,
+    )
+    first = dealings[0]
+    proof_c, proof_s = ref.share_proof_prove(
+        TENANT, RESHARING, 1, new_shares[1], scalar("share-pok-1")
+    )
+    return {
+        "ceremony_id": RESHARING,
+        "k": k,
+        "dealers": list(dealers),
+        "previous_transcript_hash": ceremony["transcript_hash"],
+        "participants": [
+            {"holder_ref": p.holder_ref, "index": p.index, "fingerprint": b64url(p.fingerprint)}
+            for p in participants
+        ],
+        "lagrange": {str(i): hex32(w) for i, w in weights.items()},
+        "contributions": {
+            str(i): b64url(ref.public_point(polynomials[i][0])) for i in dealers
+        },
+        "polynomials": {str(i): [hex32(a) for a in polynomials[i]] for i in dealers},
+        "pok_nonces": {str(i): hex32(scalar(f"rpok-{i}")) for i in dealers},
+        "dealings": [
+            {
+                "dealer_index": d.dealer_index,
+                "commitments": [b64url(c) for c in d.commitments],
+                "c": hex32(d.proof_c),
+                "s": hex32(d.proof_s),
+            }
+            for d in dealings
+        ],
+        "shares": {str(j): hex32(new_shares[j]) for j in holders},
+        "holder_shares": [b64url(share) for share in public_shares],
+        "recovery_public_key": ceremony["recovery_public_key"],
+        "participants_digest": b64url(digest),
+        "dealing_fields": [
+            typed(f)
+            for f in signatures.reshare_dealing_fields(
+                TENANT, RESHARING, 1, first.commitments, first.proof_c, first.proof_s,
+                previous, digest,
+            )
+        ],
+        "transcript_hash": b64url(transcript_hash(transcript)),
+        "share_proof": {
+            "holder_index": 1,
+            "nonce": hex32(scalar("share-pok-1")),
+            "c": hex32(proof_c),
+            "s": hex32(proof_s),
+        },
+    }
+
+
 def private_key_blob_vector() -> dict[str, Any]:
     params = (1024, 1, 1)
     enc_scalar, sig_scalar = scalar("blob-enc"), scalar("blob-sig")
@@ -469,6 +549,7 @@ def timestamp_vector(head: bytes) -> dict[str, Any]:
 def build_vectors() -> dict[str, Any]:
     ceremony = ceremony_vector()
     recovery = recovery_vector(ceremony)
+    resharing = resharing_vector(ceremony)
     chain = chain_vector()
     for private in ("_shares", "_recovery_key", "_public_shares"):
         ceremony.pop(private)
@@ -481,6 +562,7 @@ def build_vectors() -> dict[str, Any]:
         "signatures": signature_vectors(),
         "ceremony": ceremony,
         "recovery": recovery,
+        "resharing": resharing,
         "private_key_blob": private_key_blob_vector(),
         "chain": chain,
         "timestamp": timestamp_vector(from_b64url(chain["entries"][-1]["hash"])),

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { RequestSummary } from '@/domain/recovery/requests.types';
 import { formatDate } from '@/features/archive/format';
-import { StatusChip } from './StatusChip';
+import { Chip, StatusChip } from './StatusChip';
 
 interface SummaryListProps {
   rows: readonly RequestSummary[];
@@ -38,6 +38,7 @@ export function SummaryList({
               </span>
             </span>
             <span className="min-w-0 flex-1 truncate text-label text-fg-body">{row.reason}</span>
+            <Chip label={t(`admin.recovery.kind.${row.kind}`)} tone="muted" />
             <StatusChip status={row.status} />
           </button>
         </li>

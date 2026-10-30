@@ -73,13 +73,13 @@ const signers = new Map([[chain.signer_key_id as string, fromBase64Url(chain.sig
 
 function input(
   setup: {
-    certify?: CeremonyCrypto['certify'];
+    certifyChain?: CeremonyCrypto['certifyChain'];
     openWrap?: ArchiveCrypto['openWrap'];
     opened?: OpenedConversation;
   } = {}
 ) {
   const ceremonyCrypto = {
-    certify: setup.certify ?? vi.fn().mockResolvedValue(signers),
+    certifyChain: setup.certifyChain ?? vi.fn().mockResolvedValue({ gatewayKeys: signers }),
   } as unknown as CeremonyCrypto;
   const openWrap = setup.openWrap ?? vi.fn().mockResolvedValue({ type: 'secret' } as CryptoKey);
   const archiveCrypto = { openWrap } as unknown as ArchiveCrypto;
@@ -126,7 +126,7 @@ describe('verifyConversation', () => {
 
   it('stops at an uncertified ceremony before any wrap is opened', async () => {
     const setup = input({
-      certify: () => Promise.reject(new CeremonyCheckError('signature_invalid')),
+      certifyChain: () => Promise.reject(new CeremonyCheckError('signature_invalid')),
     });
     expect(await verifyConversation(setup)).toEqual({ ok: false, stage: 'trust' });
     expect(setup.openWrap).not.toHaveBeenCalled();

@@ -23,6 +23,7 @@ from services.api_gateway.recording.retention.store import (
 from tests.integration import test_recording_archive_database as archive_database
 from tests.integration import test_recording_retention_store as store_tests
 from tests.integration.test_recording_archive_database import NOW, TENANT, _conversation
+from tests.integration.test_recording_key_recovery_database import unrecoverable_directly
 from tests.integration.test_recording_recovery_requests_database import (
     file_directly,
     partial_directly,
@@ -425,3 +426,43 @@ async def test_a_request_that_lapsed_untouched_is_closed_by_the_worker(archive, 
     )
     with pytest.raises(RetentionRefusedError, match="primary_only"):
         await stores["replica"].settle_requests(TENANT, NOW)
+
+
+async def test_a_shred_and_the_expiry_take_the_unrecoverable_keys(archive, owner, stores):
+    conversation = await _expired(archive, owner)
+    key_id = await _key_of(owner, conversation)
+    request_id = await file_directly(owner, conversation, key_id)
+    await unrecoverable_directly(owner, request_id, conversation, key_id)
+    await owner.execute("UPDATE recovery_requests SET status = 'cancelled', closed_at = $1", NOW)
+    primary = stores["primary"]
+
+    await primary.shred(TENANT, conversation, NOW, "retention-worker")
+    assert await _count(owner, "recovery_unrecoverable_keys", conversation) == 0
+
+    await unrecoverable_directly_after_shred_is_refused(owner, request_id, conversation, key_id)
+    await primary.record_clearance(TENANT, conversation, NOW)
+    await stores["replica"].record_clearance(TENANT, conversation, NOW)
+    assert await primary.delete_rows(TENANT, conversation, NOW) is True
+    await primary.settle_requests(TENANT, NOW)
+
+    assert await owner.fetchval("SELECT count(*) FROM recovery_requests") == 0
+
+
+async def test_a_spent_request_is_forgotten_with_its_unrecoverable_keys(archive, owner, stores):
+    conversation = await _expired(archive, owner)
+    key_id = await _key_of(owner, conversation)
+    request_id = await file_directly(owner, conversation, key_id)
+    await unrecoverable_directly(owner, request_id, conversation, key_id)
+    await owner.execute("UPDATE recovery_requests SET status = 'cancelled', closed_at = $1", NOW)
+    # The scope goes first, as full expiry would; the reported key is left for the forgetting.
+    await owner.execute("DELETE FROM recovery_request_keys")
+
+    await stores["primary"].settle_requests(TENANT, NOW)
+
+    assert await owner.fetchval("SELECT count(*) FROM recovery_unrecoverable_keys") == 0
+    assert await owner.fetchval("SELECT count(*) FROM recovery_requests") == 0
+
+
+async def unrecoverable_directly_after_shred_is_refused(owner, request_id, conversation, key_id):
+    with pytest.raises(asyncpg.RaiseError, match="conversation_shredded"):
+        await unrecoverable_directly(owner, request_id, conversation, key_id)

@@ -1,13 +1,14 @@
 import type { PublicKeys, UnlockedKeys } from './archive-crypto.port';
 import type { Bytes } from './bytes';
 import type { CertifiedTrust } from './ceremony-crypto.port';
-import type { ScopePair } from './signatures';
+import type { RequestKind, ScopePair } from './signatures';
 
-export type { ScopePair } from './signatures';
+export type { RequestKind, ScopePair } from './signatures';
 
 export interface RequestToSign {
   tenantId: string;
   requestId: string;
+  kind: RequestKind;
   recoveryKeyId: string;
   requesterSub: string;
   reason: string;
@@ -24,6 +25,8 @@ export interface RecoveryWrapRef extends ScopePair {
 export interface ApprovalFacts {
   tenantId: string;
   requestId: string;
+  /** As served; the request signature covers it, so a relabelled request fails. */
+  kind: RequestKind;
   recoveryKeyId: string;
   requesterSub: string;
   requesterKeys: PublicKeys;
@@ -84,9 +87,19 @@ export interface NewRecoveredWrap extends ScopePair {
   signature: Bytes;
 }
 
+/** A key whose recovery wrap cannot be used: it is reported, then left out of the store. */
+export interface UnrecoverableKey {
+  keyId: string;
+  stage: 'wrap_signature' | 'wrap_damaged';
+}
+
+/** Called after each chunk, so a run over thousands of keys can show how far it got. */
+export type OnProgress = (done: number, total: number) => void;
+
 export interface CombineResult {
-  /** Null until k valid approvals combine for every key. */
+  /** Null until k valid approvals hold; then one wrap per key that opened. */
   wraps: NewRecoveredWrap[] | null;
+  unrecoverable: UnrecoverableKey[];
   /** The custodians whose partials failed: theirs to answer for. */
   rejections: Rejection[];
   /** Faults of the served data, which name no custodian. */
@@ -100,7 +113,9 @@ export type RecoveryFault =
   | 'request_signature'
   | 'out_of_scope'
   | 'wrap_signature'
-  | 'share_mismatch';
+  | 'share_mismatch'
+  | 'step_up'
+  | 'custodians_changed';
 
 export class RecoveryCheckError extends Error {
   readonly fault: RecoveryFault;
@@ -122,11 +137,13 @@ export interface RecoveryCrypto {
     facts: Readonly<ApprovalFacts>,
     trust: Readonly<CertifiedTrust>,
     keys: Readonly<UnlockedKeys>,
-    callerSub: string
+    callerSub: string,
+    onProgress?: OnProgress
   ): Promise<ApprovalResult>;
   combine(
     facts: Readonly<CombineFacts>,
     trust: Readonly<CertifiedTrust>,
-    keys: Readonly<UnlockedKeys>
+    keys: Readonly<UnlockedKeys>,
+    onProgress?: OnProgress
   ): Promise<CombineResult>;
 }

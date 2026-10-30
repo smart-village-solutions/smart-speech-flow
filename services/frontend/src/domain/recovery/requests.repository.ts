@@ -4,12 +4,16 @@ import type {
   NewRecoveredWrap,
   RecoveryIntegrityStage,
   Rejection,
+  RequestKind,
   ScopePair,
+  UnrecoverableKey,
 } from '@/core/crypto/recovery-crypto.port';
 import { AppError } from '@/core/http/AppError';
 import {
   toApprovalDetail,
-  toCandidates,
+  toApprovalsList,
+  toRecoveryCandidates,
+  toOwnCandidates,
   toEmployees,
   toProgress,
   toScope,
@@ -18,6 +22,8 @@ import {
 } from './requests.mapper';
 import type {
   ApprovalDetail,
+  ApprovalsList,
+  OwnCandidates,
   RecoveryCandidate,
   RecoveryEmployee,
   RequestProgress,
@@ -29,6 +35,7 @@ const BASE = '/api/admin/recording/recovery';
 
 export interface FiledRequest {
   requestId: string;
+  kind: RequestKind;
   reason: string;
   conversationIds: readonly string[];
   signature: Bytes;
@@ -37,15 +44,21 @@ export interface FiledRequest {
 export interface RecoveryRequestsRepository {
   employees(): Promise<RecoveryEmployee[]>;
   candidates(employee: string, from: string, to: string): Promise<RecoveryCandidate[]>;
+  ownCandidates(): Promise<OwnCandidates>;
   file(request: Readonly<FiledRequest>): Promise<ScopePair[]>;
-  requests(): Promise<RequestSummary[]>;
+  requests(kind?: RequestKind): Promise<RequestSummary[]>;
   progress(requestId: string): Promise<RequestProgress>;
   partials(requestId: string): Promise<ServedPartials>;
   reject(requestId: string, rejection: Readonly<Rejection>): Promise<void>;
   reportIntegrity(requestId: string, stage: RecoveryIntegrityStage | 'trust'): Promise<void>;
-  storeWraps(requestId: string, wraps: readonly NewRecoveredWrap[]): Promise<string[]>;
+  /** The keys whose recovery wrap could not be used travel with the wraps, in one call (§9.6). */
+  storeWraps(
+    requestId: string,
+    wraps: readonly NewRecoveredWrap[],
+    unrecoverable?: readonly UnrecoverableKey[]
+  ): Promise<string[]>;
   cancel(requestId: string): Promise<void>;
-  approvals(): Promise<RequestSummary[]>;
+  approvals(): Promise<ApprovalsList>;
   approval(requestId: string): Promise<ApprovalDetail>;
   approve(
     requestId: string,
@@ -91,17 +104,20 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
   return {
     employees: async () => toEmployees(await get('/employees')),
     candidates: async (employee, from, to) =>
-      toCandidates(await get('/candidates', { employee, from, to })),
+      toRecoveryCandidates(await get('/candidates', { employee, from, to })),
+    ownCandidates: async () => toOwnCandidates(await get('/own/candidates')),
     file: async (request) =>
       toScope(
         await post('/requests', {
           request_id: request.requestId,
+          kind: request.kind,
           reason: request.reason,
           conversation_ids: request.conversationIds,
           signature: toBase64Url(request.signature),
         })
       ),
-    requests: async () => toSummaries(await get('/requests')),
+    requests: async (kind) =>
+      toSummaries(await get('/requests', kind === undefined ? undefined : { kind })),
     progress: async (requestId) => toProgress(await get(`/requests/${requestId}`)),
     partials: async (requestId) => toServedPartials(await get(`/requests/${requestId}/partials`)),
     reject: async (requestId, rejection) => {
@@ -114,7 +130,7 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
     reportIntegrity: async (requestId, stage) => {
       await post(`/requests/${requestId}/integrity-failures`, { stage });
     },
-    storeWraps: async (requestId, wraps) => {
+    storeWraps: async (requestId, wraps, unrecoverable = []) => {
       const body = await post(`/requests/${requestId}/wraps`, {
         wraps: wraps.map((w) => ({
           conversation_id: w.conversationId,
@@ -122,13 +138,14 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
           blob: w.blob,
           signature: toBase64Url(w.signature),
         })),
+        unrecoverable: unrecoverable.map((u) => ({ key_id: u.keyId, stage: u.stage })),
       });
       return (body as { dropped: string[] }).dropped;
     },
     cancel: async (requestId) => {
       await post(`/requests/${requestId}/cancel`);
     },
-    approvals: async () => toSummaries(await get('/approvals')),
+    approvals: async () => toApprovalsList(await get('/approvals')),
     approval: async (requestId) => toApprovalDetail(await get(`/approvals/${requestId}`)),
     approve: async (requestId, partials, signature) => {
       await post(`/approvals/${requestId}`, {

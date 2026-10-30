@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import {
   concat,
@@ -14,6 +14,7 @@ import { contexts, openWithPrivateKey, parseSealed, seal, sealedToJson } from '@
 import { dleqProve, evaluatePolynomial } from '@/core/crypto/proofs';
 import type {
   ApprovalFacts,
+  RequestKind,
   ApprovalResult,
   CombineFacts,
   ServedApproval,
@@ -54,7 +55,18 @@ async function unlockedKeys(sub: string): Promise<UnlockedKeys> {
 }
 
 /** A recovery key split k-of-n among `custodians`, a CK wrapped to X, and a signed request. */
-async function world(k = 2, custodians = ['carol', 'dave', 'erin'], requester = 'sam') {
+interface WorldOptions {
+  kind?: RequestKind;
+  /** Recovery-wrapped keys in scope; the first is K. */
+  keyCount?: number;
+}
+
+async function world(
+  k = 2,
+  custodians = ['carol', 'dave', 'erin'],
+  requester = 'sam',
+  { kind = 'access', keyCount = 1 }: WorldOptions = {}
+) {
   const coefficients = Array.from({ length: k }, () => randomScalar());
   const shares = new Map(
     custodians.map((_, i) => [i + 1, evaluatePolynomial(coefficients, i + 1)])
@@ -81,34 +93,42 @@ async function world(k = 2, custodians = ['carol', 'dave', 'erin'], requester = 
     holderShares: new Map([...shares].map(([index, share]) => [index, publicPoint(share)])),
     gatewayKeys: new Map([['gw-1', gatewayPub]]),
   };
-  const ck = randomBytes(32);
-  const wrap = await seal(
-    TAGS.ckWrap,
-    trust.recoveryPublicKey,
-    ck,
-    contexts.ckWrap(TENANT, C, K, 'recovery', recoveryKeyId)
-  );
-  const wrapSignature = await signFields(
-    gateway.privateKey,
-    TAGS.wrapSig,
-    wrapFields({
-      tenantId: TENANT,
-      conversationId: C,
-      keyId: K,
-      ephemeral: wrap.ephemeral,
-      recipientKind: 'recovery',
-      recipientRef: recoveryKeyId,
-      recipientFingerprint: transcriptHash,
+  const keyIds = [K, ...Array.from({ length: keyCount - 1 }, () => crypto.randomUUID())];
+  const recoveryWraps = await Promise.all(
+    keyIds.map(async (keyId) => {
+      const ck = randomBytes(32);
+      const sealed = await seal(
+        TAGS.ckWrap,
+        trust.recoveryPublicKey,
+        ck,
+        contexts.ckWrap(TENANT, C, keyId, 'recovery', recoveryKeyId)
+      );
+      const signature = await signFields(
+        gateway.privateKey,
+        TAGS.wrapSig,
+        wrapFields({
+          tenantId: TENANT,
+          conversationId: C,
+          keyId,
+          ephemeral: sealed.ephemeral,
+          recipientKind: 'recovery',
+          recipientRef: recoveryKeyId,
+          recipientFingerprint: transcriptHash,
+        })
+      );
+      return { keyId, ck, sealed, signature };
     })
   );
+  const [{ ck, sealed: wrap }] = recoveryWraps;
   const requesterKeys = keys.get(requester) as UnlockedKeys;
   const requestId = crypto.randomUUID();
   const reason = 'Employee left; the authority needs the record.';
-  const signedScope = [{ conversationId: C, keyId: K }];
+  const signedScope = keyIds.map((keyId) => ({ conversationId: C, keyId }));
   const requestSignature = await recovery.signRequest(
     {
       tenantId: TENANT,
       requestId,
+      kind,
       recoveryKeyId,
       requesterSub: requester,
       reason,
@@ -134,21 +154,20 @@ async function world(k = 2, custodians = ['carol', 'dave', 'erin'], requester = 
     return {
       tenantId: TENANT,
       requestId,
+      kind,
       recoveryKeyId,
       requesterSub: requester,
       requesterKeys: { encPub: requesterKeys.encPub, sigPub: requesterKeys.sigPub },
       reason,
       requestSignature,
       signedScope,
-      keys: [
-        {
-          conversationId: C,
-          keyId: K,
-          ephemeral: wrap.ephemeral,
-          signerKeyId: 'gw-1',
-          signature: wrapSignature,
-        },
-      ],
+      keys: recoveryWraps.map((w) => ({
+        conversationId: C,
+        keyId: w.keyId,
+        ephemeral: w.sealed.ephemeral,
+        signerKeyId: 'gw-1',
+        signature: w.signature,
+      })),
       holderIndex: index,
       attempt: 1,
       encryptedShare,
@@ -179,15 +198,13 @@ async function world(k = 2, custodians = ['carol', 'dave', 'erin'], requester = 
       tenantId: TENANT,
       requestId,
       requesterSub: requester,
-      wraps: [
-        {
-          conversationId: C,
-          keyId: K,
-          blob: sealedToJson(wrap),
-          signerKeyId: 'gw-1',
-          signature: wrapSignature,
-        },
-      ],
+      wraps: recoveryWraps.map((w) => ({
+        conversationId: C,
+        keyId: w.keyId,
+        blob: sealedToJson(w.sealed),
+        signerKeyId: 'gw-1',
+        signature: w.signature,
+      })),
       approvals,
     };
   }
@@ -241,6 +258,7 @@ async function world(k = 2, custodians = ['carol', 'dave', 'erin'], requester = 
   return {
     trust,
     keys,
+    keyIds,
     shares,
     ck,
     requester,
@@ -292,6 +310,7 @@ describe('web recovery crypto', () => {
     const facts = await w.served([{ holderIndex: 1, result: await w.approveAs('carol') }]);
     expect(await recovery.combine(facts, w.trust, w.requesterKeys)).toEqual({
       wraps: null,
+      unrecoverable: [],
       rejections: [],
       integrity: [],
     });
@@ -335,7 +354,12 @@ describe('web recovery crypto', () => {
 
     const result = await recovery.combine(facts, w.trust, w.requesterKeys);
 
-    expect(result).toEqual({ wraps: null, rejections: [], integrity: ['partial_hash'] });
+    expect(result).toEqual({
+      wraps: null,
+      unrecoverable: [],
+      rejections: [],
+      integrity: ['partial_hash'],
+    });
   });
 
   it("an approval whose signature is not its custodian's blames nobody and does not count", async () => {
@@ -349,7 +373,12 @@ describe('web recovery crypto', () => {
 
     const result = await recovery.combine(facts, w.trust, w.requesterKeys);
 
-    expect(result).toEqual({ wraps: null, rejections: [], integrity: ['approval_signature'] });
+    expect(result).toEqual({
+      wraps: null,
+      unrecoverable: [],
+      rejections: [],
+      integrity: ['approval_signature'],
+    });
   });
 
   it('a partial sealed to substituted keys cannot be opened by the real requester', async () => {
@@ -426,7 +455,7 @@ describe('web recovery crypto', () => {
     expect((await recovery.combine(facts, w.trust, w.requesterKeys)).wraps).toBeNull();
   });
 
-  it('a served recovery wrap that no certified key signed stops everything', async () => {
+  it('a served recovery wrap that no certified key signed is unrecoverable, and named', async () => {
     const w = await world();
     const facts = await w.served([
       { holderIndex: 1, result: await w.approveAs('carol') },
@@ -434,9 +463,10 @@ describe('web recovery crypto', () => {
     ]);
     const tampered = { ...facts, wraps: [{ ...facts.wraps[0], signature: new Uint8Array(64) }] };
     expect(await recovery.combine(tampered, w.trust, w.requesterKeys)).toEqual({
-      wraps: null,
+      wraps: [],
+      unrecoverable: [{ keyId: K, stage: 'wrap_signature' }],
       rejections: [],
-      integrity: ['wrap_signature'],
+      integrity: [],
     });
   });
 
@@ -456,7 +486,12 @@ describe('web recovery crypto', () => {
       w.trust,
       w.requesterKeys
     );
-    expect(result).toEqual({ wraps: null, rejections: [], integrity: ['wrap_damaged'] });
+    expect(result).toEqual({
+      wraps: [],
+      unrecoverable: [{ keyId: K, stage: 'wrap_damaged' }],
+      rejections: [],
+      integrity: [],
+    });
   });
 
   it('refuses keys that changed after the fingerprint was confirmed', async () => {
@@ -483,4 +518,69 @@ describe('web recovery crypto', () => {
       recovery.approve({ ...facts, recoveryKeyId: crypto.randomUUID() }, w.trust, carol, 'carol')
     ).rejects.toMatchObject({ fault: 'not_listed' });
   });
+
+  it('signs the kind it is given, so a key recovery cannot pass as an access request', async () => {
+    const w = await world(2, undefined, undefined, { kind: 'key_recovery' });
+    const facts = await w.approvalFacts('carol');
+    const carol = w.keys.get('carol') as UnlockedKeys;
+    await expect(recovery.approve(facts, w.trust, carol, 'carol')).resolves.toBeDefined();
+    await expect(
+      recovery.approve({ ...facts, kind: 'access' }, w.trust, carol, 'carol')
+    ).rejects.toMatchObject({ fault: 'request_signature' });
+  });
+
+  it('stores every other key when one recovery wrap is damaged', async () => {
+    const w = await world(2, undefined, undefined, { keyCount: 3 });
+    const facts = await w.served([
+      { holderIndex: 1, result: await w.approveAs('carol') },
+      { holderIndex: 2, result: await w.approveAs('dave') },
+    ]);
+    const body = JSON.parse(facts.wraps[1].blob) as Record<string, string>;
+    facts.wraps[1] = {
+      ...facts.wraps[1],
+      blob: JSON.stringify({
+        ...body,
+        ct: body.ct.slice(0, -2) + (body.ct.endsWith('A') ? 'BA' : 'AA'),
+      }),
+    };
+
+    const result = await recovery.combine(facts, w.trust, w.requesterKeys);
+
+    expect(result.wraps?.map((wrap) => wrap.keyId)).toEqual([w.keyIds[0], w.keyIds[2]]);
+    expect(result.unrecoverable).toEqual([{ keyId: w.keyIds[1], stage: 'wrap_damaged' }]);
+  });
+
+  it('leaves out a wrap whose signature fails and still checks the others', async () => {
+    const w = await world(2, undefined, undefined, { keyCount: 2 });
+    const facts = await w.served([
+      { holderIndex: 1, result: await w.approveAs('carol') },
+      { holderIndex: 2, result: await w.approveAs('dave') },
+    ]);
+    facts.wraps[0] = { ...facts.wraps[0], signature: new Uint8Array(64) };
+
+    const result = await recovery.combine(facts, w.trust, w.requesterKeys);
+
+    expect(result.unrecoverable).toEqual([{ keyId: w.keyIds[0], stage: 'wrap_signature' }]);
+    expect(result.wraps?.map((wrap) => wrap.keyId)).toEqual([w.keyIds[1]]);
+    expect(result.rejections).toEqual([]);
+  });
+
+  it('works in chunks, reporting progress and yielding between them', async () => {
+    const w = await world(1, ['carol', 'dave'], 'sam', { keyCount: 101 });
+    const seen: number[] = [];
+    const timeouts = vi.spyOn(globalThis, 'setTimeout');
+
+    await recovery.approve(
+      await w.approvalFacts('carol'),
+      w.trust,
+      w.keys.get('carol') as UnlockedKeys,
+      'carol',
+      (done, total) => seen.push(done, total)
+    );
+
+    expect(seen).toEqual([50, 101, 100, 101, 101, 101]);
+    expect(timeouts.mock.calls.filter(([, delay]) => delay === 0)).toHaveLength(3);
+    timeouts.mockRestore();
+    // A hundred keys of real crypto: slower than the default under a loaded parallel run.
+  }, 30_000);
 });

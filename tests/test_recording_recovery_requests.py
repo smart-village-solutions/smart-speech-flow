@@ -45,6 +45,7 @@ R = point_from_public_key(ec.generate_private_key(ec.SECP256R1()).public_key())
 class Call:
     args: tuple[Any, ...]
     verify: Any = None
+    keywords: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -53,9 +54,9 @@ class Method:
     calls: list[Call] = field(default_factory=list)
     raises: BaseException | None = None
 
-    async def __call__(self, *args: Any) -> Any:
+    async def __call__(self, *args: Any, **keywords: Any) -> Any:
         verify = next((a for a in args if callable(a)), None)
-        self.calls.append(Call(args, verify))
+        self.calls.append(Call(args, verify, keywords))
         if self.raises is not None:
             raise self.raises
         return self.result
@@ -67,8 +68,10 @@ class FakeRequests:
             "employees",
             "candidates",
             "file",
+            "own_candidates",
             "own_requests",
             "approvals",
+            "share_stale",
             "approval_context",
             "approve",
             "decline",
@@ -171,7 +174,7 @@ async def test_filing_verifies_the_signature_over_the_scope_the_database_read():
         *request_fields(TENANT, "r1", "access", RECOVERY_KEY_ID, "sam", "why", [("c1", "k1")]),
     )
 
-    await service.file(TENANT, "sam", "r1", "why", ("c1",), signature)
+    await service.file(TENANT, "sam", "r1", "access", "why", ("c1",), signature)
 
     verify = fake.file.calls[0].verify
     assert verify((ScopeKey("c1", "k1"),))
@@ -182,7 +185,7 @@ async def test_filing_verifies_the_signature_over_the_scope_the_database_read():
 async def test_filing_without_an_enrolled_key_is_refused():
     service, fake = _service(None)
     with pytest.raises(RecoveryRequestError, match="key_not_enrolled"):
-        await service.file(TENANT, "sam", "r1", "why", ("c1",), bytes(64))
+        await service.file(TENANT, "sam", "r1", "access", "why", ("c1",), bytes(64))
     assert fake.file.calls == []
 
 
@@ -247,7 +250,7 @@ async def test_a_stored_wrap_must_be_signed_by_the_requester_for_their_fingerpri
     fake.store_wraps.result = ()
     own = await service.keys.active_user_key(TENANT, "sam")  # type: ignore[attr-defined]
 
-    await service.store(TENANT, "sam", "r1", [])
+    await service.store(TENANT, "sam", "r1", [], may_supervise=True)
 
     verify = fake.store_wraps.calls[0].verify
     good = _user_wrap(requester, own.fingerprint)
@@ -284,7 +287,7 @@ async def test_the_reads_pass_through_with_names():
         ("alice", "Alice Employee"),
         ("bob", None),
     ]
-    assert await service.progress(TENANT, "sam", "r1", "corr") == (
+    assert await service.progress(TENANT, "sam", "r1", "corr", may_supervise=True) == (
         "progress",
         await FakeNames().names(TENANT, "corr"),
     )
@@ -292,13 +295,22 @@ async def test_the_reads_pass_through_with_names():
         ("candidates", service.candidates(TENANT, "sam", "alice", NOW, NOW)),
         ("own_requests", service.own_requests(TENANT, "sam")),
         ("approvals", service.approvals(TENANT, "carol")),
-        ("partials", service.partials(TENANT, "sam", "r1")),
-        ("reject", service.reject(TENANT, "sam", "r1", (1, 1), "proof_invalid")),
-        ("record_integrity_failure", service.report(TENANT, "sam", "r1", "trust")),
+        ("partials", service.partials(TENANT, "sam", "r1", may_supervise=True)),
+        (
+            "reject",
+            service.reject(TENANT, "sam", "r1", (1, 1), "proof_invalid", may_supervise=True),
+        ),
+        (
+            "record_integrity_failure",
+            service.report(TENANT, "sam", "r1", "trust", may_supervise=True),
+        ),
     ):
         getattr(fake, name).result = [] if name in {"candidates", "own_requests"} else None
+        fake.share_stale.result = True
         await call
         assert getattr(fake, name).calls, name
+    fake.approvals.result = []
+    assert await service.approvals(TENANT, "carol") == ([], True)
 
 
 async def test_without_a_recovery_key_nothing_is_listed_or_filed():
@@ -311,3 +323,31 @@ async def test_without_a_recovery_key_nothing_is_listed_or_filed():
     with pytest.raises(RecoveryRequestError, match="recovery_key_missing"):
         await service.candidates(TENANT, "sam", "alice", NOW, NOW)
     assert fake.candidates.calls == []
+
+
+async def test_filing_verifies_the_kind_it_was_given():
+    requester = ec.generate_private_key(ec.SECP256R1())
+    service, fake = _service(requester)
+    fake.file.result = (ScopeKey("c1", "k1"),)
+    signed_as_access = sign_fields(
+        requester,
+        tags.REQUEST_SIG,
+        *request_fields(TENANT, "r1", "access", RECOVERY_KEY_ID, "sam", "why", [("c1", "k1")]),
+    )
+
+    await service.file(TENANT, "sam", "r1", "key_recovery", "why", ("c1",), signed_as_access)
+
+    assert not fake.file.calls[0].verify((ScopeKey("c1", "k1"),))
+    assert fake.file.calls[0].args[0].kind == "key_recovery"
+
+
+async def test_own_candidates_need_a_key_and_ask_for_the_active_recovery_key():
+    service, fake = _service()
+    fake.own_candidates.result = ([], 0, 0)
+
+    assert await service.own_candidates(TENANT, "alice") == ([], 0, 0)
+    assert fake.own_candidates.calls[0].args[:3] == (TENANT, "alice", RECOVERY_KEY_ID)
+
+    keyless, _ = _service(None)
+    with pytest.raises(RecoveryRequestError, match="key_not_enrolled"):
+        await keyless.own_candidates(TENANT, "alice")

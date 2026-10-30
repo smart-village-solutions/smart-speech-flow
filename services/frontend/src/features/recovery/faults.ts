@@ -8,6 +8,7 @@ const CHECKS = new Set([
   'trust',
   'step_up',
   'fingerprint_changed',
+  'custodians_changed',
 ]);
 const REFUSALS = new Set([
   'REQUEST_EXISTS',
@@ -22,6 +23,9 @@ const REFUSALS = new Set([
   'NOT_ENOUGH_APPROVALS',
   'SCOPE_NOT_COVERED',
   'SCOPE_TOO_LARGE',
+  'SHARE_STALE',
+  'KEY_CHANGED',
+  'PERMISSION_REQUIRED',
 ]);
 
 /** The message for a step's failure: a check of ours, a known refusal, or "unavailable". */

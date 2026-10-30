@@ -9,7 +9,8 @@ see deploy/postgres/recording/migrations/001_recording_keys.sql).
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final, Self
 
@@ -53,25 +54,61 @@ async def bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
 
 
 async def append_audit(connection: asyncpg.Connection, event: AuditEvent) -> None:
-    """Append under a per-tenant transaction lock, so two writers cannot fork the chain."""
+    await append_audits(connection, [event])
+
+
+async def append_audits(connection: asyncpg.Connection, events: Sequence[AuditEvent]) -> None:
+    """Append under one per-tenant transaction lock, so two writers cannot fork the chain.
+
+    One lock, one head read and one insert however many events: a 2,000-key
+    recovery step must not hold the chain, which a guest's yes waits on, for long.
+    """
+    if not events:
+        return
     await connection.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-        f"ssf-recording-audit:{event.tenant_id}",
+        f"ssf-recording-audit:{events[0].tenant_id}",
     )
     last = await connection.fetchrow("SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1")
-    seq = 1 if last is None else last["seq"] + 1
+    seq = 0 if last is None else last["seq"]
     prev_hash = GENESIS if last is None else bytes(last["hash"])
-    await connection.execute(
+    rows = []
+    for event in events:
+        seq += 1
+        digest = audit_hash(event, seq, prev_hash)
+        rows.append(
+            (
+                event.tenant_id,
+                seq,
+                event.at,
+                event.actor_sub,
+                event.event_type,
+                event.object_ref,
+                prev_hash,
+                digest,
+            )
+        )
+        prev_hash = digest
+    await connection.executemany(
         "INSERT INTO audit_events (tenant_id, seq, at, actor_sub, event_type, object_ref,"
         " prev_hash, hash) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        event.tenant_id,
-        seq,
-        event.at,
-        event.actor_sub,
-        event.event_type,
-        event.object_ref,
-        prev_hash,
-        audit_hash(event, seq, prev_hash),
+        rows,
+    )
+
+
+async def insert_user_key(connection: asyncpg.Connection, record: UserKeyRecord) -> None:
+    await connection.execute(
+        "INSERT INTO user_keys (tenant_id, user_sub, key_version, enc_pub,"
+        " sig_pub, fingerprint, encrypted_private, created_at)"
+        " VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        record.tenant_id,
+        record.user_sub,
+        record.key_version,
+        record.enc_pub,
+        record.sig_pub,
+        record.fingerprint,
+        record.encrypted_private,
+        record.created_at,
     )
 
 
@@ -133,29 +170,37 @@ class PostgresRecordingRepository:
             raise storage_unavailable(error) from None
         return None if row is None else user_key_from_row(row)
 
-    async def enrol_user_key(self, record: UserKeyRecord, audit: AuditEvent) -> None:
+    async def enrol_user_key(self, record: UserKeyRecord) -> int:
+        """Inserts `record` as the user's next version and returns it.
+
+        A returning leaver's retired keys stay, so their first key now is not version 1
+        (§9.8). A unique violation still means a concurrent enrolment.
+        """
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
                     await bind_tenant(connection, record.tenant_id)
-                    await connection.execute(
-                        "INSERT INTO user_keys (tenant_id, user_sub, key_version, enc_pub,"
-                        " sig_pub, fingerprint, encrypted_private, created_at)"
-                        " VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                        record.tenant_id,
+                    version = await connection.fetchval(
+                        "SELECT coalesce(max(key_version), 0) + 1 FROM user_keys"
+                        " WHERE user_sub = $1",
                         record.user_sub,
-                        record.key_version,
-                        record.enc_pub,
-                        record.sig_pub,
-                        record.fingerprint,
-                        record.encrypted_private,
-                        record.created_at,
                     )
-                    await append_audit(connection, audit)
+                    await insert_user_key(connection, replace(record, key_version=version))
+                    await append_audit(
+                        connection,
+                        AuditEvent(
+                            record.tenant_id,
+                            record.user_sub,
+                            "key_enrolled",
+                            f"user-key:{version}",
+                            record.created_at,
+                        ),
+                    )
         except asyncpg.UniqueViolationError:
             raise KeyAlreadyEnrolledError() from None
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
+        return int(version)
 
     async def record_audit(self, event: AuditEvent) -> None:
         try:

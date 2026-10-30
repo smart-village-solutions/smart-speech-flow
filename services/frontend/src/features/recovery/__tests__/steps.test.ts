@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { hasAcceptedStepUp, stepUpSecondsLeft } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { CeremonyCheckError } from '@/core/crypto/ceremony-crypto.port';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -11,6 +12,8 @@ import {
   faultOf,
   fileOnce,
 } from '@/features/recovery/steps';
+
+vi.mock('@/app/auth/keycloak', () => ({ hasAcceptedStepUp: vi.fn(), stepUpSecondsLeft: vi.fn() }));
 
 const identity = { tenantId: 'tenant-kassel', userSub: 'sam' };
 const keys = { sigPrivate: {} as CryptoKey } as UnlockedKeys;
@@ -26,7 +29,7 @@ function deps(overrides: Partial<Record<string, unknown>> = {}) {
   };
   const recoveryRequests = {
     file: vi.fn().mockResolvedValue([]),
-    partials: vi.fn().mockResolvedValue({ wraps: [], approvals: [] }),
+    partials: vi.fn().mockResolvedValue({ wraps: [], approvals: [], holdersCeremonyId: 'g1' }),
     reject: vi.fn().mockResolvedValue(undefined),
     reportIntegrity: vi.fn().mockResolvedValue(undefined),
     storeWraps: vi.fn().mockResolvedValue([]),
@@ -34,14 +37,16 @@ function deps(overrides: Partial<Record<string, unknown>> = {}) {
   };
   const recoveryCrypto = {
     signRequest: vi.fn().mockResolvedValue(new Uint8Array(64)),
-    combine: vi.fn().mockResolvedValue({ wraps: [], rejections: [], integrity: [] }),
+    combine: vi
+      .fn()
+      .mockResolvedValue({ wraps: [], unrecoverable: [], rejections: [], integrity: [] }),
     approve: vi.fn().mockResolvedValue({
       partials: new Map([['k1', '{p}']]),
       signature: new Uint8Array(64).fill(7),
     }),
   };
   const ceremonyCrypto = {
-    certifyTrust: vi.fn().mockResolvedValue({ k: 2, recoveryKeyId: 'rk-1' }),
+    certifyChain: vi.fn().mockResolvedValue({ k: 2, recoveryKeyId: 'rk-1', holdersCeremonyId: 'g1' }),
   };
   const archive = { trust: vi.fn().mockResolvedValue(trust) };
   return {
@@ -71,6 +76,7 @@ describe('filing', () => {
   it('signs every key of every ticked conversation under the certified recovery key, then files that request', async () => {
     const d = deps();
     await fileOnce(d, identity, keys, {
+      kind: 'key_recovery',
       reason: 'why',
       candidates: [candidate(C1, ['k1', 'k2']), candidate(C2, ['k3'])],
     });
@@ -82,18 +88,20 @@ describe('filing', () => {
       { conversationId: C2, keyId: 'k3' },
     ]);
     expect(signed.recoveryKeyId).toBe('rk-1');
+    expect(signed.kind).toBe('key_recovery');
     const [filed] = d.recoveryRequests.file.mock.calls[0];
     expect(filed.requestId).toBe(signed.requestId);
     expect(filed.conversationIds).toEqual([C1, C2]);
-    expect(d.ceremonyCrypto.certifyTrust).toHaveBeenCalled();
+    expect(filed.kind).toBe('key_recovery');
+    expect(d.ceremonyCrypto.certifyChain).toHaveBeenCalled();
   });
 });
 
 describe('combining', () => {
   it('stores the wraps once k approvals combine', async () => {
     const d = deps();
-    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done' });
-    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', []);
+    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done', unrecoverable: 0 });
+    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', [], []);
   });
 
   it('reports each rejection and waits when too few remain', async () => {
@@ -101,6 +109,7 @@ describe('combining', () => {
     const rejection = { holderIndex: 2, attempt: 1, fault: 'proof_invalid' };
     d.recoveryCrypto.combine.mockResolvedValue({
       wraps: null,
+      unrecoverable: [],
       rejections: [rejection],
       integrity: [],
     });
@@ -110,25 +119,33 @@ describe('combining', () => {
     expect(d.recoveryRequests.storeWraps).not.toHaveBeenCalled();
   });
 
-  it('a damaged recovery wrap stores nothing and is reported', async () => {
+  const wrapA = { conversationId: C1, keyId: 'k1', blob: '{}', signature: new Uint8Array(64) };
+
+  it('sends the unusable keys with the wraps, in one call', async () => {
     const d = deps();
+    const lost = [{ keyId: 'k2', stage: 'wrap_damaged' }];
     d.recoveryCrypto.combine.mockResolvedValue({
-      wraps: [],
+      wraps: [wrapA],
+      unrecoverable: lost,
       rejections: [],
-      integrity: ['wrap_damaged'],
+      integrity: [],
     });
 
-    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({
-      kind: 'damaged',
-      stages: ['wrap_damaged'],
-    });
-    expect(d.recoveryRequests.reportIntegrity).toHaveBeenCalledWith('r1', 'wrap_damaged');
-    expect(d.recoveryRequests.storeWraps).not.toHaveBeenCalled();
+    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done', unrecoverable: 1 });
+    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', [wrapA], lost);
+    expect(d.recoveryRequests.reportIntegrity).not.toHaveBeenCalled();
+  });
+
+  it('hands its progress callback to the crypto', async () => {
+    const d = deps();
+    const onProgress = vi.fn();
+    await combineOnce(d, identity, keys, 'r1', onProgress);
+    expect(d.recoveryCrypto.combine.mock.calls[0][3]).toBe(onProgress);
   });
 
   it('a transcript that does not certify is reported and nothing is fetched', async () => {
     const d = deps();
-    d.ceremonyCrypto.certifyTrust.mockRejectedValue(new CeremonyCheckError('transcript_mismatch'));
+    d.ceremonyCrypto.certifyChain.mockRejectedValue(new CeremonyCheckError('transcript_mismatch'));
 
     expect(await combineOnce(d, identity, keys, 'r1')).toEqual({
       kind: 'damaged',
@@ -137,11 +154,49 @@ describe('combining', () => {
     expect(d.recoveryRequests.reportIntegrity).toHaveBeenCalledWith('r1', 'trust');
     expect(d.recoveryRequests.partials).not.toHaveBeenCalled();
   });
+
+  it('partials of holders other than the certified ones combine nothing and blame nobody', async () => {
+    const d = deps();
+    d.recoveryRequests.partials.mockResolvedValue({ wraps: [], approvals: [], holdersCeremonyId: 'g0' });
+
+    await expect(combineOnce(d, identity, keys, 'r1')).rejects.toMatchObject({ fault: 'custodians_changed' });
+    expect(d.recoveryCrypto.combine).not.toHaveBeenCalled();
+    expect(d.recoveryRequests.reject).not.toHaveBeenCalled();
+  });
 });
 
 describe('approving', () => {
+  beforeEach(() => {
+    vi.mocked(hasAcceptedStepUp).mockReset().mockReturnValue(true);
+    vi.mocked(stepUpSecondsLeft).mockReset().mockReturnValue(300);
+  });
+
+  const reportingFirstChunk = (d: ReturnType<typeof deps>) =>
+    d.recoveryCrypto.approve.mockImplementation(async (...args: unknown[]) => {
+      (args[4] as (done: number, total: number) => void)(50, 2000);
+      return { partials: new Map(), signature: new Uint8Array(64) };
+    });
+
+  it('stops after the first chunk when the rest would outlast the step-up', async () => {
+    const d = deps();
+    reportingFirstChunk(d);
+    vi.mocked(stepUpSecondsLeft).mockReturnValue(10);
+    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toMatchObject({
+      fault: 'step_up',
+    });
+    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
+  });
+
+  it('goes on while the projection fits the step-up', async () => {
+    const d = deps();
+    reportingFirstChunk(d);
+    await approveOnce(d, identity, keys, detail, new Uint8Array(32));
+    expect(d.recoveryRequests.approve).toHaveBeenCalled();
+  });
+
   const detail = {
     requestId: 'r1',
+    kind: 'key_recovery',
     recoveryKeyId: 'rk-1',
     requesterSub: 'sam',
     requesterEncPub: new Uint8Array(65),
@@ -162,6 +217,7 @@ describe('approving', () => {
     const [facts, , , caller] = d.recoveryCrypto.approve.mock.calls[0];
     expect(caller).toBe('carol');
     expect(facts.confirmedFingerprint).toBe(confirmed);
+    expect(facts.kind).toBe('key_recovery');
     expect(d.recoveryRequests.approve).toHaveBeenCalledWith(
       'r1',
       new Map([['k1', '{p}']]),
@@ -178,8 +234,19 @@ describe('approving', () => {
     expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
   });
 
+  it('posts nothing once the computation outlasted the step-up', async () => {
+    const d = deps();
+    vi.mocked(hasAcceptedStepUp).mockReturnValue(false);
+    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toMatchObject({
+      fault: 'step_up',
+    });
+    expect(d.recoveryCrypto.approve).toHaveBeenCalled();
+    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
+  });
+
   it('names each kind of failure for the screen', () => {
     expect(faultOf(new RecoveryCheckError('self_approval'))).toBe('self_approval');
+    expect(faultOf(new RecoveryCheckError('step_up'))).toBe('step_up');
     expect(faultOf(new CeremonyCheckError('signature_invalid'))).toBe('trust');
     expect(faultOf(new RecoveryRefusedError('ALREADY_DECIDED'))).toBe('refused.ALREADY_DECIDED');
     expect(faultOf(new RecoveryRefusedError('STEP_UP_REQUIRED'))).toBe('step_up');

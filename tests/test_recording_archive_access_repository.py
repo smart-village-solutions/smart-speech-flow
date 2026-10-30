@@ -57,6 +57,11 @@ class ScriptedConnection:
     async def fetchval(self, query, *args):
         return self._answer(query)
 
+    async def executemany(self, query, rows):
+        # One recorded call per row: a batched audit append counts as its events.
+        for _ in rows:
+            self._answer(query)
+
     @asynccontextmanager
     async def transaction(self):
         yield

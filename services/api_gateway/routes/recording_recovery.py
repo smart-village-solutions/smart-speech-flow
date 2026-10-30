@@ -1,9 +1,10 @@
-"""Exceptional access through custodian approval (spec §9.5).
+"""Recovery through custodian approval (spec §9.5, §9.6).
 
-A supervisor files a signed request; custodians approve it with signed
-partials sealed for the requester; the requester's browser combines them and
-stores its own wraps. The service checks shapes and signatures; nothing here
-ever sees a share, a partial's plaintext or a conversation key.
+A supervisor (access) or an employee for their own conversations (key
+recovery) files a signed request; custodians approve it with signed partials
+sealed for the requester; the requester's browser combines them and stores its
+own wraps. The service checks shapes and signatures; nothing here ever sees a
+share, a partial's plaintext or a conversation key.
 """
 
 from __future__ import annotations
@@ -17,14 +18,24 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 from ..dependencies import optional_container
 from ..recording.crypto.encoding import b64url, from_b64url
-from ..recording.permissions import CUSTODIAN, SUPERVISE, coded, require_permission, require_step_up
+from ..recording.permissions import (
+    CUSTODIAN,
+    RECORDING_PERMISSIONS,
+    SUPERVISE,
+    coded,
+    permissions_of,
+    require_permission,
+    require_step_up,
+)
 from ..recording.recovery_requests import ApprovalView, RecoveryRequestError, RecoveryRequests
 from ..recording.recovery_requests_model import (
-    MAX_SCOPE_KEYS,
+    MAX_BODY_KEYS,
+    Candidate,
     NewWrap,
     Progress,
     RequestRow,
     ServedPartials,
+    UnrecoverableKey,
 )
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
@@ -37,6 +48,8 @@ router = APIRouter(
 )
 
 Supervisor = Annotated[dict[str, Any], Depends(require_permission(SUPERVISE))]
+# Any key holder: an access request re-checks `supervise` under its lock (§9.6).
+Requester = Annotated[dict[str, Any], Depends(require_permission(*RECORDING_PERMISSIONS))]
 Custodian = Annotated[dict[str, Any], Depends(require_permission(CUSTODIAN))]
 TenantContext = Annotated[StudioTenantContext, Depends(require_studio_tenant_context)]
 StepUp = [Depends(require_step_up)]
@@ -54,10 +67,14 @@ _ANSWERS: Final[dict[str, tuple[int, str]]] = {
     "request_exists": (409, "REQUEST_EXISTS"),
     "already_accessible": (409, "ALREADY_ACCESSIBLE"),
     "key_not_enrolled": (409, "KEY_NOT_ENROLLED"),
+    "key_changed": (409, "KEY_CHANGED"),
+    "share_stale": (409, "SHARE_STALE"),
+    "forbidden": (403, "PERMISSION_REQUIRED"),
     "signature_invalid": (422, "SIGNATURE_INVALID"),
     "bad_partial": (422, "BAD_PARTIAL"),
     "scope_not_covered": (422, "SCOPE_NOT_COVERED"),
     "scope_too_large": (422, "SCOPE_TOO_LARGE"),
+    "bad_stage": (422, "BAD_STAGE"),
     "unavailable": (503, "RECORDING_UNAVAILABLE"),
 }
 
@@ -81,8 +98,10 @@ class FileBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: uuid.UUID
+    kind: Literal["access", "key_recovery"] = "access"
     reason: Reason
-    conversation_ids: list[uuid.UUID] = Field(min_length=1, max_length=50)
+    # The per-kind limit is the repository's; this only bounds the body.
+    conversation_ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_BODY_KEYS)
     signature: Signature
 
     @field_validator("conversation_ids")
@@ -96,7 +115,7 @@ class FileBody(BaseModel):
 class ApproveBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    partials: dict[uuid.UUID, SealedText] = Field(min_length=1, max_length=MAX_SCOPE_KEYS)
+    partials: dict[uuid.UUID, SealedText] = Field(min_length=1, max_length=MAX_BODY_KEYS)
     signature: Signature
 
 
@@ -129,10 +148,20 @@ class WrapItem(BaseModel):
     signature: Signature
 
 
+class UnrecoverableItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key_id: uuid.UUID
+    stage: Literal["wrap_signature", "wrap_damaged"]
+
+
 class WrapsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    wraps: list[WrapItem] = Field(min_length=1, max_length=MAX_SCOPE_KEYS)
+    # Empty when no key of the scope could be used.
+    wraps: list[WrapItem] = Field(max_length=MAX_BODY_KEYS)
+    # Keys whose recovery wrap the browser could not use, recorded with the wraps (§9.6).
+    unrecoverable: list[UnrecoverableItem] = Field(default_factory=list, max_length=MAX_BODY_KEYS)
 
 
 def _answer(error: RecoveryRequestError, *, not_found: str = "not_found") -> HTTPException:
@@ -151,9 +180,14 @@ def _bytes(text: str) -> bytes:
         raise _answer(RecoveryRequestError("signature_invalid")) from None
 
 
+def _may_supervise(claims: dict[str, Any]) -> bool:
+    return SUPERVISE in permissions_of(claims)
+
+
 def _summary(row: RequestRow, conversations: int) -> dict[str, Any]:
     return {
         "request_id": row.request_id,
+        "kind": row.kind,
         "requester_sub": row.requester_sub,
         "status": row.status,
         "reason": row.reason,
@@ -210,6 +244,7 @@ def _partials_body(served: ServedPartials) -> dict[str, Any]:
             }
             for a in served.approvals
         ],
+        "holders_ceremony_id": served.holders_ceremony_id,
     }
 
 
@@ -277,32 +312,49 @@ async def candidates(
         found = await service.candidates(context.tenant_id, claims["sub"], employee, start, end)
     except RecoveryRequestError as error:
         raise _answer(error) from None
+    return {"conversations": [_candidate_body(c) for c in found]}
+
+
+def _candidate_body(c: Candidate) -> dict[str, Any]:
     return {
-        "conversations": [
-            {
-                "conversation_id": c.conversation_id,
-                "started_at": c.started_at.isoformat(),
-                "ended_at": c.ended_at.isoformat(),
-                "retention_until": c.retention_until.isoformat(),
-                "legal_hold": c.legal_hold,
-                "incomplete": c.incomplete,
-                "key_ids": list(c.key_ids),
-            }
-            for c in found
-        ]
+        "conversation_id": c.conversation_id,
+        "started_at": c.started_at.isoformat(),
+        "ended_at": c.ended_at.isoformat(),
+        "retention_until": c.retention_until.isoformat(),
+        "legal_hold": c.legal_hold,
+        "incomplete": c.incomplete,
+        "key_ids": list(c.key_ids),
+    }
+
+
+@router.get("/own/candidates")
+async def own_candidates(
+    context: TenantContext, claims: Requester, service: Requests
+) -> dict[str, Any]:
+    """The caller's next key-recovery batch, and what remains after it (§9.6)."""
+    try:
+        batch, conversations, keys = await service.own_candidates(context.tenant_id, claims["sub"])
+    except RecoveryRequestError as error:
+        raise _answer(error) from None
+    return {
+        "conversations": [_candidate_body(c) for c in batch],
+        "remaining": {"conversations": conversations, "keys": keys},
     }
 
 
 @router.post("/requests", status_code=201, dependencies=StepUp)
 async def file_request(
-    body: FileBody, context: TenantContext, claims: Supervisor, service: Requests
+    body: FileBody, context: TenantContext, claims: Requester, service: Requests
 ) -> dict[str, Any]:
+    if body.kind == "access" and not _may_supervise(claims):
+        raise coded(403, "PERMISSION_REQUIRED", "Permission missing")
     signature = _bytes(body.signature)
     try:
         scope = await service.file(
             context.tenant_id,
             claims["sub"],
             str(body.request_id),
+            body.kind,
             body.reason,
             tuple(str(c) for c in body.conversation_ids),
             signature,
@@ -317,10 +369,13 @@ async def file_request(
 
 @router.get("/requests")
 async def own_requests(
-    context: TenantContext, claims: Supervisor, service: Requests
+    context: TenantContext,
+    claims: Requester,
+    service: Requests,
+    kind: Literal["access", "key_recovery"] | None = None,
 ) -> dict[str, Any]:
     try:
-        rows = await service.own_requests(context.tenant_id, claims["sub"])
+        rows = await service.own_requests(context.tenant_id, claims["sub"], kind)
     except RecoveryRequestError as error:
         raise _answer(error) from None
     return {"requests": [_summary(row, count) for row, count in rows]}
@@ -331,12 +386,16 @@ async def progress(
     request_id: uuid.UUID,
     request: Request,
     context: TenantContext,
-    claims: Supervisor,
+    claims: Requester,
     service: Requests,
 ) -> dict[str, Any]:
     try:
         found, names = await service.progress(
-            context.tenant_id, claims["sub"], str(request_id), correlation_id_from_request(request)
+            context.tenant_id,
+            claims["sub"],
+            str(request_id),
+            correlation_id_from_request(request),
+            may_supervise=_may_supervise(claims),
         )
     except RecoveryRequestError as error:
         raise _answer(error) from None
@@ -345,10 +404,12 @@ async def progress(
 
 @router.get("/requests/{request_id}/partials")
 async def partials(
-    request_id: uuid.UUID, context: TenantContext, claims: Supervisor, service: Requests
+    request_id: uuid.UUID, context: TenantContext, claims: Requester, service: Requests
 ) -> dict[str, Any]:
     try:
-        served = await service.partials(context.tenant_id, claims["sub"], str(request_id))
+        served = await service.partials(
+            context.tenant_id, claims["sub"], str(request_id), may_supervise=_may_supervise(claims)
+        )
     except RecoveryRequestError as error:
         raise _answer(error) from None
     return _partials_body(served)
@@ -359,7 +420,7 @@ async def reject(
     request_id: uuid.UUID,
     body: RejectionBody,
     context: TenantContext,
-    claims: Supervisor,
+    claims: Requester,
     service: Requests,
 ) -> Response:
     try:
@@ -369,6 +430,7 @@ async def reject(
             str(request_id),
             (body.holder_index, body.attempt),
             body.fault,
+            may_supervise=_may_supervise(claims),
         )
     except RecoveryRequestError as error:
         raise _answer(error) from None
@@ -380,11 +442,17 @@ async def integrity_failure(
     request_id: uuid.UUID,
     body: IntegrityBody,
     context: TenantContext,
-    claims: Supervisor,
+    claims: Requester,
     service: Requests,
 ) -> Response:
     try:
-        await service.report(context.tenant_id, claims["sub"], str(request_id), body.stage)
+        await service.report(
+            context.tenant_id,
+            claims["sub"],
+            str(request_id),
+            body.stage,
+            may_supervise=_may_supervise(claims),
+        )
     except RecoveryRequestError as error:
         raise _answer(error) from None
     return Response(status_code=204)
@@ -395,7 +463,7 @@ async def store_wraps(
     request_id: uuid.UUID,
     body: WrapsBody,
     context: TenantContext,
-    claims: Supervisor,
+    claims: Requester,
     service: Requests,
 ) -> dict[str, Any]:
     wraps = [
@@ -403,7 +471,14 @@ async def store_wraps(
         for w in body.wraps
     ]
     try:
-        dropped = await service.store(context.tenant_id, claims["sub"], str(request_id), wraps)
+        dropped = await service.store(
+            context.tenant_id,
+            claims["sub"],
+            str(request_id),
+            wraps,
+            may_supervise=_may_supervise(claims),
+            unrecoverable=[UnrecoverableKey(str(u.key_id), u.stage) for u in body.unrecoverable],
+        )
     except RecoveryRequestError as error:
         raise _answer(error) from None
     return {"dropped": list(dropped)}
@@ -411,7 +486,7 @@ async def store_wraps(
 
 @router.post("/requests/{request_id}/cancel", status_code=204)
 async def cancel(
-    request_id: uuid.UUID, context: TenantContext, claims: Supervisor, service: Requests
+    request_id: uuid.UUID, context: TenantContext, claims: Requester, service: Requests
 ) -> Response:
     try:
         await service.cancel(context.tenant_id, claims["sub"], str(request_id))
@@ -423,10 +498,10 @@ async def cancel(
 @router.get("/approvals")
 async def approvals(context: TenantContext, claims: Custodian, service: Requests) -> dict[str, Any]:
     try:
-        rows = await service.approvals(context.tenant_id, claims["sub"])
+        rows, stale = await service.approvals(context.tenant_id, claims["sub"])
     except RecoveryRequestError as error:
         raise _answer(error) from None
-    return {"requests": [_summary(row, count) for row, count in rows]}
+    return {"requests": [_summary(row, count) for row, count in rows], "share_stale": stale}
 
 
 @router.get("/approvals/{request_id}")

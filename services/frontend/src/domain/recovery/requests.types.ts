@@ -1,6 +1,7 @@
 import type { Bytes } from '@/core/crypto/bytes';
 import type {
   RecoveryWrapRef,
+  RequestKind,
   ScopePair,
   ServedApproval,
   ServedRecoveryWrap,
@@ -27,6 +28,7 @@ export interface RecoveryCandidate {
 
 export interface RequestSummary {
   requestId: string;
+  kind: RequestKind;
   requesterSub: string;
   status: RequestStatus;
   reason: string;
@@ -63,6 +65,7 @@ export interface ApprovalKey extends RecoveryWrapRef {
 /** What a custodian approves: never a recovery wrap's ciphertext (spec §9.5). */
 export interface ApprovalDetail {
   requestId: string;
+  kind: RequestKind;
   recoveryKeyId: string;
   requesterSub: string;
   requesterName: string | null;
@@ -82,4 +85,18 @@ export interface ApprovalDetail {
 export interface ServedPartials {
   wraps: ServedRecoveryWrap[];
   approvals: ServedApproval[];
+  /** The holders the request was filed under; it must be the generation this browser certified. */
+  holdersCeremonyId: string;
+}
+
+/** The caller's next key-recovery batch, and what lies beyond it (spec §9.6). */
+export interface OwnCandidates {
+  conversations: RecoveryCandidate[];
+  remaining: { conversations: number; keys: number };
+}
+
+export interface ApprovalsList {
+  requests: RequestSummary[];
+  /** The caller's share belongs to an earlier key: nothing is theirs to decide until resharing. */
+  shareStale: boolean;
 }

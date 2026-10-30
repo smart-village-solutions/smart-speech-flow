@@ -1,3 +1,4 @@
+import { hasAcceptedStepUp, stepUpSecondsLeft } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { Bytes } from '@/core/crypto/bytes';
 import {
@@ -7,9 +8,11 @@ import {
 } from '@/core/crypto/ceremony-crypto.port';
 import {
   type ApprovalFacts,
+  type OnProgress,
   RecoveryCheckError,
   type RecoveryCrypto,
   type RecoveryIntegrityStage,
+  type RequestKind,
 } from '@/core/crypto/recovery-crypto.port';
 import type { ArchiveRepository } from '@/domain/archive/archive.repository';
 import {
@@ -40,15 +43,21 @@ async function certifiedTrust(
   tenantId: string
 ): Promise<CertifiedTrust> {
   const trust = await deps.archive.trust(tenantId);
-  return deps.ceremonyCrypto.certifyTrust(trust.facts, trust.transcriptHash, trust.signatures);
+  return deps.ceremonyCrypto.certifyChain(trust);
 }
 
-/** Signs the scope the ticked conversations make up, then files it. */
+export interface FileInput {
+  kind: RequestKind;
+  reason: string;
+  candidates: readonly RecoveryCandidate[];
+}
+
+/** Signs the scope the chosen conversations make up, then files it. */
 export async function fileOnce(
   deps: Readonly<RecoveryDeps>,
   identity: Readonly<Identity>,
   keys: Readonly<UnlockedKeys>,
-  input: Readonly<{ reason: string; candidates: readonly RecoveryCandidate[] }>
+  input: Readonly<FileInput>
 ): Promise<void> {
   const trust = await certifiedTrust(deps, identity.tenantId);
   const requestId = crypto.randomUUID();
@@ -59,6 +68,7 @@ export async function fileOnce(
     {
       tenantId: identity.tenantId,
       requestId,
+      kind: input.kind,
       recoveryKeyId: trust.recoveryKeyId,
       requesterSub: identity.userSub,
       reason: input.reason,
@@ -68,6 +78,7 @@ export async function fileOnce(
   );
   await deps.recoveryRequests.file({
     requestId,
+    kind: input.kind,
     reason: input.reason,
     conversationIds: input.candidates.map((c) => c.conversationId),
     signature,
@@ -75,7 +86,7 @@ export async function fileOnce(
 }
 
 export type CombineOutcome =
-  | { kind: 'done' }
+  | { kind: 'done'; unrecoverable: number }
   | { kind: 'waiting'; rejected: readonly number[] }
   | { kind: 'damaged'; stages: readonly (RecoveryIntegrityStage | 'trust')[] }
   | { kind: 'failed'; code: string };
@@ -98,7 +109,8 @@ export async function combineOnce(
   deps: Readonly<RecoveryDeps>,
   identity: Readonly<Identity>,
   keys: Readonly<UnlockedKeys>,
-  requestId: string
+  requestId: string,
+  onProgress?: OnProgress
 ): Promise<CombineOutcome> {
   let trust: CertifiedTrust;
   try {
@@ -109,22 +121,23 @@ export async function combineOnce(
     return { kind: 'damaged', stages: ['trust'] };
   }
   const served = await deps.recoveryRequests.partials(requestId);
+  // Approvals of other holders cannot combine with these; nobody is to blame (§9.7).
+  if (served.holdersCeremonyId !== trust.holdersCeremonyId) throw new RecoveryCheckError('custodians_changed');
   const result = await deps.recoveryCrypto.combine(
     { tenantId: identity.tenantId, requestId, requesterSub: identity.userSub, ...served },
     trust,
-    keys
+    keys,
+    onProgress
   );
   await Promise.all(
     result.rejections.map((r) => deps.recoveryRequests.reject(requestId, r).catch(() => undefined))
   );
   await report(deps, requestId, result.integrity);
-  if (result.integrity.some((stage) => stage === 'wrap_signature' || stage === 'wrap_damaged')) {
-    return { kind: 'damaged', stages: result.integrity };
-  }
   if (result.wraps === null)
     return { kind: 'waiting', rejected: result.rejections.map((r) => r.holderIndex) };
-  await deps.recoveryRequests.storeWraps(requestId, result.wraps);
-  return { kind: 'done' };
+  // One call: the gateway records the unusable keys with the wraps, or nothing at all (§9.6).
+  await deps.recoveryRequests.storeWraps(requestId, result.wraps, result.unrecoverable);
+  return { kind: 'done', unrecoverable: result.unrecoverable.length };
 }
 
 function approvalFacts(
@@ -136,6 +149,7 @@ function approvalFacts(
     confirmedFingerprint: confirmed,
     tenantId,
     requestId: detail.requestId,
+    kind: detail.kind,
     recoveryKeyId: detail.recoveryKeyId,
     requesterSub: detail.requesterSub,
     requesterKeys: { encPub: detail.requesterEncPub, sigPub: detail.requesterSigPub },
@@ -155,17 +169,43 @@ function approvalFacts(
   };
 }
 
+/** What the upload of the partials may take once they exist. */
+const POST_MARGIN_SECONDS = 15;
+
+/**
+ * Passes progress on, and stops the work as soon as its projected end falls outside
+ * the step-up window: a fresh step-up then costs one chunk, not the whole run (§9.6).
+ */
+function withinStepUp(onProgress?: OnProgress): OnProgress {
+  const started = performance.now();
+  return (done, total) => {
+    onProgress?.(done, total);
+    const elapsed = (performance.now() - started) / 1000;
+    const rest = (elapsed / done) * (total - done);
+    if (rest + POST_MARGIN_SECONDS > stepUpSecondsLeft()) throw new RecoveryCheckError('step_up');
+  };
+}
+
 /** Every check of spec §9.5 in this browser, then the signed partials go to the gateway. */
 export async function approveOnce(
   deps: Readonly<RecoveryDeps>,
   identity: Readonly<Identity>,
   keys: Readonly<UnlockedKeys>,
   detail: Readonly<ApprovalDetail>,
-  confirmed: Bytes
+  confirmed: Bytes,
+  onProgress?: OnProgress
 ): Promise<void> {
   const trust = await certifiedTrust(deps, identity.tenantId);
   const facts = approvalFacts(detail, identity.tenantId, confirmed);
-  const result = await deps.recoveryCrypto.approve(facts, trust, keys, identity.userSub);
+  const result = await deps.recoveryCrypto.approve(
+    facts,
+    trust,
+    keys,
+    identity.userSub,
+    withinStepUp(onProgress)
+  );
+  // Thousands of keys take a while: a lapsed step-up would only meet the gateway's 403 (§9.6).
+  if (!hasAcceptedStepUp()) throw new RecoveryCheckError('step_up');
   await deps.recoveryRequests.approve(detail.requestId, result.partials, result.signature);
 }
 

@@ -46,6 +46,7 @@ EXPIRY_DELETION_ORDER: Final[tuple[str, ...]] = (
     "chain_entries",
     "key_wraps",
     "recovery_partials",
+    "recovery_unrecoverable_keys",
     "recovery_request_keys",
     "conversation_keys",
     "recording_windows",
@@ -64,6 +65,8 @@ _DELETE: Final[dict[str, str]] = {
     "key_wraps": "DELETE FROM key_wraps WHERE key_id IN"
     " (SELECT key_id FROM conversation_keys WHERE conversation_id = $1)",
     "recovery_partials": "DELETE FROM recovery_partials WHERE conversation_id = $1",
+    "recovery_unrecoverable_keys": "DELETE FROM recovery_unrecoverable_keys"
+    " WHERE conversation_id = $1",
     "recovery_request_keys": "DELETE FROM recovery_request_keys WHERE conversation_id = $1",
     "conversation_keys": "DELETE FROM conversation_keys WHERE conversation_id = $1",
     "recording_windows": "DELETE FROM recording_windows WHERE conversation_id = $1",
@@ -143,6 +146,7 @@ _LAPSED_REQUESTS: Final[str] = (
 # The partials first: closing a request deletes its key material (§9.5).
 _FORGET_REQUEST: Final[tuple[str, ...]] = (
     "DELETE FROM recovery_partials WHERE request_id = $1",
+    "DELETE FROM recovery_unrecoverable_keys WHERE request_id = $1",
     "DELETE FROM recovery_rejections WHERE request_id = $1",
     "DELETE FROM recovery_decisions WHERE request_id = $1",
     "DELETE FROM recovery_requests WHERE request_id = $1",
@@ -600,6 +604,7 @@ async def _shred_in(
     await connection.execute(_DELETE["key_wraps"], conversation_id)
     # A partial lets its requester compute Z for a recovery wrap: key material too (§9.5).
     await connection.execute(_DELETE["recovery_partials"], conversation_id)
+    await connection.execute(_DELETE["recovery_unrecoverable_keys"], conversation_id)
     await connection.execute(
         "UPDATE conversations SET shredded_at = $2 WHERE conversation_id = $1",
         conversation_id,

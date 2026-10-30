@@ -249,15 +249,17 @@ def _snapshot(encrypted_share: str) -> CeremonySnapshot:
 
 def test_the_trust_body_names_only_public_fields():
     snapshot = _snapshot("SECRET-SHARE")
-    body = trust_body(recovery_record(TENANT), snapshot)
+    body = trust_body(recovery_record(TENANT), [snapshot])
     text = str(body)
     assert "SECRET-SHARE" not in text
     assert "SUBSHARE" not in text
-    assert body["ceremony"]["transcript_signatures"] == [
+    generation = body["generations"][0]
+    assert generation["transcript_signatures"] == [
         {"holder_index": 1, "signature": b64url(b"\x08" * 64)}
     ]
-    assert [p["sig_pub"] for p in body["ceremony"]["participants"]] == [b64url(b"\x04" * 65), None]
-    assert {p["display_name"] for p in body["ceremony"]["participants"]} == {None}
+    assert [p["sig_pub"] for p in generation["participants"]] == [b64url(b"\x04" * 65), None]
+    assert {p["display_name"] for p in generation["participants"]} == {None}
+    assert body["recovery_key"]["holders_ceremony_id"] == body["recovery_key"]["key_id"]
 
 
 def test_trust_without_an_active_key_is_a_404(client_for):

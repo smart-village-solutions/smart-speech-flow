@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { toBase64Url } from '@/core/crypto/bytes';
 import {
   toApprovalDetail,
-  toCandidates,
+  toRecoveryCandidates,
   toProgress,
+  toApprovalsList,
+  toOwnCandidates,
   toServedPartials,
 } from '@/domain/recovery/requests.mapper';
 
@@ -51,6 +53,21 @@ describe('recovery request mapper', () => {
     expect(parsed.keys[0].employeeName).toBe('Alice');
     expect(parsed.requestSignature).toHaveLength(64);
     expect(parsed.signedScope).toEqual([{ conversationId: ID, keyId: KEY }]);
+    expect(parsed.kind).toBe('access');
+  });
+
+  it('refuses a kind it does not know', () => {
+    expect(() => toApprovalDetail({ ...detail(), kind: 'other' })).toThrow();
+  });
+
+  it('reads the own batch with what remains, and the approvals with the stale flag', () => {
+    const own = toOwnCandidates({
+      conversations: [],
+      remaining: { conversations: 3, keys: 9 },
+    });
+    expect(own).toEqual({ conversations: [], remaining: { conversations: 3, keys: 9 } });
+    const listed = toApprovalsList({ requests: [], share_stale: true });
+    expect(listed).toEqual({ requests: [], shareStale: true });
   });
 
   it('refuses an R that is not a 65-byte point', () => {
@@ -71,14 +88,17 @@ describe('recovery request mapper', () => {
           partials: { [KEY]: '{"p":1}' },
         },
       ],
+      holders_ceremony_id: ID,
     });
     expect(parsed.approvals[0].partials.get(KEY)).toBe('{"p":1}');
+    expect(parsed.holdersCeremonyId).toBe(ID);
     expect(parsed.wraps[0].signerKeyId).toBe('gw-1');
   });
 
   it('reads progress and candidates', () => {
     const progress = toProgress({
       request_id: ID,
+      kind: 'key_recovery',
       requester_sub: 'sam',
       status: 'open',
       reason: 'why',
@@ -101,7 +121,8 @@ describe('recovery request mapper', () => {
       scope: [{ conversation_id: ID, key_id: KEY }],
     });
     expect(progress.decisions[0].rejected).toBe(true);
-    const [candidate] = toCandidates({
+    expect(progress.kind).toBe('key_recovery');
+    const [candidate] = toRecoveryCandidates({
       conversations: [
         {
           conversation_id: ID,

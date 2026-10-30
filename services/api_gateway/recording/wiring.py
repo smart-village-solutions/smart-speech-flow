@@ -29,8 +29,13 @@ from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
+from .leavers import Leavers
+from .leavers_repository import PostgresLeavers
 from .recovery_requests import RecoveryRequests
 from .recovery_requests_repository import PostgresRecoveryRequests
+from .reenrolment import ImmediateConfirmation, KeyReenrolment
+from .reenrolment_repository import PostgresKeyReenrolment
+from .resharing import ResharingService
 from .retention.decisions_repository import PostgresRetentionDecisions
 from .retention.metrics import SITES as RETENTION_SITES
 from .secrets import MissingRecordingSecrets, RecordingSecrets
@@ -264,8 +269,21 @@ async def connect_recording(state: Any, dsn: str) -> bool:
     state.recording_keys = KeyEnrolmentService(
         repository=repository, server_layer=secrets.server_layer
     )
+    state.recording_reenrolment = KeyReenrolment(
+        store=PostgresKeyReenrolment(repository.pool),
+        server_layer=secrets.server_layer,
+        confirmation=ImmediateConfirmation(),
+    )
     state.recording_ceremony = CeremonyService(
         repository=repository, directory=_custodian_directory(state), secrets=secrets
+    )
+    state.recording_resharing = ResharingService(
+        repository=repository,
+        directory=_custodian_directory(state),
+        server_layer=secrets.server_layer,
+    )
+    state.recording_leavers = Leavers(
+        store=PostgresLeavers(repository.pool), directory=_custodian_directory(state)
     )
     state.recording_retention = PostgresRetentionDecisions(repository.pool)
     state.recording_recovery_requests = RecoveryRequests(
@@ -302,6 +320,9 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_keys = None
     dependencies.recording_ceremony = None
     dependencies.recording_recovery_requests = None
+    dependencies.recording_reenrolment = None
+    dependencies.recording_resharing = None
+    dependencies.recording_leavers = None
     dependencies.recording_retention = None
     dependencies.recording_secrets = None
     sessions = dependencies.recording_sessions

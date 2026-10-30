@@ -1,7 +1,12 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import {
+  getAdminIdentity,
+  hasAcceptedStepUp,
+  hasFreshStepUp,
+  stepUpSecondsLeft,
+} from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -17,6 +22,8 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
   hasFreshStepUp: vi.fn(),
+  hasAcceptedStepUp: vi.fn(),
+  stepUpSecondsLeft: vi.fn(),
 }));
 
 const keys = { fingerprint: new Uint8Array(32) } as unknown as UnlockedKeys;
@@ -26,6 +33,7 @@ const r = de.admin.recovery;
 function detail(encFill = 4): ApprovalDetail {
   return {
     requestId: R1,
+    kind: 'key_recovery',
     recoveryKeyId: 'rk-1',
     requesterSub: 'sam',
     requesterName: 'Sam Supervisor',
@@ -43,23 +51,34 @@ function detail(encFill = 4): ApprovalDetail {
   };
 }
 
-function render(
-  options: { detail?: ApprovalDetail; approve?: () => Promise<unknown>; locked?: boolean } = {}
-) {
+interface RenderOptions {
+  detail?: ApprovalDetail;
+  approve?: () => Promise<unknown>;
+  locked?: boolean;
+  shareStale?: boolean;
+}
+
+function render(options: RenderOptions = {}) {
   const keyVault = createKeyVault();
   if (!options.locked) keyVault.hold(keys);
   const recoveryRequests = {
-    approvals: vi.fn().mockResolvedValue([
-      {
-        requestId: R1,
-        requesterSub: 'sam',
-        status: 'open',
-        reason: 'Employee left.',
-        createdAt: 'a',
-        expiresAt: 'b',
-        conversations: 1,
-      },
-    ]),
+    approvals: vi.fn().mockResolvedValue({
+      requests: options.shareStale
+        ? []
+        : [
+            {
+              requestId: R1,
+              kind: 'key_recovery',
+              requesterSub: 'sam',
+              status: 'open',
+              reason: 'Employee left.',
+              createdAt: 'a',
+              expiresAt: 'b',
+              conversations: 1,
+            },
+          ],
+      shareStale: options.shareStale ?? false,
+    }),
     approval: vi.fn().mockResolvedValue(options.detail ?? detail()),
     approve: vi.fn().mockResolvedValue(undefined),
     decline: vi.fn().mockResolvedValue(undefined),
@@ -74,7 +93,7 @@ function render(
         (() => Promise.resolve({ partials: new Map(), signature: new Uint8Array(64) }))
     ),
   };
-  const ceremonyCrypto = { certifyTrust: vi.fn().mockResolvedValue({}) };
+  const ceremonyCrypto = { certifyChain: vi.fn().mockResolvedValue({}) };
   const archive = { trust: vi.fn().mockResolvedValue({}) };
   renderWithProviders(
     <RecoveryApprovalsScreen onBack={vi.fn()} onOpenKeys={vi.fn()} onSignOut={vi.fn()} />,
@@ -94,6 +113,50 @@ describe('RecoveryApprovalsScreen', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
     vi.mocked(hasFreshStepUp).mockReturnValue(true);
+    vi.mocked(hasAcceptedStepUp).mockReturnValue(true);
+    vi.mocked(stepUpSecondsLeft).mockReturnValue(300);
+  });
+
+  it('labels each request with its kind, in the list and in the review', async () => {
+    render();
+    expect(await screen.findByText(r.kind.key_recovery)).toBeInTheDocument();
+    await openRequest();
+    expect(await screen.findAllByText(r.kind.key_recovery)).not.toHaveLength(0);
+    // A key recovery asks the employee whether they filed it at all (§9.6).
+    expect(screen.getByText(r.approve.askFiled)).toBeInTheDocument();
+  });
+
+  it('a custodian whose share went stale sees why, and nothing to decide', async () => {
+    render({ shareStale: true });
+    expect(await screen.findByText(r.error.SHARE_STALE)).toBeInTheDocument();
+    expect(screen.queryByText('sam')).not.toBeInTheDocument();
+  });
+
+  it('shows how far a long approval got', async () => {
+    let report: ((done: number, total: number) => void) | undefined;
+    let finish: (() => void) | undefined;
+    render({
+      approve: (...args: unknown[]) => {
+        report = args[4] as typeof report;
+        return new Promise((resolve) => {
+          finish = () => resolve({ partials: new Map(), signature: new Uint8Array(64) });
+        });
+      },
+    });
+    await openRequest();
+    await waitFor(() => expect(screen.queryByText('…')).not.toBeInTheDocument());
+    await userEvent.click(await screen.findByLabelText(r.approve.confirmed));
+    await userEvent.click(screen.getByRole('button', { name: r.approve.action }));
+    await waitFor(() => expect(report).toBeDefined());
+    // The step-up ages while the approval computes: no redirect may interrupt it.
+    vi.mocked(hasFreshStepUp).mockReturnValue(false);
+    act(() => report?.(50, 120));
+    const shown = de.admin.keyRecovery.progress
+      .replace('{{done}}', '50')
+      .replace('{{total}}', '120');
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(screen.queryByText(r.stepUpBody)).not.toBeInTheDocument();
+    act(() => finish?.());
   });
 
   it('shows the fingerprint computed from the served keys', async () => {
