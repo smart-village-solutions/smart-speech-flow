@@ -156,6 +156,9 @@ async def decidable_by(
     connection: asyncpg.Connection, tenant_id: str, sub: str, request_id: str, now: datetime
 ) -> Refused | tuple[Any, int, RequestRow, tuple[ScopeKey, ...]]:
     """The one path of the eligibility rules: detail, approval and decline all use it."""
+    # Shared before the request, as filing does: a swap or a leaver's retirement holds it
+    # exclusively, so a decision either commits first or sees the share stale (§9.8).
+    await connection.execute(REQUESTER_KEY, sub)
     locked = await lock_request(connection, tenant_id, request_id, now)
     if locked is None:
         return await not_found(connection, tenant_id, sub, request_id, now)

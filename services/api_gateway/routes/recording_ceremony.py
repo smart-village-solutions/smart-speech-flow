@@ -195,6 +195,7 @@ def _holder_body(holder: HolderView) -> dict[str, Any]:
         "kind": holder.kind,
         "display_name": holder.display_name,
         "state": holder.state,
+        "left": holder.left,
     }
 
 

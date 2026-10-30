@@ -58,9 +58,7 @@ async def owner():
 async def repository(owner):
     repository = await PostgresCeremonyRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
     for holder in CUSTODIANS:
-        await repository.enrol_user_key(
-            holder.key_record(), AuditEvent(TENANT, holder.sub, "key_enrolled", "k", NOW)
-        )
+        await repository.enrol_user_key(holder.key_record())
     secrets = gateway_secrets()
     await repository.register_gateway_key(secrets.signing_key_id, secrets.signing_public_key, NOW)
     yield repository

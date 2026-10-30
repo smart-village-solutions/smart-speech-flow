@@ -6,6 +6,7 @@ import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { KeyPanel } from './KeyPanel';
 import { LastFailedNotice } from './LastFailedNotice';
+import { LeaversPanel } from './LeaversPanel';
 import { OpenCeremony } from './OpenCeremony';
 import { StartForm } from './StartForm';
 import { TENANT_MANAGE, useCeremonyState } from './useCeremony';
@@ -72,6 +73,7 @@ export function CeremonyScreen({ onBack, onOpenKeys, onSignOut, accountUrl, stud
           <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.intro')}</p>
         </div>
         <CeremonyPanel onOpenKeys={onOpenKeys} />
+        {hasPermission(TENANT_MANAGE) && <LeaversPanel />}
       </div>
     </ScreenShell>
   );

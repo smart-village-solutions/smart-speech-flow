@@ -174,6 +174,12 @@ STALE_HOLDER = (
     " WHERE s.key_id = $1 AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
     " AND p.kind = 'custodian'"
 )
+# The current generation's custodians, by sub: one definition for the flags that name them.
+CURRENT_CUSTODIANS = (
+    " FROM recovery_keys r JOIN ceremony_participants p"
+    " ON p.tenant_id = r.tenant_id AND p.ceremony_id = r.holders_ceremony_id"
+    " AND p.kind = 'custodian' WHERE r.status = 'active'"
+)
 # k and the custodian shares of the active key that their holders can still open.
 USABLE_SHARES = (
     f"SELECT r.k, count(*) FILTER (WHERE {SHARE_FRESH}) AS usable"

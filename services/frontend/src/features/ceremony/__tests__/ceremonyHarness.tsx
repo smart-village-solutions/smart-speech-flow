@@ -95,6 +95,8 @@ export function render(
     startResharing: vi.fn().mockResolvedValue(ceremony()),
     dealer: vi.fn(),
     paperDeal: vi.fn().mockResolvedValue(undefined),
+    leavers: vi.fn().mockResolvedValue([]),
+    markLeaver: vi.fn().mockResolvedValue(undefined),
     ...overrides.repository,
   };
   const device: PaperDevice = {

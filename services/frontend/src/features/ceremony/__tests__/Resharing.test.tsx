@@ -26,10 +26,38 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
 }));
 
 const holders: CurrentHolder[] = [
-  { holderIndex: 1, holderRef: 'anna', kind: 'custodian', displayName: null, state: 'fresh' },
-  { holderIndex: 2, holderRef: 'bernd', kind: 'custodian', displayName: null, state: 'kept' },
-  { holderIndex: 3, holderRef: 'carla', kind: 'custodian', displayName: null, state: 'lost' },
-  { holderIndex: 4, holderRef: 'paper-1', kind: 'paper', displayName: null, state: 'paper' },
+  {
+    holderIndex: 1,
+    holderRef: 'anna',
+    kind: 'custodian',
+    displayName: null,
+    state: 'fresh',
+    left: false,
+  },
+  {
+    holderIndex: 2,
+    holderRef: 'bernd',
+    kind: 'custodian',
+    displayName: null,
+    state: 'kept',
+    left: false,
+  },
+  {
+    holderIndex: 3,
+    holderRef: 'carla',
+    kind: 'custodian',
+    displayName: null,
+    state: 'lost',
+    left: false,
+  },
+  {
+    holderIndex: 4,
+    holderRef: 'paper-1',
+    kind: 'paper',
+    displayName: null,
+    state: 'paper',
+    left: false,
+  },
 ];
 const chain: ServedChain = {
   recoveryKeyId: 'k',
@@ -75,6 +103,7 @@ const dealerKey = {
   fingerprint: keys.fingerprint,
   fingerprintDisplay: '0000 0000',
   blob: '{"kdf":{}}',
+  hasActiveKey: true,
 };
 
 describe('changing custodians', () => {
@@ -106,6 +135,21 @@ describe('changing custodians', () => {
         holdersCeremonyId: 'k',
       })
     );
+  });
+
+  it('names custodians who left and marks them among the dealers', async () => {
+    const names: Readonly<Record<string, string>> = { bernd: 'Bernd', carla: 'Carla' };
+    const leftHolders = holders.map((h) =>
+      h.holderRef in names ? { ...h, displayName: names[h.holderRef], left: true } : h
+    );
+    render(withKey(null, { recoveryKey: activeKey({ holders: leftHolders }) }));
+    expect(
+      await screen.findByText(/Ausgeschieden: Bernd und Carla\. Ihre Anteile gelten weiter/)
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Verwahrende ändern' }));
+    expect(
+      await screen.findByText('nutzbar mit früherem Schlüssel · ausgeschieden')
+    ).toBeInTheDocument();
   });
 
   it('names a refused choice of dealers', async () => {
@@ -210,7 +254,7 @@ describe('dealing in a resharing', () => {
     const [unlock] = await screen.findAllByRole('button', { name: 'Archivschlüssel öffnen' });
     await userEvent.click(unlock);
     expect(onOpenKeys).toHaveBeenCalled();
-    expect(screen.queryByText(/vor der Neueinrichtung hatten/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/an Ihren früheren Schlüssel gebunden/)).not.toBeInTheDocument();
   });
 
   it('forgets a tick once the fingerprint it was given for changes', async () => {
@@ -273,6 +317,22 @@ describe('dealing in a resharing', () => {
     );
   });
 
+  it('lets a custodian who left, with no active key, unlock the listed key and deal', async () => {
+    const unlock = vi.fn().mockResolvedValue(keys);
+    const { onOpenKeys } = render(withKey(resharing()), {
+      archive: { unlock },
+      repository: { dealer: vi.fn().mockResolvedValue({ ...dealerKey, hasActiveKey: false }) },
+      crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
+    });
+    expect(await screen.findByText(/an Ihren früheren Schlüssel gebunden/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Passphrase'), 'the old one');
+    await userEvent.click(screen.getByRole('button', { name: 'Früheren Schlüssel entsperren' }));
+    expect(
+      await screen.findByRole('button', { name: 'Meinen Anteil weitergeben' })
+    ).toBeInTheDocument();
+    expect(onOpenKeys).not.toHaveBeenCalled();
+  });
+
   it('asks a re-enrolled custodian for the passphrase of the key its share is sealed to', async () => {
     const unlock = vi.fn().mockResolvedValue({ ...keys, fingerprint: new Uint8Array(32).fill(7) });
     render(withKey(resharing()), {
@@ -285,7 +345,7 @@ describe('dealing in a resharing', () => {
       },
       crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
     });
-    expect(await screen.findByText(/vor der Neueinrichtung hatten/)).toBeInTheDocument();
+    expect(await screen.findByText(/an Ihren früheren Schlüssel gebunden/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Passphrase'), 'the old one');
     await userEvent.click(screen.getByRole('button', { name: 'Früheren Schlüssel entsperren' }));
     expect(

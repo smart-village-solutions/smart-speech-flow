@@ -73,8 +73,9 @@ class ResharingStore(Protocol):
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> tuple[str, UserKeyRecord] | None:
-        """The dealer's sealed share and the key the current generation lists for it."""
+    ) -> tuple[str, UserKeyRecord, bool] | None:
+        """The dealer's sealed share, the key the current generation lists for it, and
+        whether the dealer holds any active key: a leaver holds none (§9.8)."""
         ...
 
     async def add_dealing(
@@ -92,6 +93,8 @@ class DealerKey:
     encrypted_share: str
     key: UserKeyRecord
     blob: str
+    # False for a custodian who left: there is no vault to unlock, only this key (§9.8).
+    has_active_key: bool
 
 
 def _now() -> datetime:
@@ -197,7 +200,7 @@ class ResharingService:
         material = await self._repository.dealer_material(tenant_id, dealer.dealer_index, user_sub)
         if material is None:
             raise conflict("DEALER_UNUSABLE", "This dealer's share can no longer be opened")
-        encrypted_share, key = material
+        encrypted_share, key, has_active_key = material
         sealed = key.encrypted_private
         if sealed is None:
             raise conflict("DEALER_UNUSABLE", "This dealer's share can no longer be opened")
@@ -212,7 +215,7 @@ class ResharingService:
                 tenant_id, user_sub, "key_blob_read", f"user-key:{key.key_version}", self._clock()
             )
         )
-        return DealerKey(dealer.dealer_index, encrypted_share, key, blob)
+        return DealerKey(dealer.dealer_index, encrypted_share, key, blob, has_active_key)
 
     async def paper_deal(
         self,

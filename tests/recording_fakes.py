@@ -36,11 +36,15 @@ class FakeRecordingRepository:
     async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None:
         return self.keys.get((tenant_id, user_sub))
 
-    async def enrol_user_key(self, record: UserKeyRecord, audit: AuditEvent) -> None:
+    async def enrol_user_key(self, record: UserKeyRecord) -> int:
         if (record.tenant_id, record.user_sub) in self.keys:
             raise KeyAlreadyEnrolledError()
         self.keys[(record.tenant_id, record.user_sub)] = record
-        self.audit.append(audit)
+        ref = f"user-key:{record.key_version}"
+        self.audit.append(
+            AuditEvent(record.tenant_id, record.user_sub, "key_enrolled", ref, record.created_at)
+        )
+        return record.key_version
 
     async def record_audit(self, event: AuditEvent) -> None:
         self.audit.append(event)
@@ -88,6 +92,7 @@ class FakeCeremonyRepository:
     usable: int = 0
     # Custodian holders whose share can no longer be opened (§9.6's lost blob).
     unusable: set[str] = field(default_factory=set)
+    left: set[str] = field(default_factory=set)
 
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None:
         return self.recovery_key
@@ -135,6 +140,9 @@ class FakeCeremonyRepository:
     async def record_audit(self, event: AuditEvent) -> None:
         self.audit.append(event)
 
+    async def left_holders(self, tenant_id: str) -> frozenset[str]:
+        return frozenset(self.left)
+
     async def holder_states(self, tenant_id: str) -> dict[str, str]:
         generation = await self.holder_generation(tenant_id)
         if generation is None:
@@ -147,11 +155,11 @@ class FakeCeremonyRepository:
 
     async def dealer_material(
         self, tenant_id: str, dealer_index: int, holder_ref: str
-    ) -> tuple[str, UserKeyRecord] | None:
+    ) -> tuple[str, UserKeyRecord, bool] | None:
         share = next(s for s in self.shares if s.holder_index == dealer_index)
         if holder_ref in self.unusable or share.encrypted_share is None:
             return None
-        return share.encrypted_share, self.keys[holder_ref]
+        return share.encrypted_share, self.keys[holder_ref], holder_ref not in self.left
 
     async def create_resharing(self, ceremony, participants, dealers, audit) -> None:
         if await self.open_ceremony(ceremony.tenant_id, ceremony.started_at) is not None:

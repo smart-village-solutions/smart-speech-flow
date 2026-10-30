@@ -69,6 +69,8 @@ class CeremonyStore(Protocol):
 
     async def holder_states(self, tenant_id: str) -> dict[str, str]: ...
 
+    async def left_holders(self, tenant_id: str) -> frozenset[str]: ...
+
     async def chain(self, tenant_id: str, key_id: str) -> list[CeremonySnapshot]: ...
 
     async def previous_had_paper(self, tenant_id: str) -> bool: ...
@@ -150,6 +152,8 @@ class HolderView:
     kind: str
     display_name: str | None
     state: str
+    # Marked a leaver; `state` still says whether their share can deal (§9.8).
+    left: bool = False
 
 
 @dataclass(frozen=True)
@@ -233,6 +237,7 @@ class CeremonyService:
         if generation is None:
             return ()
         states = await self._repository.holder_states(tenant_id)
+        left = await self._repository.left_holders(tenant_id)
         return tuple(
             HolderView(
                 p.holder_index,
@@ -240,6 +245,7 @@ class CeremonyService:
                 p.kind,
                 p.display_name,
                 states.get(p.holder_ref, "lost") if p.kind == CUSTODIAN else PAPER,
+                p.holder_ref in left,
             )
             for p in generation.participants
         )

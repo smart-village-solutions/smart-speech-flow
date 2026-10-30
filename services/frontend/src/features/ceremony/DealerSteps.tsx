@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { hasFreshStepUp } from '@/app/auth/keycloak';
 import type { KeyOwner, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
@@ -8,7 +7,7 @@ import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
 import type { Ceremony, CeremonyDealer } from '@/domain/recovery/recovery.types';
 import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
-import { TextField } from '@/ui/primitives/TextField';
+import { type DealerActions, KeyGate } from './DealerKeyGate';
 import { NewHolderTicks } from './NewHolderTicks';
 import { StepAlert } from './StepAlert';
 import { CEREMONY_VIEW, allTicked } from './useCeremony';
@@ -23,39 +22,6 @@ interface DealerStepsProps {
   onOpenKeys: () => void;
 }
 
-function EarlierKeyForm({
-  fingerprint,
-  failed,
-  onUnlock,
-}: Readonly<{ fingerprint: string; failed: boolean; onUnlock: (passphrase: string) => void }>) {
-  const { t } = useTranslation();
-  const [passphrase, setPassphrase] = useState('');
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    onUnlock(passphrase);
-  };
-  return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <p className="text-note leading-chat text-fg-muted">
-        {t('admin.ceremony.reshare.retiredKey')} <code>{fingerprint}</code>
-      </p>
-      <TextField
-        type="password"
-        autoComplete="off"
-        label={t('admin.keys.passphrase')}
-        value={passphrase}
-        onChange={(event) => setPassphrase(event.target.value)}
-        error={failed ? t('admin.ceremony.reshare.unlockFailed') : null}
-      />
-      <Button type="submit" variant="compact" className="self-start bg-accent text-accent-on">
-        {t('admin.ceremony.reshare.unlockRetired')}
-      </Button>
-    </form>
-  );
-}
-
-type DealerActions = ReturnType<typeof useDealerActions>;
-
 interface DealingPartProps {
   ceremony: Ceremony;
   actions: DealerActions;
@@ -67,43 +33,7 @@ interface DealingPartProps {
 function DealingPart({ ceremony, actions, keys, onOpenKeys }: Readonly<DealingPartProps>) {
   const { t } = useTranslation();
   const [ticked, setTicked] = useState<Map<number, Bytes>>(new Map());
-  // Said rather than shown as an empty card: otherwise the resharing would wait out its 24 hours.
-  if (actions.loadFailed !== null) {
-    return (
-      <p role="alert" className="text-meta text-fg-status-alert">
-        {t(
-          actions.loadFailed === 'unusable'
-            ? 'admin.ceremony.reshare.errorUnusable'
-            : 'admin.ceremony.stepFailed'
-        )}
-      </p>
-    );
-  }
-  // A locked vault is unlocked on the keys screen; only a key it does not hold is asked for here.
-  if (keys === null) {
-    return (
-      <>
-        <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.unlockFirst')}</p>
-        <Button
-          variant="compact"
-          className="self-start bg-accent text-accent-on"
-          onClick={onOpenKeys}
-        >
-          {t('admin.ceremony.openKeys')}
-        </Button>
-      </>
-    );
-  }
-  if (actions.needsEarlierKey && actions.served !== null) {
-    return (
-      <EarlierKeyForm
-        fingerprint={actions.served.fingerprintDisplay}
-        failed={actions.unlockFailed}
-        onUnlock={(passphrase) => void actions.unlockEarlier(passphrase)}
-      />
-    );
-  }
-  if (!actions.ready) return null;
+  if (!actions.ready) return <KeyGate actions={actions} keys={keys} onOpenKeys={onOpenKeys} />;
   return (
     <>
       <NewHolderTicks participants={ceremony.participants} ticked={ticked} onChange={setTicked} />

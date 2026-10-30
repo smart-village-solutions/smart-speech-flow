@@ -1529,6 +1529,22 @@
         "title": "LoginTenantResponse",
         "type": "object"
       },
+      "MarkBody": {
+        "additionalProperties": false,
+        "properties": {
+          "key_version": {
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Key Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key_version"
+        ],
+        "title": "MarkBody",
+        "type": "object"
+      },
       "PaperConfirmationBody": {
         "additionalProperties": false,
         "properties": {
@@ -3801,6 +3817,84 @@
           }
         },
         "summary": "Reenrol Key",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/leavers": {
+      "get": {
+        "operationId": "candidates_api_admin_recording_leavers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Candidates Api Admin Recording Leavers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Candidates",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/leavers/{sub}": {
+      "post": {
+        "operationId": "mark_api_admin_recording_leavers__sub__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sub",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,254}$",
+              "title": "Sub",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mark Api Admin Recording Leavers  Sub  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark",
         "tags": [
           "recording"
         ]

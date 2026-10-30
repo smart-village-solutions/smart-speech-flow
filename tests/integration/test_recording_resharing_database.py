@@ -93,10 +93,7 @@ async def store(owner):
     secrets = SECRETS
     for holder in HOLDERS.values():
         blob = secrets.server_layer.seal(b"{}", tenant_id=TENANT, user_sub=holder.sub)
-        await repository.enrol_user_key(
-            replace(holder.key_record(TENANT), encrypted_private=blob),
-            AuditEvent(TENANT, holder.sub, "key_enrolled", "k", NOW),
-        )
+        await repository.enrol_user_key(replace(holder.key_record(TENANT), encrypted_private=blob))
     await repository.register_gateway_key(secrets.signing_key_id, secrets.signing_public_key, NOW)
     yield repository
     await repository.close()
@@ -586,6 +583,7 @@ async def test_a_re_enrolled_dealer_deals_with_the_retired_key_until_its_blob_is
     )
     material = await resharing.dealer(TENANT, "anna", started.ceremony.ceremony_id)
     assert (material.dealer_index, material.key.key_version) == (1, 1)
+    assert material.has_active_key  # version 2, which is not the listed key
     assert material.encrypted_share.startswith("{")
 
     await owner.execute(

@@ -183,6 +183,9 @@ def test_a_dealer_gets_its_share_and_key_and_nobody_else_does(http):
         '{"blob": 1}',
     )
     assert len(body["key"]["fingerprint_display"].split()) == 10
+    assert body["has_active_key"] is True
+    world.repository.left = {"anna"}
+    assert client.get(f"{BASE}/{RESHARING_ID}/dealer").json()["has_active_key"] is False
     caller.be("dora", CUSTODIAN)
     refused = client.get(f"{BASE}/{RESHARING_ID}/dealer")
     assert (refused.status_code, _code(refused)) == (403, "NOT_A_PARTICIPANT")
@@ -263,3 +266,13 @@ def test_a_custodian_sees_no_holder_list(http):
     body = client.get(BASE).json()
     assert body["holders"] == []
     assert body["usable_shares"] is not None
+
+
+def test_a_holder_who_left_is_flagged_for_the_admin(http):
+    """§9.8: the key card asks for new custodians while a holder has left."""
+    client, caller, world = http
+    world.repository.left = {"anna"}
+    caller.be(ORG_ADMIN, MANAGE, fresh=False)
+    holders = {h["holder_ref"]: h for h in client.get(BASE).json()["holders"]}
+    assert (holders["anna"]["left"], holders["anna"]["state"]) == (True, "fresh")
+    assert holders["paper-1"]["left"] is False

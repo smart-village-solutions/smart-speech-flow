@@ -6,6 +6,7 @@ import type {
   CurrentHolder,
   CustodianCandidate,
   DealerKey,
+  LeaverCandidate,
   ReceivedSubshares,
   ServedChain,
   ServedGeneration,
@@ -73,6 +74,7 @@ const holder = z.object({
   kind: z.enum(['custodian', 'paper']),
   display_name: z.string().nullable(),
   state: z.enum(['fresh', 'kept', 'lost', 'paper']),
+  left: z.boolean(),
 });
 
 const failed = z.object({ ceremony_id: z.string(), reason: z.string(), ended_at: z.string() });
@@ -89,6 +91,7 @@ const state = z.object({
 const dealerKey = z.object({
   dealer_index: z.number().int().min(1),
   encrypted_share: z.string().min(1),
+  has_active_key: z.boolean(),
   key: z.object({
     key_version: z.number().int().min(1),
     enc_pub: point,
@@ -164,6 +167,21 @@ const candidates = z.object({
   candidates: z.array(z.object({ sub: z.string(), display_name: z.string(), fingerprint_display: z.string().nullable() })),
 });
 
+const leavers = z.object({
+  candidates: z.array(
+    z.object({
+      sub: z.string().min(1),
+      key_version: z.number().int().min(1),
+      fingerprint_display: z.string(),
+      enrolled_at: z.string(),
+      conversations: z.number().int().min(0),
+      last_conversation_at: z.string().nullable(),
+      custodian: z.boolean(),
+      display_name: z.string().nullable(),
+    })
+  ),
+});
+
 const subshares = z.object({ subshares: z.record(z.string(), z.record(z.string(), z.string())) });
 
 /** Each throws on a body it cannot use; callers treat that like any failed request. */
@@ -208,6 +226,7 @@ function toHolder(h: z.infer<typeof holder>): CurrentHolder {
     kind: h.kind,
     displayName: h.display_name,
     state: h.state,
+    left: h.left,
   };
 }
 
@@ -250,6 +269,19 @@ export function toCandidates(body: unknown): CustodianCandidate[] {
   }));
 }
 
+export function toLeavers(body: unknown): LeaverCandidate[] {
+  return leavers.parse(body).candidates.map((c) => ({
+    sub: c.sub,
+    keyVersion: c.key_version,
+    fingerprintDisplay: c.fingerprint_display,
+    enrolledAt: c.enrolled_at,
+    conversations: c.conversations,
+    lastConversationAt: c.last_conversation_at,
+    custodian: c.custodian,
+    displayName: c.display_name,
+  }));
+}
+
 export function toSubshares(body: unknown): ReceivedSubshares {
   const parsed = subshares.parse(body).subshares;
   return new Map(
@@ -271,5 +303,6 @@ export function toDealerKey(body: unknown): DealerKey {
     fingerprint: parsed.key.fingerprint,
     fingerprintDisplay: parsed.key.fingerprint_display,
     blob: parsed.key.blob,
+    hasActiveKey: parsed.has_active_key,
   };
 }
