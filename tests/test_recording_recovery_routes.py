@@ -1,4 +1,4 @@
-"""The exceptional-access routes: permissions, step-up, answers and bodies (spec §9.5)."""
+"""The recovery routes: permissions, step-up, answers and bodies (spec §9.5, §9.6)."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from services.api_gateway.recording.recovery_requests import (
     RecoveryRequestError,
 )
 from services.api_gateway.recording.recovery_requests_model import (
+    Candidate,
     DecisionRow,
     Progress,
     RequestRow,
@@ -38,6 +39,7 @@ NOW = datetime(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
 SUPERVISE = "ssf.recording.supervise"
 CUSTODIAN = "ssf.recording.recovery.custodian"
 SIGNATURE = b64url(bytes(64))
+REQUEST_PERMISSION = "ssf.recording.request"
 
 
 def _row(status: str = "open") -> RequestRow:
@@ -64,17 +66,22 @@ class FakeService:
         self._call("candidates", employee)
         return []
 
-    async def file(self, tenant_id, sub, request_id, reason, conversation_ids, signature):
-        self._call("file", conversation_ids, signature)
+    async def own_candidates(self, tenant_id, sub):
+        self._call("own_candidates")
+        candidate = Candidate(CONVERSATION, NOW, NOW, NOW, False, False, (KEY,))
+        return [candidate], 3, 7
+
+    async def file(self, tenant_id, sub, request_id, kind, reason, conversation_ids, signature):
+        self._call("file", kind, conversation_ids, signature)
         return (ScopeKey(CONVERSATION, KEY),)
 
-    async def own_requests(self, tenant_id, sub):
-        self._call("own_requests")
+    async def own_requests(self, tenant_id, sub, kind=None):
+        self._call("own_requests", kind)
         return [(_row(), 2)]
 
     async def approvals(self, tenant_id, sub):
         self._call("approvals")
-        return [(_row(), 1)]
+        return [(_row(), 1)], True
 
     async def approval(self, tenant_id, sub, request_id, correlation_id):
         self._call("approval", request_id)
@@ -99,26 +106,26 @@ class FakeService:
     async def decline(self, tenant_id, sub, request_id, reason):
         self._call("decline", reason)
 
-    async def progress(self, tenant_id, sub, request_id, correlation_id):
-        self._call("progress")
+    async def progress(self, tenant_id, sub, request_id, correlation_id, *, may_supervise):
+        self._call("progress", may_supervise)
         decision = DecisionRow(1, 1, "carol", "approved", None, (), bytes(64), NOW, True)
         return Progress(_row(), 2, (decision,), (ScopeKey(CONVERSATION, KEY),), 3), {"carol": "C"}
 
-    async def partials(self, tenant_id, sub, request_id):
-        self._call("partials")
+    async def partials(self, tenant_id, sub, request_id, *, may_supervise):
+        self._call("partials", may_supervise)
         return ServedPartials(
             (ServedWrap(CONVERSATION, KEY, "{}", "gw-1", bytes(64)),),
             (ServedApproval(1, 1, ((KEY, bytes(32)),), bytes(64), {KEY: "{p}"}),),
         )
 
-    async def reject(self, tenant_id, sub, request_id, holder, fault):
-        self._call("reject", holder, fault)
+    async def reject(self, tenant_id, sub, request_id, holder, fault, *, may_supervise):
+        self._call("reject", holder, fault, may_supervise)
 
-    async def report(self, tenant_id, sub, request_id, stage):
-        self._call("report", stage)
+    async def report(self, tenant_id, sub, request_id, stage, *, may_supervise, key_id=None):
+        self._call("report", stage, may_supervise, key_id)
 
-    async def store(self, tenant_id, sub, request_id, wraps):
-        self._call("store", wraps)
+    async def store(self, tenant_id, sub, request_id, wraps, *, may_supervise):
+        self._call("store", wraps, may_supervise)
         return (KEY,)
 
     async def cancel(self, tenant_id, sub, request_id):
@@ -191,6 +198,7 @@ REQUESTER_ROUTES = [
     ),
     ("post", f"/requests/{REQUEST}/cancel", None),
 ]
+OWN_CANDIDATES = ("get", "/own/candidates", None)
 APPROVER_ROUTES = [
     ("get", "/approvals", None),
     ("get", f"/approvals/{REQUEST}", None),
@@ -205,10 +213,74 @@ def _send(client: TestClient, method: str, path: str, body: dict | None):
     return client.post(BASE + path, json=body)
 
 
-@pytest.mark.parametrize(("method", "path", "body"), REQUESTER_ROUTES)
-def test_requester_routes_need_supervise(client_for, method, path, body):
-    client = client_for(_claims(CUSTODIAN), FakeService())
+@pytest.mark.parametrize(("method", "path", "body"), REQUESTER_ROUTES[:2])
+def test_choosing_someone_elses_conversations_needs_supervise(client_for, method, path, body):
+    client = client_for(_claims(REQUEST_PERMISSION), FakeService())
     assert _send(client, method, path, body).status_code == 403
+
+
+@pytest.mark.parametrize(("method", "path", "body"), [*REQUESTER_ROUTES, OWN_CANDIDATES])
+def test_requester_routes_need_a_recording_permission(client_for, method, path, body):
+    client = client_for(_claims("ssf.configuration.tenant.manage"), FakeService())
+    assert _send(client, method, path, body).status_code == 403
+
+
+def test_filing_an_access_request_needs_supervise_before_anything_runs(client_for):
+    service = FakeService()
+    client = client_for(_claims(REQUEST_PERMISSION), service)
+    response = _send(client, "post", "/requests", _file_body())
+    assert (response.status_code, _code(response)) == (403, "PERMISSION_REQUIRED")
+    assert service.calls == []
+
+
+def test_an_employee_files_a_key_recovery_and_reads_her_own(client_for):
+    service = FakeService()
+    client = client_for(_claims(REQUEST_PERMISSION), service)
+
+    filed = _send(client, "post", "/requests", _file_body(kind="key_recovery"))
+    candidates = client.get(BASE + "/own/candidates").json()
+    listed = client.get(BASE + "/requests?kind=key_recovery")
+    progress = client.get(f"{BASE}/requests/{REQUEST}")
+
+    assert filed.status_code == 201
+    assert service.calls[0] == ("file", ("key_recovery", (CONVERSATION,), bytes(64)))
+    assert candidates["remaining"] == {"conversations": 3, "keys": 7}
+    assert candidates["conversations"][0]["key_ids"] == [KEY]
+    assert listed.json()["requests"][0]["kind"] == "access"
+    assert ("own_requests", ("key_recovery",)) in service.calls
+    assert progress.status_code == 200
+    # The service learns the caller holds no supervise; it checks the kind under its lock.
+    assert ("progress", (False,)) in service.calls
+
+
+def test_a_supervisor_is_passed_on_as_one(client_for):
+    service = FakeService()
+    client = client_for(_claims(SUPERVISE), service)
+    client.get(f"{BASE}/requests/{REQUEST}/partials")
+    assert ("partials", (True,)) in service.calls
+
+
+def test_bodies_carry_up_to_two_thousand_keys(client_for):
+    client = client_for(_claims(CUSTODIAN), FakeService())
+    many = {str(uuid.uuid4()): "{}" for _ in range(2001)}
+    approve = f"{BASE}/approvals/{REQUEST}"
+    fits = client.post(
+        approve, json={"partials": dict(list(many.items())[:2000]), "signature": SIGNATURE}
+    )
+    too_many = client.post(approve, json={"partials": many, "signature": SIGNATURE})
+    assert (fits.status_code, too_many.status_code) == (201, 422)
+
+
+def test_an_empty_wraps_post_and_a_reported_key_pass_through(client_for):
+    service = FakeService()
+    client = client_for(_claims(REQUEST_PERMISSION), service)
+    stored = client.post(f"{BASE}/requests/{REQUEST}/wraps", json={"wraps": []})
+    reported = client.post(
+        f"{BASE}/requests/{REQUEST}/integrity-failures",
+        json={"stage": "wrap_damaged", "key_id": KEY},
+    )
+    assert (stored.status_code, reported.status_code) == (200, 204)
+    assert ("report", ("wrap_damaged", False, KEY)) in service.calls
 
 
 @pytest.mark.parametrize(("method", "path", "body"), APPROVER_ROUTES)
@@ -252,7 +324,7 @@ def test_filing_answers_with_its_scope(client_for):
     response = client_for(_claims(SUPERVISE), service).post(BASE + "/requests", json=_file_body())
     assert response.status_code == 201
     assert response.json()["scope"] == [{"conversation_id": CONVERSATION, "key_id": KEY}]
-    assert service.calls[0][1] == ((CONVERSATION,), bytes(64))
+    assert service.calls[0][1] == ("access", (CONVERSATION,), bytes(64))
 
 
 def test_a_bad_signature_encoding_is_refused_as_a_signature(client_for):
@@ -325,7 +397,9 @@ def test_lists_and_wraps(client_for):
     service = FakeService()
     client = client_for(_claims(SUPERVISE, CUSTODIAN), service)
     assert client.get(BASE + "/requests").json()["requests"][0]["conversations"] == 2
-    assert client.get(BASE + "/approvals").json()["requests"][0]["requester_sub"] == "sam"
+    approvals = client.get(BASE + "/approvals").json()
+    assert approvals["requests"][0]["requester_sub"] == "sam"
+    assert approvals["share_stale"] is True
     assert client.get(BASE + "/employees").json()["employees"][1] == {
         "sub": "bob",
         "display_name": None,

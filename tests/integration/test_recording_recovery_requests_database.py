@@ -98,10 +98,29 @@ async def recovery_key(owner, *, custodians=("carol", "dave"), k=1) -> str:
                 ref.public_point(300 + index),
             )
     await owner.execute("UPDATE recovery_keys SET k = $2 WHERE key_id = $1", key_id, k)
+    for index, sub in enumerate(custodians, start=1):
+        await _enrol_custodian(owner, sub, index)
     await owner.execute(
         "UPDATE key_wraps SET recipient_ref = $1 WHERE recipient_kind = 'recovery'", str(key_id)
     )
     return str(key_id)
+
+
+async def _enrol_custodian(owner, sub: str, index: int) -> None:
+    """The custodian's active key is the one the ceremony recorded: their share is fresh."""
+    await owner.execute(
+        "INSERT INTO user_keys (tenant_id, user_sub, key_version, enc_pub, sig_pub,"
+        " fingerprint, created_at) VALUES ($1, $2, 1, $3, $4, $5, $6)"
+        " ON CONFLICT (tenant_id, user_sub, key_version) DO UPDATE"
+        " SET enc_pub = EXCLUDED.enc_pub, sig_pub = EXCLUDED.sig_pub,"
+        " fingerprint = EXCLUDED.fingerprint",
+        TENANT,
+        sub,
+        ref.public_point(100 + index),
+        ref.public_point(200 + index),
+        bytes([index]) * 32,
+        NOW,
+    )
 
 
 async def enrol(owner, sub: str) -> int:
@@ -240,6 +259,7 @@ async def _filed(requests, owner, conversations, *, sub="sam", verify=_always, a
     request = NewRequest(
         tenant_id=TENANT,
         request_id=str(uuid.uuid4()),
+        kind="access",
         requester_sub=sub,
         requester_key_version=1,
         recovery_key_id=recovery,
@@ -379,7 +399,7 @@ async def test_after_a_rejection_the_custodian_may_approve_again(archive, owner,
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
     rejected = await requests.reject(
-        TENANT, "sam", request.request_id, (1, 1), "proof_invalid", NOW
+        TENANT, "sam", request.request_id, (1, 1), "proof_invalid", NOW, may_supervise=True
     )
     context = await requests.approval_context(TENANT, "carol", request.request_id, NOW)
 
@@ -398,11 +418,11 @@ async def test_partials_are_served_only_with_k_valid_approvals(archive, owner, r
     await recovery_key(owner, k=2)
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
-    assert await requests.partials(TENANT, "sam", request.request_id, NOW) == Refused(
-        "not_enough_approvals"
-    )
+    assert await requests.partials(
+        TENANT, "sam", request.request_id, NOW, may_supervise=True
+    ) == Refused("not_enough_approvals")
     await requests.approve(TENANT, "dave", request.request_id, _approval(scope), _always, NOW)
-    served = await requests.partials(TENANT, "sam", request.request_id, NOW)
+    served = await requests.partials(TENANT, "sam", request.request_id, NOW, may_supervise=True)
 
     assert [w.key_id for w in served.wraps] == [key_id]
     assert [(a.holder_index, a.attempt) for a in served.approvals] == [(1, 1), (2, 1)]
@@ -414,7 +434,9 @@ async def test_another_custodians_partials_are_never_served_to_them(archive, own
     conversation, _, _ = await _ended(archive, owner)
     request, scope = await _filed(requests, owner, [conversation])
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
-    assert await requests.partials(TENANT, "carol", request.request_id, NOW) == Refused("not_found")
+    assert await requests.partials(
+        TENANT, "carol", request.request_id, NOW, may_supervise=True
+    ) == Refused("not_found")
 
 
 async def test_an_expired_request_closes_once_under_the_system_actor(archive, owner, requests):
@@ -423,8 +445,8 @@ async def test_an_expired_request_closes_once_under_the_system_actor(archive, ow
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
     later = NOW + timedelta(days=7)
 
-    first = await requests.progress(TENANT, "sam", request.request_id, later)
-    second = await requests.progress(TENANT, "sam", request.request_id, later)
+    first = await requests.progress(TENANT, "sam", request.request_id, later, may_supervise=True)
+    second = await requests.progress(TENANT, "sam", request.request_id, later, may_supervise=True)
 
     assert (first.request.status, second.request.status) == ("expired", "expired")
     assert await owner.fetchval("SELECT count(*) FROM recovery_partials") == 0
@@ -446,7 +468,7 @@ async def test_a_request_whose_conversations_are_all_shredded_closes_as_scope_go
     request, _ = await _filed(requests, owner, [conversation])
     await owner.execute("UPDATE conversations SET shredded_at = $1", NOW)
 
-    progress = await requests.progress(TENANT, "sam", request.request_id, NOW)
+    progress = await requests.progress(TENANT, "sam", request.request_id, NOW, may_supervise=True)
 
     assert progress.request.status == "scope_gone"
     assert (await _audit(owner))[-1] == (
@@ -464,7 +486,9 @@ async def test_the_approvals_list_holds_what_a_custodian_may_still_decide(archiv
     before = await requests.approvals(TENANT, "carol", recovery, NOW)
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
     after = await requests.approvals(TENANT, "carol", recovery, NOW)
-    await requests.reject(TENANT, "sam", request.request_id, (1, 1), "proof_invalid", NOW)
+    await requests.reject(
+        TENANT, "sam", request.request_id, (1, 1), "proof_invalid", NOW, may_supervise=True
+    )
     again = await requests.approvals(TENANT, "carol", recovery, NOW)
 
     assert [r.request_id for r, _ in before] == [request.request_id]
@@ -483,7 +507,14 @@ async def test_storing_wraps_completes_the_request_atomically(archive, owner, re
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
     dropped = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        1,
+        _always,
+        NOW,
+        may_supervise=True,
     )
 
     assert dropped == ()
@@ -506,18 +537,34 @@ async def test_storing_wraps_short_of_the_scope_or_badly_signed_stores_nothing(
     request, scope = await _filed(requests, owner, [conversation])
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
-    short = await requests.store_wraps(TENANT, "sam", request.request_id, [], 1, _always, NOW)
+    short = await requests.store_wraps(
+        TENANT, "sam", request.request_id, [], 1, _always, NOW, may_supervise=True
+    )
     unsigned = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _never, NOW
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        1,
+        _never,
+        NOW,
+        may_supervise=True,
     )
     newer_key = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 2, _always, NOW
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        2,
+        _always,
+        NOW,
+        may_supervise=True,
     )
 
     assert (short, unsigned, newer_key) == (
         Refused("scope_not_covered"),
         Refused("signature_invalid"),
-        Refused("signature_invalid"),
+        Refused("key_changed"),
     )
     assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref = 'sam'") == 0
 
@@ -537,7 +584,14 @@ async def test_storing_waits_for_a_shred_in_progress_and_then_drops_its_key(
     )
     storing = asyncio.create_task(
         requests.store_wraps(
-            TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW
+            TENANT,
+            "sam",
+            request.request_id,
+            [_wrap(k) for k in scope],
+            1,
+            _always,
+            NOW,
+            may_supervise=True,
         )
     )
     await asyncio.sleep(0.5)
@@ -570,11 +624,13 @@ async def test_an_integrity_report_is_audited_for_the_requester_only(archive, ow
     request, _ = await _filed(requests, owner, [conversation])
 
     assert (
-        await requests.record_integrity_failure(TENANT, "sam", request.request_id, "trust", NOW)
+        await requests.record_integrity_failure(
+            TENANT, "sam", request.request_id, "trust", NOW, may_supervise=True
+        )
         is None
     )
     assert await requests.record_integrity_failure(
-        TENANT, "carol", request.request_id, "trust", NOW
+        TENANT, "carol", request.request_id, "trust", NOW, may_supervise=True
     ) == Refused("not_found")
     assert ("sam", "recovery.integrity_failure.trust", request.request_id) in await _audit(owner)
 
@@ -582,9 +638,9 @@ async def test_an_integrity_report_is_audited_for_the_requester_only(archive, ow
 async def test_a_request_of_another_tenant_is_not_found(archive, owner, requests):
     conversation, _, _ = await _ended(archive, owner)
     request, _ = await _filed(requests, owner, [conversation])
-    assert await requests.progress("tenant-b", "sam", request.request_id, NOW) == Refused(
-        "not_found"
-    )
+    assert await requests.progress(
+        "tenant-b", "sam", request.request_id, NOW, may_supervise=True
+    ) == Refused("not_found")
 
 
 async def test_the_employees_and_candidates_cover_leavers_and_skip_the_requested(
@@ -650,7 +706,7 @@ async def test_wraps_for_part_of_the_scope_store_nothing(archive, owner, request
     await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
 
     partial = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(scope[0])], 1, _always, NOW
+        TENANT, "sam", request.request_id, [_wrap(scope[0])], 1, _always, NOW, may_supervise=True
     )
 
     assert partial == Refused("scope_not_covered")
@@ -704,7 +760,7 @@ async def test_an_integrity_report_after_closing_is_refused(archive, owner, requ
     request, _ = await _filed(requests, owner, [conversation])
     await requests.cancel(TENANT, "sam", request.request_id, NOW)
     assert await requests.record_integrity_failure(
-        TENANT, "sam", request.request_id, "trust", NOW
+        TENANT, "sam", request.request_id, "trust", NOW, may_supervise=True
     ) == Refused("closed")
 
 
@@ -720,7 +776,14 @@ async def test_a_wrap_verified_wrong_halfway_stores_none(archive, owner, request
         return len(seen) < 2
 
     refused = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, second_fails, NOW
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        1,
+        second_fails,
+        NOW,
+        may_supervise=True,
     )
 
     assert refused == Refused("signature_invalid")
@@ -743,7 +806,14 @@ async def test_a_wrap_already_held_is_kept_and_not_audited_again(archive, owner,
     )
 
     await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        1,
+        _always,
+        NOW,
+        may_supervise=True,
     )
 
     held = await owner.fetchval(
@@ -784,7 +854,14 @@ async def test_wraps_without_k_approvals_complete_nothing(archive, owner, reques
     request, scope = await _filed(requests, owner, [conversation])
 
     refused = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        1,
+        _always,
+        NOW,
+        may_supervise=True,
     )
 
     assert refused == Refused("not_enough_approvals")
@@ -797,7 +874,7 @@ async def test_a_closed_request_still_counts_its_conversations(archive, owner, r
     request, _ = await _filed(requests, owner, [conversation])
     await requests.cancel(TENANT, "sam", request.request_id, NOW)
 
-    progress = await requests.progress(TENANT, "sam", request.request_id, NOW)
+    progress = await requests.progress(TENANT, "sam", request.request_id, NOW, may_supervise=True)
 
     assert (progress.request.status, progress.remaining, progress.conversations) == (
         "cancelled",

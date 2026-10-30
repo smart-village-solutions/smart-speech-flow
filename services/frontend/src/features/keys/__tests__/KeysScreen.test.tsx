@@ -30,6 +30,7 @@ const ownKey: OwnKey = {
   fingerprint: new Uint8Array(32),
   fingerprintDisplay: 'abab abab abab abab abab abab abab abab abab abab',
   createdAt: '2026-10-26T09:00:00+00:00',
+  keyVersion: 1,
 };
 
 function render(overrides: { enrolled?: OwnKey | null; enrol?: RecordingKeysRepository['enrol']; unlock?: ArchiveCrypto['unlock'] } = {}) {
@@ -38,6 +39,8 @@ function render(overrides: { enrolled?: OwnKey | null; enrol?: RecordingKeysRepo
   const recordingKeys: RecordingKeysRepository = {
     ownKey: vi.fn().mockResolvedValue(overrides.enrolled ?? null),
     enrol: overrides.enrol ?? vi.fn().mockResolvedValue({ fingerprint: keys.fingerprint, fingerprintDisplay: 'x' }),
+    reenrol: vi.fn(),
+    reenrolmentImpact: vi.fn(),
   };
   const archiveCrypto: ArchiveCrypto = {
     createKeys: vi.fn().mockResolvedValue({ blob: '{"v":1}', unlocked: keys }),

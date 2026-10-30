@@ -80,9 +80,13 @@ class FakeCeremonyRepository:
     shares: list[RecoveryShareRecord] = field(default_factory=list)
     audit: list[AuditEvent] = field(default_factory=list)
     aborted: dict[str, FailedCeremony] = field(default_factory=dict)
+    usable: int = 0
 
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None:
         return self.recovery_key
+
+    async def usable_shares(self, tenant_id: str) -> int | None:
+        return None if self.recovery_key is None else self.usable
 
     async def user_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, UserKeyRecord]:
         return {sub: self.keys[sub] for sub in subs if sub in self.keys}

@@ -11,6 +11,7 @@ interface AdminHeaderProps {
   onOpenKeys?: () => void;
   onOpenCeremony?: () => void;
   onOpenArchive?: () => void;
+  onOpenKeyRecovery?: () => void;
   onOpenRecoveryRequests?: () => void;
   onOpenRecoveryApprovals?: () => void;
 }
@@ -26,6 +27,7 @@ export function AdminHeader({
   onOpenKeys,
   onOpenCeremony,
   onOpenArchive,
+  onOpenKeyRecovery,
   onOpenRecoveryRequests,
   onOpenRecoveryApprovals,
 }: Readonly<AdminHeaderProps>) {
@@ -42,6 +44,7 @@ export function AdminHeader({
           onOpenKeys={onOpenKeys}
           onOpenCeremony={onOpenCeremony}
           onOpenArchive={onOpenArchive}
+          onOpenKeyRecovery={onOpenKeyRecovery}
           onOpenRecoveryRequests={onOpenRecoveryRequests}
           onOpenRecoveryApprovals={onOpenRecoveryApprovals}
         />

@@ -4,6 +4,7 @@ import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { Bytes } from '@/core/crypto/bytes';
+import type { RequestKind } from '@/core/crypto/recovery-crypto.port';
 import type { ApprovalDetail, RecoveryCandidate } from '@/domain/recovery/requests.types';
 import {
   type CombineOutcome,
@@ -25,11 +26,12 @@ function useDeps(): RecoveryDeps {
   return { archive, ceremonyCrypto, recoveryCrypto, recoveryRequests };
 }
 
-export function useRecoveryRequests() {
+/** The caller's own requests of one kind: a supervisor's access, an employee's key recovery. */
+export function useRecoveryRequests(kind: RequestKind) {
   const { recoveryRequests } = useServices();
   return useQuery({
-    queryKey: [...RECOVERY_QUERY, 'requests'],
-    queryFn: () => recoveryRequests.requests(),
+    queryKey: [...RECOVERY_QUERY, 'requests', kind],
+    queryFn: () => recoveryRequests.requests(kind),
   });
 }
 
@@ -106,7 +108,7 @@ function useStep() {
   return { ...state, run, reset };
 }
 
-export function useFileRequest(keys: UnlockedKeys) {
+export function useFileRequest(keys: UnlockedKeys, kind: RequestKind) {
   const deps = useDeps();
   const step = useStep();
   const [stale, setStale] = useState(false);
@@ -119,7 +121,7 @@ export function useFileRequest(keys: UnlockedKeys) {
     }
     return step.run(async () => {
       if (identity === null) throw new Error('not signed in');
-      await fileOnce(deps, identity, keys, input);
+      await fileOnce(deps, identity, keys, { ...input, kind });
     });
   };
   return { file, pending: step.pending, fault: stale ? 'step_up' : step.fault };
@@ -134,6 +136,12 @@ export function useCancel(requestId: string) {
   };
 }
 
+/** How far a run over many keys got; null before it reports. */
+interface Done {
+  done: number;
+  total: number;
+}
+
 export function useCombine(requestId: string, keys: UnlockedKeys | null) {
   const deps = useDeps();
   const queryClient = useQueryClient();
@@ -141,13 +149,17 @@ export function useCombine(requestId: string, keys: UnlockedKeys | null) {
     pending: false,
     outcome: null,
   });
+  const [progress, setProgress] = useState<Done | null>(null);
   const run = async () => {
     const identity = getAdminIdentity();
     if (identity === null || keys === null) return;
     setState({ pending: true, outcome: null });
+    setProgress(null);
     let outcome: CombineOutcome;
     try {
-      outcome = await combineOnce(deps, identity, keys, requestId);
+      outcome = await combineOnce(deps, identity, keys, requestId, (done, total) =>
+        setProgress({ done, total })
+      );
     } catch (error) {
       outcome = { kind: 'failed', code: faultOf(error) };
     }
@@ -156,7 +168,7 @@ export function useCombine(requestId: string, keys: UnlockedKeys | null) {
     await queryClient.invalidateQueries({ queryKey: ['archive'] });
     setState({ pending: false, outcome });
   };
-  return { run, ...state };
+  return { run, progress, ...state };
 }
 
 /** The requester's fingerprint, computed here from the served keys (spec §9.5 step 3). */
@@ -189,6 +201,7 @@ export function useApprove(detail: Readonly<ApprovalDetail>, keys: UnlockedKeys 
   const step = useStep();
   const fingerprint = useRequesterFingerprint(detail);
   const [stale, setStale] = useState(false);
+  const [progress, setProgress] = useState<Done | null>(null);
   // A step-up older than 240 s would expire mid-approval; asking first wipes nothing (§9.5).
   const guarded = (work: () => Promise<void>) => {
     if (!hasFreshStepUp()) {
@@ -201,7 +214,9 @@ export function useApprove(detail: Readonly<ApprovalDetail>, keys: UnlockedKeys 
     guarded(async () => {
       const identity = getAdminIdentity();
       if (identity === null || keys === null) throw new Error('not signed in or locked');
-      await approveOnce(deps, identity, keys, detail, confirmed);
+      await approveOnce(deps, identity, keys, detail, confirmed, (done, total) =>
+        setProgress({ done, total })
+      );
     });
   const decline = (reason: string) =>
     guarded(() => deps.recoveryRequests.decline(detail.requestId, reason));
@@ -214,6 +229,7 @@ export function useApprove(detail: Readonly<ApprovalDetail>, keys: UnlockedKeys 
     decline,
     retry,
     fingerprint,
+    progress,
     pending: step.pending,
     fault: stale ? 'step_up' : step.fault,
   };

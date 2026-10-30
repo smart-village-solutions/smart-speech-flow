@@ -65,13 +65,19 @@ class RequestStore(Protocol):
         self, request: NewRequest, verify: ScopeVerifier
     ) -> Refused | tuple[ScopeKey, ...]: ...
 
+    async def own_candidates(
+        self, tenant_id: str, sub: str, recovery_key_id: str, now: datetime
+    ) -> tuple[list[Candidate], int, int]: ...
+
     async def own_requests(
-        self, tenant_id: str, sub: str, now: datetime
+        self, tenant_id: str, sub: str, now: datetime, kind: str | None = None
     ) -> list[tuple[RequestRow, int]]: ...
 
     async def approvals(
         self, tenant_id: str, sub: str, recovery_key_id: str, now: datetime
     ) -> list[tuple[RequestRow, int]]: ...
+
+    async def share_stale(self, tenant_id: str, sub: str, recovery_key_id: str) -> bool: ...
 
     async def approval_context(
         self, tenant_id: str, sub: str, request_id: str, now: datetime
@@ -92,11 +98,11 @@ class RequestStore(Protocol):
     ) -> Refused | None: ...
 
     async def progress(
-        self, tenant_id: str, sub: str, request_id: str, now: datetime
+        self, tenant_id: str, sub: str, request_id: str, now: datetime, *, may_supervise: bool
     ) -> Refused | Progress: ...
 
     async def partials(
-        self, tenant_id: str, sub: str, request_id: str, now: datetime
+        self, tenant_id: str, sub: str, request_id: str, now: datetime, *, may_supervise: bool
     ) -> Refused | ServedPartials: ...
 
     async def reject(
@@ -107,10 +113,20 @@ class RequestStore(Protocol):
         holder: tuple[int, int],
         fault: str,
         now: datetime,
+        *,
+        may_supervise: bool,
     ) -> Refused | None: ...
 
     async def record_integrity_failure(
-        self, tenant_id: str, sub: str, request_id: str, stage: str, now: datetime
+        self,
+        tenant_id: str,
+        sub: str,
+        request_id: str,
+        stage: str,
+        now: datetime,
+        *,
+        may_supervise: bool,
+        key_id: str | None = None,
     ) -> Refused | None: ...
 
     async def store_wraps(
@@ -122,6 +138,8 @@ class RequestStore(Protocol):
         key_version: int,
         verify: WrapVerifier,
         now: datetime,
+        *,
+        may_supervise: bool,
     ) -> Refused | tuple[str, ...]: ...
 
     async def cancel(
@@ -247,11 +265,20 @@ class RecoveryRequests:
             )
         )
 
+    async def own_candidates(self, tenant_id: str, sub: str) -> tuple[list[Candidate], int, int]:
+        """The caller's own next batch for a key recovery (§9.6); a keyless caller has none."""
+        await self._own_key(tenant_id, sub)
+        key = await self._recovery_key(tenant_id)
+        return await _guard(
+            self._repository.own_candidates(tenant_id, sub, key.key_id, self._clock())
+        )
+
     async def file(
         self,
         tenant_id: str,
         sub: str,
         request_id: str,
+        kind: str,
         reason: str,
         conversation_ids: tuple[str, ...],
         signature: bytes,
@@ -262,13 +289,14 @@ class RecoveryRequests:
         def verify(scope: tuple[ScopeKey, ...]) -> bool:
             pairs = [(key.conversation_id, key.key_id) for key in scope]
             fields = request_fields(
-                tenant_id, request_id, "access", recovery.key_id, sub, reason, pairs
+                tenant_id, request_id, kind, recovery.key_id, sub, reason, pairs
             )
             return verify_fields(own.sig_pub, signature, tags.REQUEST_SIG, *fields)
 
         request = NewRequest(
             tenant_id=tenant_id,
             request_id=request_id,
+            kind=kind,
             requester_sub=sub,
             requester_key_version=own.key_version,
             recovery_key_id=recovery.key_id,
@@ -279,12 +307,19 @@ class RecoveryRequests:
         )
         return await _answer(self._repository.file(request, verify))
 
-    async def own_requests(self, tenant_id: str, sub: str) -> list[tuple[RequestRow, int]]:
-        return await _guard(self._repository.own_requests(tenant_id, sub, self._clock()))
+    async def own_requests(
+        self, tenant_id: str, sub: str, kind: str | None = None
+    ) -> list[tuple[RequestRow, int]]:
+        return await _guard(self._repository.own_requests(tenant_id, sub, self._clock(), kind))
 
-    async def approvals(self, tenant_id: str, sub: str) -> list[tuple[RequestRow, int]]:
+    async def approvals(
+        self, tenant_id: str, sub: str
+    ) -> tuple[list[tuple[RequestRow, int]], bool]:
+        """The requests the caller may decide, and whether their share went stale (§9.6)."""
         key = await self._recovery_key(tenant_id)
-        return await _guard(self._repository.approvals(tenant_id, sub, key.key_id, self._clock()))
+        rows = await _guard(self._repository.approvals(tenant_id, sub, key.key_id, self._clock()))
+        stale = await _guard(self._repository.share_stale(tenant_id, sub, key.key_id))
+        return rows, stale
 
     async def approval(
         self, tenant_id: str, sub: str, request_id: str, correlation_id: str
@@ -331,30 +366,76 @@ class RecoveryRequests:
         await _answer(self._repository.decline(tenant_id, sub, request_id, reason, self._clock()))
 
     async def progress(
-        self, tenant_id: str, sub: str, request_id: str, correlation_id: str
+        self, tenant_id: str, sub: str, request_id: str, correlation_id: str, *, may_supervise: bool
     ) -> tuple[Progress, Mapping[str, str]]:
-        found = await _answer(self._repository.progress(tenant_id, sub, request_id, self._clock()))
+        found = await _answer(
+            self._repository.progress(
+                tenant_id, sub, request_id, self._clock(), may_supervise=may_supervise
+            )
+        )
         return found, await self._names.names(tenant_id, correlation_id)
 
-    async def partials(self, tenant_id: str, sub: str, request_id: str) -> ServedPartials:
-        return await _answer(self._repository.partials(tenant_id, sub, request_id, self._clock()))
-
-    async def reject(
-        self, tenant_id: str, sub: str, request_id: str, holder: tuple[int, int], fault: str
-    ) -> None:
-        await _answer(
-            self._repository.reject(tenant_id, sub, request_id, holder, fault, self._clock())
+    async def partials(
+        self, tenant_id: str, sub: str, request_id: str, *, may_supervise: bool
+    ) -> ServedPartials:
+        return await _answer(
+            self._repository.partials(
+                tenant_id, sub, request_id, self._clock(), may_supervise=may_supervise
+            )
         )
 
-    async def report(self, tenant_id: str, sub: str, request_id: str, stage: str) -> None:
+    async def reject(
+        self,
+        tenant_id: str,
+        sub: str,
+        request_id: str,
+        holder: tuple[int, int],
+        fault: str,
+        *,
+        may_supervise: bool,
+    ) -> None:
+        await _answer(
+            self._repository.reject(
+                tenant_id,
+                sub,
+                request_id,
+                holder,
+                fault,
+                self._clock(),
+                may_supervise=may_supervise,
+            )
+        )
+
+    async def report(
+        self,
+        tenant_id: str,
+        sub: str,
+        request_id: str,
+        stage: str,
+        *,
+        may_supervise: bool,
+        key_id: str | None = None,
+    ) -> None:
         await _answer(
             self._repository.record_integrity_failure(
-                tenant_id, sub, request_id, stage, self._clock()
+                tenant_id,
+                sub,
+                request_id,
+                stage,
+                self._clock(),
+                may_supervise=may_supervise,
+                key_id=key_id,
             )
         )
 
     async def store(
-        self, tenant_id: str, sub: str, request_id: str, wraps: Sequence[NewWrap]
+        self,
+        tenant_id: str,
+        sub: str,
+        request_id: str,
+        wraps: Sequence[NewWrap],
+        *,
+        may_supervise: bool,
     ) -> tuple[str, ...]:
         own = await self._own_key(tenant_id, sub)
 
@@ -375,7 +456,14 @@ class RecoveryRequests:
 
         return await _answer(
             self._repository.store_wraps(
-                tenant_id, sub, request_id, wraps, own.key_version, verify, self._clock()
+                tenant_id,
+                sub,
+                request_id,
+                wraps,
+                own.key_version,
+                verify,
+                self._clock(),
+                may_supervise=may_supervise,
             )
         )
 

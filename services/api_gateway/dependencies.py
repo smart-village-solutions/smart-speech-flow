@@ -104,6 +104,8 @@ class GatewayDependencies:
     recording_archive_access: Any = None
     # Exceptional access through custodian approval (#617a), wired with the keys.
     recording_recovery_requests: Any = None
+    # Employee key recovery's re-enrolment (#617b), wired with the keys.
+    recording_reenrolment: Any = None
     # The archive sites' retention workers, as the gateway exports them (#618).
     retention_worker_metrics: Any = None
 

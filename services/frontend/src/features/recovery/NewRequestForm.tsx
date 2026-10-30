@@ -26,7 +26,7 @@ export function NewRequestForm({ keys, onFiled }: Readonly<NewRequestFormProps>)
   const employees = useEmployees();
   const range = dayRange(filter.from, filter.to);
   const candidates = useCandidates(filter.employee, range?.from ?? '', range?.to ?? '');
-  const filing = useFileRequest(keys);
+  const filing = useFileRequest(keys, 'access');
   // A new filter shows other conversations: hidden ticks would still count toward the cap.
   const refilter = (next: Filter) => {
     setFilter(next);

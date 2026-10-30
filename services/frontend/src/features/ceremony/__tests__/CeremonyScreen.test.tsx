@@ -251,10 +251,21 @@ describe('CeremonyScreen', () => {
 
   it('shows the active recovery key', async () => {
     render({
-      recoveryKey: { keyId: 'k', k: 2, n: 5, mode: 'enhanced', transcriptDisplay: '1234 5678', activatedAt: '2026-10-26T10:00:00+00:00' },
+      recoveryKey: { keyId: 'k', k: 2, n: 5, mode: 'enhanced', transcriptDisplay: '1234 5678', activatedAt: '2026-10-26T10:00:00+00:00', usableShares: null },
       ceremony: null,
       lastFailed: null,
     });
     expect(await screen.findByText(/2 von 5 Anteilen öffnen gemeinsam ein Gespräch/)).toBeInTheDocument();
+    expect(screen.queryByText(/nötigen Anteilen nutzbar/)).not.toBeInTheDocument();
+  });
+
+  it('warns when no more than k custodian shares are still usable', async () => {
+    render({
+      recoveryKey: { keyId: 'k', k: 2, n: 3, mode: 'enhanced', transcriptDisplay: '1234 5678', activatedAt: '2026-10-26T10:00:00+00:00', usableShares: 2 },
+      ceremony: null,
+      lastFailed: null,
+    });
+    const line = await screen.findByText('2 von 2 nötigen Anteilen nutzbar');
+    expect(line).toHaveClass('text-fg-status-alert');
   });
 });

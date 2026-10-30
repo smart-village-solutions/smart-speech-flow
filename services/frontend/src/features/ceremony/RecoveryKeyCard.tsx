@@ -16,6 +16,12 @@ export function RecoveryKeyCard({ recoveryKey }: Readonly<{ recoveryKey: Recover
       <p className="text-note leading-chat text-fg-muted">
         {t('admin.ceremony.transcriptLabel')} <code>{recoveryKey.transcriptDisplay}</code>
       </p>
+      {recoveryKey.usableShares !== null && (
+        // One stale custodian more and a resharing would have to wait for the paper shares (§9.6).
+        <p className={`text-label ${recoveryKey.usableShares > recoveryKey.k ? 'text-fg-muted' : 'text-fg-status-alert'}`}>
+          {t('admin.ceremony.usableShares', { usable: recoveryKey.usableShares, k: recoveryKey.k })}
+        </p>
+      )}
     </section>
   );
 }

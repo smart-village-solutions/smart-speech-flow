@@ -10,6 +10,7 @@ const BODY = {
   ceremony: 'admin.ceremony.stepUpBody',
   recoveryRequests: 'admin.recovery.stepUpBody',
   recoveryApprovals: 'admin.recovery.stepUpBody',
+  keyRecovery: 'admin.keyRecovery.stepUpBody',
 } as const;
 
 interface StepUpPromptProps {

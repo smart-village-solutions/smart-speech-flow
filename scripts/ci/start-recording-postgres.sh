@@ -84,7 +84,8 @@ for migration in migrations/001_feedback.sql migrations/002_feedback_roles.sql \
   recording/migrations/001_recording_keys.sql recording/migrations/002_recovery_ceremony.sql \
   recording/migrations/003_recording_archive.sql recording/migrations/004_recording_retention.sql \
   recording/migrations/005_recording_archive_access.sql \
-  recording/migrations/006_recording_recovery_requests.sql; do
+  recording/migrations/006_recording_recovery_requests.sql \
+  recording/migrations/007_recording_key_recovery.sql; do
   if ! docker logs "$name" 2>&1 | grep -q "apply.sh: applying .*$migration"; then
     echo "start-recording-postgres.sh: $migration did not run" >&2
     docker logs "$name" >&2

@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from .crypto.encoding import from_b64url
-from .recovery_requests_model import DecisionRow, RequestRow, ScopeKey
+from .recovery_requests_model import Candidate, DecisionRow, RequestRow, ScopeKey
 
 # Ended, not shredded, within its date or held, and every key recovery-wrapped
 # for the active key ($2 now, $3 recovery key ID): what a request may list.
@@ -29,21 +29,47 @@ ACCESSIBLE = (
     "  AND NOT EXISTS (SELECT 1 FROM key_wraps w WHERE w.tenant_id = k.tenant_id"
     "   AND w.key_id = k.key_id AND w.recipient_kind = 'user' AND w.recipient_ref = $4))"
 )
-CANDIDATES = (
-    "SELECT c.conversation_id, c.started_at, c.ended_at, c.retention_until, c.legal_hold,"
-    " c.incomplete, array(SELECT k.key_id::text FROM conversation_keys k"
-    "  WHERE k.conversation_id = c.conversation_id ORDER BY k.key_id::text) AS key_ids"
-    f" FROM conversations c WHERE c.employee_sub = $1 AND {RECOVERABLE} AND NOT {ACCESSIBLE}"
-    " AND NOT EXISTS (SELECT 1 FROM recovery_request_keys rk JOIN recovery_requests r"
+# A conversation whose recovery wrap this requester ($4) found unusable stays out (§9.6).
+UNREPORTED = (
+    "NOT EXISTS (SELECT 1 FROM recovery_unrecoverable_keys u JOIN recovery_requests ur"
+    "  ON ur.tenant_id = u.tenant_id AND ur.request_id = u.request_id"
+    "  WHERE u.conversation_id = c.conversation_id AND ur.requester_sub = $4)"
+)
+# Not already in one of the requester's ($4) open requests.
+UNREQUESTED = (
+    "NOT EXISTS (SELECT 1 FROM recovery_request_keys rk JOIN recovery_requests r"
     "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
     "  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = $4"
     "  AND r.status = 'open' AND r.expires_at > $2)"
+)
+_CANDIDATE_COLUMNS = (
+    "SELECT c.conversation_id, c.started_at, c.ended_at, c.retention_until, c.legal_hold,"
+    " c.incomplete, array(SELECT k.key_id::text FROM conversation_keys k"
+    "  WHERE k.conversation_id = c.conversation_id ORDER BY k.key_id::text) AS key_ids"
+)
+CANDIDATES = (
+    f"{_CANDIDATE_COLUMNS} FROM conversations c WHERE c.employee_sub = $1"
+    f" AND {RECOVERABLE} AND NOT {ACCESSIBLE} AND {UNREPORTED} AND {UNREQUESTED}"
     " AND c.started_at >= $5 AND c.started_at < $6"
     " ORDER BY c.started_at DESC, c.conversation_id DESC LIMIT 50"
 )
+# The requester's ($4) own conversations, all of them, newest first ($1 unused).
+OWN_CANDIDATES = (
+    f"{_CANDIDATE_COLUMNS} FROM conversations c WHERE $1::text IS NULL AND c.employee_sub = $4"
+    f" AND {RECOVERABLE} AND NOT {ACCESSIBLE} AND {UNREPORTED} AND {UNREQUESTED}"
+    " ORDER BY c.started_at DESC, c.conversation_id DESC"
+)
+OPEN_KEY_RECOVERY = (
+    "SELECT EXISTS (SELECT 1 FROM recovery_requests WHERE requester_sub = $1"
+    " AND kind = 'key_recovery' AND status = 'open' AND expires_at > $2)"
+)
+# The caller's active key, shared: a re-enrolment's swap waits for this transaction (§9.6).
+REQUESTER_KEY = (
+    "SELECT key_version FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL FOR SHARE"
+)
 FILING_CHECK = (
-    "SELECT c.conversation_id,"
-    f" ({RECOVERABLE}) AS recoverable, ({ACCESSIBLE}) AS accessible,"
+    "SELECT c.conversation_id, c.employee_sub,"
+    f" ({RECOVERABLE} AND {UNREPORTED}) AS recoverable, ({ACCESSIBLE}) AS accessible,"
     " EXISTS (SELECT 1 FROM recovery_request_keys rk JOIN recovery_requests r"
     "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
     "  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = $4"
@@ -66,8 +92,14 @@ LATEST_DECISION = (
     " FROM recovery_decisions d WHERE d.request_id = $1 AND d.holder_index = $2"
     " ORDER BY d.attempt DESC LIMIT 1"
 )
+# The custodian's share is sealed to the key the ceremony recorded; no other key opens it (§9.6).
+SHARE_FRESH = (
+    "EXISTS (SELECT 1 FROM user_keys u WHERE u.tenant_id = p.tenant_id"
+    " AND u.user_sub = p.holder_ref AND u.retired_at IS NULL AND u.fingerprint = p.fingerprint)"
+)
 HOLDER = (
-    "SELECT s.holder_index, s.encrypted_share, p.sig_pub FROM recovery_shares s"
+    f"SELECT s.holder_index, s.encrypted_share, p.sig_pub, {SHARE_FRESH} AS fresh"
+    " FROM recovery_shares s"
     " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id"
     "  AND p.holder_index = s.holder_index"
     " WHERE s.key_id = $1 AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
@@ -86,7 +118,8 @@ CONVERSATION_COUNT = (
 )
 OWN_REQUESTS = (
     f"SELECT r.*, {CONVERSATION_COUNT} FROM recovery_requests r"
-    " WHERE r.requester_sub = $1 ORDER BY r.created_at DESC LIMIT 100"
+    " WHERE r.requester_sub = $1 AND ($2::text IS NULL OR r.kind = $2)"
+    " ORDER BY r.created_at DESC LIMIT 100"
 )
 # Open requests a custodian ($2) of the key ($1) may still decide on, never their own.
 APPROVABLE = (
@@ -97,7 +130,7 @@ APPROVABLE = (
     " JOIN ceremony_participants p ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id"
     "  AND p.holder_index = s.holder_index AND p.kind = 'custodian'"
     " WHERE r.recovery_key_id = $1 AND r.status = 'open' AND r.expires_at > $3"
-    " AND r.requester_sub <> $2"
+    f" AND r.requester_sub <> $2 AND {SHARE_FRESH}"
     " AND NOT EXISTS (SELECT 1 FROM recovery_decisions d"
     "  WHERE d.request_id = r.request_id AND d.holder_index = s.holder_index"
     "  AND d.attempt = (SELECT max(m.attempt) FROM recovery_decisions m"
@@ -106,6 +139,23 @@ APPROVABLE = (
     "   WHERE j.request_id = d.request_id AND j.holder_index = d.holder_index"
     "   AND j.attempt = d.attempt)))"
     " ORDER BY r.created_at"
+)
+
+# A share of the key ($1) held by the caller ($2) that their active key cannot open; NULL if none.
+STALE_HOLDER = (
+    f"SELECT NOT {SHARE_FRESH} FROM recovery_shares s JOIN ceremony_participants p"
+    " ON p.tenant_id = s.tenant_id AND p.ceremony_id = s.key_id AND p.holder_index = s.holder_index"
+    " WHERE s.key_id = $1 AND s.holder_ref = $2 AND s.encrypted_share IS NOT NULL"
+    " AND p.kind = 'custodian'"
+)
+# k and the custodian shares of the active key that their holders can still open.
+USABLE_SHARES = (
+    f"SELECT r.k, count(*) FILTER (WHERE {SHARE_FRESH}) AS usable"
+    " FROM recovery_keys r JOIN ceremony_participants p ON p.tenant_id = r.tenant_id"
+    "  AND p.ceremony_id = r.key_id AND p.kind = 'custodian'"
+    " JOIN recovery_shares s ON s.tenant_id = p.tenant_id AND s.key_id = p.ceremony_id"
+    "  AND s.holder_index = p.holder_index AND s.encrypted_share IS NOT NULL"
+    " WHERE r.status = 'active' GROUP BY r.k"
 )
 
 
@@ -156,6 +206,18 @@ def decision_row(row: Any) -> DecisionRow:
         approval_signature=None if signature is None else bytes(signature),
         decided_at=row["decided_at"],
         rejected=row["rejected"],
+    )
+
+
+def candidate_of(row: Any) -> Candidate:
+    return Candidate(
+        conversation_id=str(row["conversation_id"]),
+        started_at=row["started_at"],
+        ended_at=row["ended_at"],
+        retention_until=row["retention_until"],
+        legal_hold=row["legal_hold"],
+        incomplete=row["incomplete"],
+        key_ids=tuple(row["key_ids"]),
     )
 
 

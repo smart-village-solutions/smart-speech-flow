@@ -124,6 +124,8 @@ async def _insert_key(
         key.created_at,
     )
     for wrap in key.wraps:
+        if wrap.recipient_kind == "user" and not await _still_active(connection, wrap):
+            continue  # re-enrolled since the key was made: a key-recovery candidate now (§9.6)
         await connection.execute(
             "INSERT INTO key_wraps (tenant_id, key_id, recipient_kind, recipient_ref, blob,"
             " creator_ref, creator_signature, granted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -136,6 +138,15 @@ async def _insert_key(
             wrap.creator_signature,
             key.created_at,
         )
+
+
+async def _still_active(connection: asyncpg.Connection, wrap: KeyWrap) -> bool:
+    """Shared, so a re-enrolment's swap waits for this insert or this insert sees it (§9.6)."""
+    current = await connection.fetchval(
+        "SELECT fingerprint FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL FOR SHARE",
+        wrap.recipient_ref,
+    )
+    return current is not None and bytes(current) == wrap.recipient_fingerprint
 
 
 async def insert_entry(connection: asyncpg.Connection, entry: ChainEntry) -> None:

@@ -33,6 +33,7 @@ from .ceremony_model import (
     conflict,
 )
 from .crypto.encoding import b64url, from_b64url, scalar_from_bytes, scalar_to_bytes
+from .recovery_requests_sql import USABLE_SHARES
 from .repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
@@ -169,6 +170,11 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None:
         rows = await self._read(tenant_id, "SELECT * FROM recovery_keys WHERE status = 'active'")
         return _recovery_key(rows[0]) if rows else None
+
+    async def usable_shares(self, tenant_id: str) -> int | None:
+        """Custodian shares of the active key whose holders' keys still open them (§9.6)."""
+        rows = await self._read(tenant_id, USABLE_SHARES)
+        return int(rows[0]["usable"]) if rows else None
 
     async def ceremony(self, tenant_id: str, ceremony_id: str) -> CeremonySnapshot | None:
         """A ceremony's public record, for browsers checking its transcript (spec §10.6)."""

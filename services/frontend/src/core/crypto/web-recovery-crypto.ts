@@ -18,12 +18,14 @@ import {
   RecoveryCheckError,
   type RecoveryCrypto,
   type RecoveryFault,
+  type OnProgress,
   type RecoveryIntegrityStage,
   type RecoveryWrapRef,
   type Rejection,
   type RejectionFault,
   type ServedApproval,
   type ServedRecoveryWrap,
+  type UnrecoverableKey,
 } from './recovery-crypto.port';
 import {
   approvalFields,
@@ -38,6 +40,25 @@ import { fingerprint } from './transcript';
 
 /** P_i ‖ c ‖ s (spec A.4, A.7). */
 const PARTIAL_BYTES = 65 + 32 + 32;
+/** Keys handled between two yields to the event loop: a tablet stays responsive (§9.6). */
+const CHUNK = 50;
+
+const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** `work` over `items` in order, a chunk at a time, yielding and reporting between chunks. */
+async function inChunks<T, R>(
+  items: readonly T[],
+  work: (item: T) => Promise<R>,
+  onProgress?: OnProgress
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let start = 0; start < items.length; start += CHUNK) {
+    for (const item of items.slice(start, start + CHUNK)) results.push(await work(item));
+    onProgress?.(results.length, items.length);
+    await yieldToUi();
+  }
+  return results;
+}
 
 function fail(fault: RecoveryFault): never {
   throw new RecoveryCheckError(fault);
@@ -63,8 +84,11 @@ function recoveryWrapSigned(
   return verifyFields(signer, wrap.signature, TAGS.wrapSig, signed);
 }
 
+/** A served recovery wrap with its R, signed by a certified gateway key. */
+type UsableWrap = ServedRecoveryWrap & RecoveryWrapRef;
+
 /** The served wrap as the approver saw it: its R, or null when it is not a ck-wrap at all. */
-function servedRef(wrap: Readonly<ServedRecoveryWrap>): RecoveryWrapRef | null {
+function servedRef(wrap: Readonly<ServedRecoveryWrap>): UsableWrap | null {
   try {
     return { ...wrap, ephemeral: parseSealed(wrap.blob, TAGS.ckWrap).ephemeral };
   } catch {
@@ -91,7 +115,7 @@ async function checkRequest(facts: Readonly<ApprovalFacts>): Promise<void> {
   const signed = requestFields({
     tenantId: facts.tenantId,
     requestId: facts.requestId,
-    kind: 'access',
+    kind: facts.kind,
     recoveryKeyId: facts.recoveryKeyId,
     requesterSub: facts.requesterSub,
     reasonHash: await sha256(utf8(facts.reason)),
@@ -166,6 +190,7 @@ type Checked =
 async function signedAsServed(
   approval: Readonly<ServedApproval>,
   facts: Readonly<CombineFacts>,
+  wraps: readonly UsableWrap[],
   sigPub: Bytes
 ): Promise<RecoveryIntegrityStage | null> {
   const signed = approvalFields({
@@ -177,7 +202,7 @@ async function signedAsServed(
   });
   if (!(await verifyFields(sigPub, approval.signature, TAGS.approvalSig, signed)))
     return 'approval_signature';
-  for (const wrap of facts.wraps) {
+  for (const wrap of wraps) {
     const blob = approval.partials.get(wrap.keyId);
     const listed = approval.signedPartials.find((item) => item.keyId === wrap.keyId);
     if (
@@ -244,7 +269,7 @@ function approverKey(
 /** Each partial opened and its proof checked against the certified X_i. */
 async function checkPartials(
   facts: Readonly<CombineFacts>,
-  wraps: readonly RecoveryWrapRef[],
+  wraps: readonly UsableWrap[],
   trust: Readonly<CertifiedTrust>,
   keys: Readonly<UnlockedKeys>,
   approval: Readonly<ServedApproval>
@@ -267,14 +292,14 @@ async function checkPartials(
 /** One approval: ignored unless a custodian's, blamed on nobody unless signed as served. */
 async function checkApproval(
   facts: Readonly<CombineFacts>,
-  wraps: readonly RecoveryWrapRef[],
+  wraps: readonly UsableWrap[],
   trust: Readonly<CertifiedTrust>,
   keys: Readonly<UnlockedKeys>,
   approval: Readonly<ServedApproval>
 ): Promise<Checked> {
   const sigPub = approverKey(trust, approval.holderIndex, facts.requesterSub);
   if (sigPub === null) return null;
-  const integrity = await signedAsServed(approval, facts, sigPub);
+  const integrity = await signedAsServed(approval, facts, wraps, sigPub);
   if (integrity !== null) return { integrity };
   return checkPartials(facts, wraps, trust, keys, approval);
 }
@@ -344,17 +369,28 @@ function uniqueHolders(valid: readonly ValidPartials[]): ValidPartials[] {
   return [...byHolder.values()].sort((left, right) => left.holderIndex - right.holderIndex);
 }
 
-async function servedWrapsSigned(
+/** Each served wrap usable, or unrecoverable by its signature: one bad wrap blocks no other. */
+async function sortWraps(
   facts: Readonly<CombineFacts>,
   trust: Readonly<CertifiedTrust>
-): Promise<RecoveryWrapRef[] | null> {
-  const refs = facts.wraps.map(servedRef);
-  if (refs.some((ref) => ref === null)) return null;
-  const valid = refs.filter((ref): ref is RecoveryWrapRef => ref !== null);
-  const signed = await Promise.all(
-    valid.map((ref) => recoveryWrapSigned(trust, facts.tenantId, ref))
-  );
-  return signed.includes(false) ? null : valid;
+): Promise<{ usable: UsableWrap[]; unrecoverable: UnrecoverableKey[] }> {
+  const usable: UsableWrap[] = [];
+  const unrecoverable: UnrecoverableKey[] = [];
+  for (const wrap of facts.wraps) {
+    const ref = servedRef(wrap);
+    if (ref !== null && (await recoveryWrapSigned(trust, facts.tenantId, ref))) usable.push(ref);
+    else unrecoverable.push({ keyId: wrap.keyId, stage: 'wrap_signature' });
+  }
+  return { usable, unrecoverable };
+}
+
+/** The approvals sorted by what they are worth: valid, the custodian's fault, or the data's. */
+function tally(checked: readonly Checked[]) {
+  return {
+    valid: checked.flatMap((c) => (c !== null && 'valid' in c ? [c.valid] : [])),
+    rejections: checked.flatMap((c) => (c !== null && 'rejection' in c ? [c.rejection] : [])),
+    integrity: checked.flatMap((c) => (c !== null && 'integrity' in c ? [c.integrity] : [])),
+  };
 }
 
 export function createWebRecoveryCrypto(): RecoveryCrypto {
@@ -363,14 +399,10 @@ export function createWebRecoveryCrypto(): RecoveryCrypto {
 
     async signRequest(request, signingKey) {
       const reasonHash = await sha256(utf8(request.reason));
-      return signFields(
-        signingKey,
-        TAGS.requestSig,
-        requestFields({ ...request, kind: 'access', reasonHash })
-      );
+      return signFields(signingKey, TAGS.requestSig, requestFields({ ...request, reasonHash }));
     },
 
-    async approve(facts, trust, keys, callerSub) {
+    async approve(facts, trust, keys, callerSub, onProgress) {
       if (callerSub === facts.requesterSub) fail('self_approval');
       checkListed(trust, facts, keys, callerSub);
       await checkRequest(facts);
@@ -389,9 +421,13 @@ export function createWebRecoveryCrypto(): RecoveryCrypto {
       if (!equalBytes(requesterFingerprint, facts.confirmedFingerprint))
         fail('fingerprint_changed');
       const share = await openShare(facts, trust, keys, callerSub);
-      const partials = new Map<string, string>();
-      for (const key of facts.keys)
-        partials.set(key.keyId, await sealPartial(facts, requesterFingerprint, share, key));
+      const sealed = await inChunks(
+        facts.keys,
+        async (key) =>
+          [key.keyId, await sealPartial(facts, requesterFingerprint, share, key)] as const,
+        onProgress
+      );
+      const partials = new Map<string, string>(sealed);
       const hashes = await Promise.all(
         [...partials].map(async ([keyId, blob]) => ({ keyId, hash: await sha256(utf8(blob)) }))
       );
@@ -405,28 +441,25 @@ export function createWebRecoveryCrypto(): RecoveryCrypto {
       return { partials, signature: await signFields(keys.sigPrivate, TAGS.approvalSig, signed) };
     },
 
-    async combine(facts, trust, keys) {
-      const wraps = await servedWrapsSigned(facts, trust);
-      if (wraps === null) return { wraps: null, rejections: [], integrity: ['wrap_signature'] };
+    async combine(facts, trust, keys, onProgress) {
+      const { usable, unrecoverable } = await sortWraps(facts, trust);
       const checked = await Promise.all(
-        facts.approvals.map((a) => checkApproval(facts, wraps, trust, keys, a))
+        facts.approvals.map((a) => checkApproval(facts, usable, trust, keys, a))
       );
-      const valid = checked.flatMap((c) => (c !== null && 'valid' in c ? [c.valid] : []));
-      const rejections = checked.flatMap((c) =>
-        c !== null && 'rejection' in c ? [c.rejection] : []
-      );
-      const integrity = checked.flatMap((c) =>
-        c !== null && 'integrity' in c ? [c.integrity] : []
-      );
+      const { valid, rejections, integrity } = tally(checked);
       const chosen = uniqueHolders(valid).slice(0, trust.k);
-      if (chosen.length < trust.k) return { wraps: null, rejections, integrity };
-      const rewrapped = await Promise.all(
-        facts.wraps.map((w) => rewrap(facts, trust, keys, w, chosen))
+      if (chosen.length < trust.k) return { wraps: null, unrecoverable, rejections, integrity };
+      const rewrapped = await inChunks(
+        usable,
+        (w) => rewrap(facts, trust, keys, w, chosen),
+        onProgress
       );
-      const ready = rewrapped.filter((w): w is NewRecoveredWrap => w !== null);
-      if (ready.length < rewrapped.length)
-        return { wraps: null, rejections, integrity: [...integrity, 'wrap_damaged'] };
-      return { wraps: ready, rejections, integrity };
+      const wraps: NewRecoveredWrap[] = [];
+      rewrapped.forEach((wrap, i) => {
+        if (wrap === null) unrecoverable.push({ keyId: usable[i].keyId, stage: 'wrap_damaged' });
+        else wraps.push(wrap);
+      });
+      return { wraps, unrecoverable, rejections, integrity };
     },
   };
 }

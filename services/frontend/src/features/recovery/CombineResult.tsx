@@ -24,6 +24,11 @@ export function CombineResult({ outcome, decisions }: Readonly<CombineResultProp
       <p className={`text-note ${done ? 'text-fg-status' : 'text-fg-status-alert'}`}>
         {t(`admin.recovery.combine.${outcome.kind}`)}
       </p>
+      {outcome.kind === 'done' && outcome.unrecoverable > 0 && (
+        <p className="text-label text-fg-status-alert">
+          {t('admin.keyRecovery.unrecoverable', { count: outcome.unrecoverable })}
+        </p>
+      )}
       {outcome.kind === 'failed' && (
         <p className="text-label text-fg-status-alert">{t(faultKey(outcome.code))}</p>
       )}

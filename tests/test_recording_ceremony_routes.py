@@ -171,6 +171,7 @@ def test_a_whole_ceremony_over_http(http):
     assert state["ceremony"] is None
     assert (state["recovery_key"]["k"], state["recovery_key"]["n"]) == (2, 5)
     assert len(state["recovery_key"]["transcript_display"].split()) == 10
+    assert state["usable_shares"] == 0  # the fake's count: served as the store answers it
 
 
 def test_custodians_are_ordered_by_subject_not_by_request(http):

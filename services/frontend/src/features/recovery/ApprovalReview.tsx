@@ -7,6 +7,7 @@ import { formatDate, formatTimeRange } from '@/features/archive/format';
 import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { faultKey } from './faults';
 import { ReviewActions } from './ReviewActions';
+import { Chip } from './StatusChip';
 import { RECOVERY_APPROVALS_VIEW, useApprove } from './useRecovery';
 
 function Conversations({ detail }: Readonly<{ detail: ApprovalDetail }>) {
@@ -73,7 +74,8 @@ export function ApprovalReview({
 }: Readonly<ApprovalReviewProps>) {
   const { t, i18n } = useTranslation();
   const review = useApprove(detail, keys);
-  const stale = review.fault === 'step_up' || !hasFreshStepUp();
+  // Not while an approval computes: its progress re-renders must not offer a redirect.
+  const stale = review.fault === 'step_up' || (!review.pending && !hasFreshStepUp());
   const decide = async (work: Promise<boolean>) => {
     if (await work) onDecided();
   };
@@ -85,9 +87,12 @@ export function ApprovalReview({
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5 rounded-2xl border border-border-card bg-surface-card p-5">
-        <h2 className="text-thanks font-semibold text-fg-strong">
-          {detail.requesterName ?? detail.requesterSub}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-thanks font-semibold text-fg-strong">
+            {detail.requesterName ?? detail.requesterSub}
+          </h2>
+          <Chip label={t(`admin.recovery.kind.${detail.kind}`)} tone="muted" />
+        </div>
         <p className="whitespace-pre-wrap text-note text-fg-body">{detail.reason}</p>
         <p className="text-label text-fg-muted">
           {formatDate(detail.createdAt, i18n.language)} –{' '}
@@ -102,6 +107,11 @@ export function ApprovalReview({
           {review.fingerprint === null ? '…' : displayFingerprint(review.fingerprint)}
         </code>
         <p className="text-label text-fg-muted">{t('admin.recovery.approve.fingerprintHint')}</p>
+        {detail.kind === 'key_recovery' && (
+          <p className="text-label font-semibold text-fg-body">
+            {t('admin.recovery.approve.askFiled')}
+          </p>
+        )}
       </div>
       <Conversations detail={detail} />
       {stale && <StepUpPrompt returnTo={RECOVERY_APPROVALS_VIEW} />}
@@ -115,6 +125,14 @@ export function ApprovalReview({
           onDecline={(reason) => void decide(review.decline(reason))}
           onOpenKeys={onOpenKeys}
         />
+      )}
+      {review.pending && review.progress !== null && (
+        <p role="status" className="text-label text-fg-muted">
+          {t('admin.keyRecovery.progress', {
+            done: review.progress.done,
+            total: review.progress.total,
+          })}
+        </p>
       )}
     </section>
   );

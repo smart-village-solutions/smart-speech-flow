@@ -31,6 +31,8 @@ from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
 from .recovery_requests import RecoveryRequests
 from .recovery_requests_repository import PostgresRecoveryRequests
+from .reenrolment import ImmediateConfirmation, KeyReenrolment
+from .reenrolment_repository import PostgresKeyReenrolment
 from .retention.decisions_repository import PostgresRetentionDecisions
 from .retention.metrics import SITES as RETENTION_SITES
 from .secrets import MissingRecordingSecrets, RecordingSecrets
@@ -264,6 +266,11 @@ async def connect_recording(state: Any, dsn: str) -> bool:
     state.recording_keys = KeyEnrolmentService(
         repository=repository, server_layer=secrets.server_layer
     )
+    state.recording_reenrolment = KeyReenrolment(
+        store=PostgresKeyReenrolment(repository.pool),
+        server_layer=secrets.server_layer,
+        confirmation=ImmediateConfirmation(),
+    )
     state.recording_ceremony = CeremonyService(
         repository=repository, directory=_custodian_directory(state), secrets=secrets
     )
@@ -302,6 +309,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_keys = None
     dependencies.recording_ceremony = None
     dependencies.recording_recovery_requests = None
+    dependencies.recording_reenrolment = None
     dependencies.recording_retention = None
     dependencies.recording_secrets = None
     sessions = dependencies.recording_sessions

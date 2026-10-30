@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from services.api_gateway.recording.ceremony import CeremonyService, StartRequest
-from services.api_gateway.recording.ceremony_model import CeremonyError
+from services.api_gateway.recording.ceremony_model import CeremonyError, RecoveryKeyRecord
 from services.api_gateway.recording.crypto import ecies, tags
 from services.api_gateway.recording.crypto.curve import ORDER, decode_point, multiply
 from services.api_gateway.recording.crypto.signatures import verify_fields, wrap_fields
@@ -25,6 +25,20 @@ from tests.recording_ceremony_actors import (
     gateway_secrets,
 )
 from tests.recording_fakes import FakeCeremonyRepository, FakeCustodianDirectory
+
+_ACTIVE_KEY = RecoveryKeyRecord(
+    tenant_id="",
+    key_id="rk-1",
+    recovery_public_key=ref.public_point(31),
+    k=2,
+    n=3,
+    mode="enhanced",
+    transcript_hash=bytes(32),
+    canary_wrap="{}",
+    canary_signature=bytes(64),
+    canary_signer_key_id="gk",
+    activated_at=datetime(2026, 10, 30, tzinfo=timezone.utc),
+)
 
 START = datetime(2026, 10, 26, 9, 0, tzinfo=timezone.utc)
 CUSTODIANS = (ANNA, BERND, CARLA)
@@ -407,3 +421,14 @@ async def test_candidates_list_custodians_with_their_enrolment(world):
         ("anna", True),
         ("zoe", False),
     ]
+
+
+@pytest.mark.asyncio
+async def test_an_active_key_comes_with_its_usable_share_count(world):
+    service, repository, _, _ = world
+    repository.recovery_key = replace(_ACTIVE_KEY, tenant_id=TENANT)
+    repository.usable = 2
+
+    state = await service.state(TENANT)
+
+    assert state.usable_shares == 2

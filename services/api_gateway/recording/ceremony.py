@@ -54,6 +54,8 @@ CANARY_CONVERSATION = "canary"
 class CeremonyStore(Protocol):
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None: ...
 
+    async def usable_shares(self, tenant_id: str) -> int | None: ...
+
     async def user_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, UserKeyRecord]: ...
 
     async def gateway_keys(self) -> tuple[tuple[str, bytes], ...]: ...
@@ -127,6 +129,8 @@ class CeremonyState:
     recovery_key: RecoveryKeyRecord | None
     ceremony: CeremonySnapshot | None
     last_failed: FailedCeremony | None = None
+    # Custodian shares the holders can still open; below k the tenant cannot recover (§9.6).
+    usable_shares: int | None = None
 
 
 def _now() -> datetime:
@@ -172,8 +176,11 @@ class CeremonyService:
         now = self._clock()
         key = await self._repository.active_recovery_key(tenant_id)
         ceremony = await self._repository.open_ceremony(tenant_id, now)
-        if key is not None or ceremony is not None:
-            return CeremonyState(key, ceremony)
+        if key is not None:
+            usable = await self._repository.usable_shares(tenant_id)
+            return CeremonyState(key, ceremony, usable_shares=usable)
+        if ceremony is not None:
+            return CeremonyState(None, ceremony)
         return CeremonyState(
             None, None, await self._repository.last_failed_ceremony(tenant_id, now)
         )

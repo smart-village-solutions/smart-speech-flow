@@ -17,8 +17,10 @@ import { CeremonyScreen } from '@/features/ceremony/CeremonyScreen';
 import { CEREMONY_VIEW, CUSTODIAN, TENANT_MANAGE } from '@/features/ceremony/useCeremony';
 import { KeysScreen } from '@/features/keys/KeysScreen';
 import { KEYS_VIEW } from '@/features/keys/useKeys';
+import { KeyRecoveryScreen } from '@/features/recovery/KeyRecoveryScreen';
 import { RecoveryApprovalsScreen } from '@/features/recovery/RecoveryApprovalsScreen';
 import { RecoveryRequestsScreen } from '@/features/recovery/RecoveryRequestsScreen';
+import { KEY_RECOVERY_VIEW } from '@/features/recovery/useKeyRecovery';
 import {
   RECOVERY_APPROVALS_VIEW,
   RECOVERY_REQUESTS_VIEW,
@@ -94,6 +96,7 @@ interface StaffScreensProps {
 const STAFF_SCREENS = {
   [CEREMONY_VIEW]: CeremonyScreen,
   [ARCHIVE_VIEW]: ArchiveScreen,
+  [KEY_RECOVERY_VIEW]: KeyRecoveryScreen,
   [RECOVERY_REQUESTS_VIEW]: RecoveryRequestsScreen,
   [RECOVERY_APPROVALS_VIEW]: RecoveryApprovalsScreen,
 } as const;
@@ -111,6 +114,7 @@ function resumedView(remembered: string | null): StaffView {
 const OFFERED: Record<keyof typeof STAFF_SCREENS, () => boolean> = {
   [CEREMONY_VIEW]: () => hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN),
   [ARCHIVE_VIEW]: () => ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission)),
+  [KEY_RECOVERY_VIEW]: () => ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission)),
   [RECOVERY_REQUESTS_VIEW]: () => hasPermission(SUPERVISE),
   [RECOVERY_APPROVALS_VIEW]: () => hasPermission(CUSTODIAN),
 };
@@ -135,7 +139,12 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
     setKeysReturn(from);
     setView(KEYS_VIEW);
   };
-  const shared = { onSignOut: out, accountUrl, studioUrl };
+  const shared = {
+    onSignOut: out,
+    accountUrl,
+    studioUrl,
+    onOpenKeyRecovery: opener(KEY_RECOVERY_VIEW, setView),
+  };
 
   if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView(keysReturn)} {...shared} />;
   if (view !== 'dashboard') {

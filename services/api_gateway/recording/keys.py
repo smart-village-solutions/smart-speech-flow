@@ -64,6 +64,8 @@ class OwnKey:
     fingerprint: bytes
     blob: str
     created_at: datetime
+    # What a re-enrolment names as the key it replaces (§9.6).
+    key_version: int = 1
 
 
 def _is_count(value: Any, minimum: int, maximum: int | None = None) -> bool:
@@ -129,6 +131,35 @@ def _validate_points(enrolment: Enrolment) -> None:
         raise InvalidEnrolment("the two key pairs must differ")
 
 
+def validate_enrolment(enrolment: Enrolment) -> None:
+    """InvalidEnrolment unless two distinct P-256 keys and a well-formed sealed blob."""
+    _validate_points(enrolment)
+    validate_blob(enrolment.blob)
+
+
+def sealed_record(
+    server_layer: ServerLayer,
+    tenant_id: str,
+    user_sub: str,
+    enrolment: Enrolment,
+    *,
+    version: int,
+    now: datetime,
+) -> UserKeyRecord:
+    return UserKeyRecord(
+        tenant_id=tenant_id,
+        user_sub=user_sub,
+        key_version=version,
+        enc_pub=enrolment.enc_pub,
+        sig_pub=enrolment.sig_pub,
+        fingerprint=fingerprint(tenant_id, user_sub, enrolment.enc_pub, enrolment.sig_pub),
+        encrypted_private=server_layer.seal(
+            enrolment.blob.encode("utf-8"), tenant_id=tenant_id, user_sub=user_sub
+        ),
+        created_at=now,
+    )
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -147,20 +178,10 @@ class KeyEnrolmentService:
 
     async def enrol(self, tenant_id: str, user_sub: str, enrolment: Enrolment) -> bytes:
         """Returns the key fingerprint. KeyAlreadyEnrolledError if a key is active."""
-        _validate_points(enrolment)
-        validate_blob(enrolment.blob)
+        validate_enrolment(enrolment)
         now = self._clock()
-        record = UserKeyRecord(
-            tenant_id=tenant_id,
-            user_sub=user_sub,
-            key_version=1,
-            enc_pub=enrolment.enc_pub,
-            sig_pub=enrolment.sig_pub,
-            fingerprint=fingerprint(tenant_id, user_sub, enrolment.enc_pub, enrolment.sig_pub),
-            encrypted_private=self._server_layer.seal(
-                enrolment.blob.encode("utf-8"), tenant_id=tenant_id, user_sub=user_sub
-            ),
-            created_at=now,
+        record = sealed_record(
+            self._server_layer, tenant_id, user_sub, enrolment, version=1, now=now
         )
         audit = AuditEvent(tenant_id, user_sub, "key_enrolled", "user-key:1", now)
         await self._repository.enrol_user_key(record, audit)
@@ -187,4 +208,11 @@ class KeyEnrolmentService:
                 self._clock(),
             )
         )
-        return OwnKey(record.enc_pub, record.sig_pub, record.fingerprint, blob, record.created_at)
+        return OwnKey(
+            record.enc_pub,
+            record.sig_pub,
+            record.fingerprint,
+            blob,
+            record.created_at,
+            record.key_version,
+        )

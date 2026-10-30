@@ -49,7 +49,12 @@ const recoveryKey = z.object({
 });
 
 const failed = z.object({ ceremony_id: z.string(), reason: z.string(), ended_at: z.string() });
-const state = z.object({ recovery_key: recoveryKey.nullable(), ceremony: z.unknown(), last_failed: failed.nullish() });
+const state = z.object({
+  recovery_key: recoveryKey.nullable(),
+  ceremony: z.unknown(),
+  last_failed: failed.nullish(),
+  usable_shares: z.number().int().min(0).nullish(),
+});
 
 const candidates = z.object({
   candidates: z.array(z.object({ sub: z.string(), display_name: z.string(), fingerprint_display: z.string().nullable() })),
@@ -102,6 +107,7 @@ export function toCeremonyState(body: unknown): CeremonyState {
             mode: key.mode,
             transcriptDisplay: key.transcript_display,
             activatedAt: key.activated_at,
+            usableShares: parsed.usable_shares ?? null,
           },
     ceremony: parsed.ceremony == null ? null : toCeremony(parsed.ceremony),
     lastFailed:

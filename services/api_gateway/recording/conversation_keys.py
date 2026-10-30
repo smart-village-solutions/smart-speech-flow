@@ -48,6 +48,8 @@ class KeyWrap:
     blob: str
     creator_ref: str
     creator_signature: bytes
+    # The user key the wrap is sealed to; checked again when the wrap is stored (§9.6).
+    recipient_fingerprint: bytes | None = None
 
 
 def new_conversation_key(epoch: int) -> ConversationKey:
@@ -83,6 +85,7 @@ def wrap_key(
         blob=sealed.to_json(),
         creator_ref=signer_key_id,
         creator_signature=sign_fields(signing_key, tags.WRAP_SIG, *signed),
+        recipient_fingerprint=recipient.fingerprint if recipient.kind == "user" else None,
     )
 
 

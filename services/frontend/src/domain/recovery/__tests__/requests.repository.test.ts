@@ -44,12 +44,14 @@ describe('recovery requests repository', () => {
     );
     const scope = await repository().file({
       requestId: ID,
+      kind: 'key_recovery',
       reason: 'why',
       conversationIds: [ID],
       signature: new Uint8Array(64),
     });
     expect(sent).toEqual({
       request_id: ID,
+      kind: 'key_recovery',
       reason: 'why',
       conversation_ids: [ID],
       signature: 'A'.repeat(86),
@@ -115,5 +117,31 @@ describe('recovery requests repository', () => {
       '2026-10-01T00:00:00Z',
       '2026-10-31T00:00:00Z',
     ]);
+  });
+
+  it('reads the own batch, lists by kind and names an unrecoverable key', async () => {
+    let listed = '';
+    let reported: unknown;
+    server.use(
+      http.get(`${URL}/own/candidates`, () =>
+        HttpResponse.json({ conversations: [], remaining: { conversations: 2, keys: 4 } })
+      ),
+      http.get(`${URL}/requests`, ({ request }) => {
+        listed = new globalThis.URL(request.url).search;
+        return HttpResponse.json({ requests: [] });
+      }),
+      http.post(`${URL}/requests/${ID}/integrity-failures`, async ({ request }) => {
+        reported = await request.json();
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.get(`${URL}/approvals`, () => HttpResponse.json({ requests: [], share_stale: true }))
+    );
+    const repo = repository();
+    expect((await repo.ownCandidates()).remaining).toEqual({ conversations: 2, keys: 4 });
+    await repo.requests('key_recovery');
+    await repo.reportIntegrity(ID, 'wrap_damaged', KEY);
+    expect(new URLSearchParams(listed).get('kind')).toBe('key_recovery');
+    expect(reported).toEqual({ stage: 'wrap_damaged', key_id: KEY });
+    expect((await repo.approvals()).shareStale).toBe(true);
   });
 });

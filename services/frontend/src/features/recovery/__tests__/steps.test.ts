@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { hasAcceptedStepUp } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { CeremonyCheckError } from '@/core/crypto/ceremony-crypto.port';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -11,6 +12,8 @@ import {
   faultOf,
   fileOnce,
 } from '@/features/recovery/steps';
+
+vi.mock('@/app/auth/keycloak', () => ({ hasAcceptedStepUp: vi.fn() }));
 
 const identity = { tenantId: 'tenant-kassel', userSub: 'sam' };
 const keys = { sigPrivate: {} as CryptoKey } as UnlockedKeys;
@@ -34,7 +37,9 @@ function deps(overrides: Partial<Record<string, unknown>> = {}) {
   };
   const recoveryCrypto = {
     signRequest: vi.fn().mockResolvedValue(new Uint8Array(64)),
-    combine: vi.fn().mockResolvedValue({ wraps: [], rejections: [], integrity: [] }),
+    combine: vi
+      .fn()
+      .mockResolvedValue({ wraps: [], unrecoverable: [], rejections: [], integrity: [] }),
     approve: vi.fn().mockResolvedValue({
       partials: new Map([['k1', '{p}']]),
       signature: new Uint8Array(64).fill(7),
@@ -71,6 +76,7 @@ describe('filing', () => {
   it('signs every key of every ticked conversation under the certified recovery key, then files that request', async () => {
     const d = deps();
     await fileOnce(d, identity, keys, {
+      kind: 'key_recovery',
       reason: 'why',
       candidates: [candidate(C1, ['k1', 'k2']), candidate(C2, ['k3'])],
     });
@@ -82,9 +88,11 @@ describe('filing', () => {
       { conversationId: C2, keyId: 'k3' },
     ]);
     expect(signed.recoveryKeyId).toBe('rk-1');
+    expect(signed.kind).toBe('key_recovery');
     const [filed] = d.recoveryRequests.file.mock.calls[0];
     expect(filed.requestId).toBe(signed.requestId);
     expect(filed.conversationIds).toEqual([C1, C2]);
+    expect(filed.kind).toBe('key_recovery');
     expect(d.ceremonyCrypto.certifyTrust).toHaveBeenCalled();
   });
 });
@@ -92,7 +100,7 @@ describe('filing', () => {
 describe('combining', () => {
   it('stores the wraps once k approvals combine', async () => {
     const d = deps();
-    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done' });
+    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done', unrecoverable: 0 });
     expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', []);
   });
 
@@ -101,6 +109,7 @@ describe('combining', () => {
     const rejection = { holderIndex: 2, attempt: 1, fault: 'proof_invalid' };
     d.recoveryCrypto.combine.mockResolvedValue({
       wraps: null,
+      unrecoverable: [],
       rejections: [rejection],
       integrity: [],
     });
@@ -110,20 +119,41 @@ describe('combining', () => {
     expect(d.recoveryRequests.storeWraps).not.toHaveBeenCalled();
   });
 
-  it('a damaged recovery wrap stores nothing and is reported', async () => {
+  const wrapA = { conversationId: C1, keyId: 'k1', blob: '{}', signature: new Uint8Array(64) };
+
+  it('reports each unrecoverable key, then stores the others', async () => {
     const d = deps();
     d.recoveryCrypto.combine.mockResolvedValue({
-      wraps: [],
+      wraps: [wrapA],
+      unrecoverable: [{ keyId: 'k2', stage: 'wrap_damaged' }],
       rejections: [],
-      integrity: ['wrap_damaged'],
+      integrity: [],
     });
 
-    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({
-      kind: 'damaged',
-      stages: ['wrap_damaged'],
+    expect(await combineOnce(d, identity, keys, 'r1')).toEqual({ kind: 'done', unrecoverable: 1 });
+    expect(d.recoveryRequests.reportIntegrity).toHaveBeenCalledWith('r1', 'wrap_damaged', 'k2');
+    expect(d.recoveryRequests.storeWraps).toHaveBeenCalledWith('r1', [wrapA]);
+  });
+
+  it('stores nothing while an unrecoverable key was not accepted by the gateway', async () => {
+    const d = deps();
+    d.recoveryCrypto.combine.mockResolvedValue({
+      wraps: [wrapA],
+      unrecoverable: [{ keyId: 'k2', stage: 'wrap_signature' }],
+      rejections: [],
+      integrity: [],
     });
-    expect(d.recoveryRequests.reportIntegrity).toHaveBeenCalledWith('r1', 'wrap_damaged');
+    d.recoveryRequests.reportIntegrity.mockRejectedValue(new Error('down'));
+
+    await expect(combineOnce(d, identity, keys, 'r1')).rejects.toThrow('down');
     expect(d.recoveryRequests.storeWraps).not.toHaveBeenCalled();
+  });
+
+  it('hands its progress callback to the crypto', async () => {
+    const d = deps();
+    const onProgress = vi.fn();
+    await combineOnce(d, identity, keys, 'r1', onProgress);
+    expect(d.recoveryCrypto.combine.mock.calls[0][3]).toBe(onProgress);
   });
 
   it('a transcript that does not certify is reported and nothing is fetched', async () => {
@@ -140,8 +170,13 @@ describe('combining', () => {
 });
 
 describe('approving', () => {
+  beforeEach(() => {
+    vi.mocked(hasAcceptedStepUp).mockReset().mockReturnValue(true);
+  });
+
   const detail = {
     requestId: 'r1',
+    kind: 'key_recovery',
     recoveryKeyId: 'rk-1',
     requesterSub: 'sam',
     requesterEncPub: new Uint8Array(65),
@@ -162,6 +197,7 @@ describe('approving', () => {
     const [facts, , , caller] = d.recoveryCrypto.approve.mock.calls[0];
     expect(caller).toBe('carol');
     expect(facts.confirmedFingerprint).toBe(confirmed);
+    expect(facts.kind).toBe('key_recovery');
     expect(d.recoveryRequests.approve).toHaveBeenCalledWith(
       'r1',
       new Map([['k1', '{p}']]),
@@ -178,8 +214,19 @@ describe('approving', () => {
     expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
   });
 
+  it('posts nothing once the computation outlasted the step-up', async () => {
+    const d = deps();
+    vi.mocked(hasAcceptedStepUp).mockReturnValue(false);
+    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toMatchObject({
+      fault: 'step_up',
+    });
+    expect(d.recoveryCrypto.approve).toHaveBeenCalled();
+    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
+  });
+
   it('names each kind of failure for the screen', () => {
     expect(faultOf(new RecoveryCheckError('self_approval'))).toBe('self_approval');
+    expect(faultOf(new RecoveryCheckError('step_up'))).toBe('step_up');
     expect(faultOf(new CeremonyCheckError('signature_invalid'))).toBe('trust');
     expect(faultOf(new RecoveryRefusedError('ALREADY_DECIDED'))).toBe('refused.ALREADY_DECIDED');
     expect(faultOf(new RecoveryRefusedError('STEP_UP_REQUIRED'))).toBe('step_up');

@@ -157,7 +157,8 @@
       "ceremony": "Recovery key",
       "archive": "My recordings",
       "recoveryRequests": "Recovery requests",
-      "recoveryApprovals": "Recovery approvals"
+      "recoveryApprovals": "Recovery approvals",
+      "keyRecovery": "My key recovery"
     },
     "dashboard": {
       "welcome": {
@@ -249,7 +250,23 @@
       "unlockedTitle": "Your keys are unlocked",
       "fingerprintHint": "Compare this fingerprint by phone or in person when someone asks you to confirm your key.",
       "lockAction": "Lock",
-      "unavailable": "Archive keys are not available right now."
+      "unavailable": "Archive keys are not available right now.",
+      "reenrol": {
+        "start": "Forgot your passphrase? Set up a new key",
+        "warningTitle": "Before you set up a new key",
+        "warningLocked": "Your conversations stay locked until key recovery completes.",
+        "warningRecovered": "Access you recovered as a supervisor, and grants, need new requests.",
+        "warningRequests": "Your open requests are cancelled.",
+        "warningCustodian": "Your custodian share cannot be used until the next resharing. {{usable}} of the {{k}} shares needed stay usable.",
+        "continue": "Continue",
+        "cancel": "Cancel",
+        "submit": "Set up a new key",
+        "pending": "Please open the confirmation link we emailed you. Your previous key stays in use until then.",
+        "done": "Your new key is active.",
+        "changed": "Your key has been replaced in the meantime. Please reload the page.",
+        "ceremony": "Not possible while a key ceremony you take part in is running.",
+        "failed": "The new key could not be set up."
+      }
     },
     "ceremony": {
       "title": "Recovery key",
@@ -311,7 +328,8 @@
       "abortTitle": "Abort the ceremony?",
       "abortBody": "Every contribution so far is lost. The ceremony must then be started again from the beginning.",
       "abortFailed": "The ceremony could not be aborted. Please try again.",
-      "keepGoing": "Keep going"
+      "keepGoing": "Keep going",
+      "usableShares": "{{usable}} of {{k}} needed shares usable"
     },
     "recording": {
       "off": "Not recording",
@@ -549,7 +567,8 @@
         "fingerprintHint": "Read it out to the requester by phone or in person and compare every group.",
         "confirmed": "I confirmed this fingerprint with the requester by phone or in person.",
         "action": "Approve",
-        "approving": "Checking and approving…"
+        "approving": "Checking and approving…",
+        "askFiled": "Also ask whether they filed this request themselves. If not, decline it."
       },
       "decline": {
         "action": "Decline",
@@ -580,9 +599,33 @@
         "REQUEST_CLOSED": "This request is closed.",
         "NOT_ENOUGH_APPROVALS": "Not enough custodians have approved yet.",
         "SCOPE_NOT_COVERED": "Not every conversation of the request was covered. Try again.",
-        "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer."
+        "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer.",
+        "SHARE_STALE": "Your share belongs to an earlier key and opens nothing any more. It comes back with the next resharing.",
+        "KEY_CHANGED": "Your key has been replaced in the meantime. Please reload the page.",
+        "PERMISSION_REQUIRED": "You no longer hold the permission this needs."
       },
-      "retry": "Try again"
+      "retry": "Try again",
+      "kind": {
+        "access": "Access",
+        "key_recovery": "Key recovery"
+      }
+    },
+    "keyRecovery": {
+      "title": "My key recovery",
+      "intro": "Custodians recover the conversations your current key cannot open. Nobody but you sees any content.",
+      "batch": "Conversations in this request: {{count}}",
+      "remaining": "{{conversations}} conversations remain for another request after this one.",
+      "fingerprint": "Your key fingerprint",
+      "fingerprintHint": "The custodians ask you for this value by phone or in person. Only give it if you filed this request yourself.",
+      "reason": "Reason",
+      "file": "Sign and request",
+      "next": "File the next request",
+      "progress": "{{done}} of {{total}}",
+      "unrecoverable": "Keys that could not be recovered: {{count}}",
+      "none": "Your key opens all your conversations.",
+      "stepUpBody": "Requesting needs a fresh sign-in with your second factor.",
+      "open": "Recover access",
+      "banner": "Conversations your key can't open: {{count}}"
     }
   }
 }

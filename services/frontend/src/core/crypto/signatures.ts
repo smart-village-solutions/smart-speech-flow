@@ -86,10 +86,13 @@ export interface ScopePair {
   keyId: string;
 }
 
+/** An access request is a supervisor's; a key recovery is an employee's own (spec §9.6). */
+export type RequestKind = 'access' | 'key_recovery';
+
 export interface RequestSignatureFields {
   tenantId: string;
   requestId: string;
-  kind: 'access';
+  kind: RequestKind;
   recoveryKeyId: string;
   requesterSub: string;
   reasonHash: Bytes;

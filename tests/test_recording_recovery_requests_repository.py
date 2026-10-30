@@ -16,6 +16,7 @@ import pytest
 
 from services.api_gateway.recording.recovery_requests_model import (
     Approval,
+    Candidate,
     NewRequest,
     NewWrap,
     Refused,
@@ -23,6 +24,7 @@ from services.api_gateway.recording.recovery_requests_model import (
 )
 from services.api_gateway.recording.recovery_requests_repository import (
     PostgresRecoveryRequests,
+    batched,
 )
 from services.api_gateway.recording.recovery_requests_sql import signed_partials
 from services.api_gateway.recording.repository import RecordingStorageUnavailable
@@ -63,16 +65,24 @@ def _row(status="open", requester="sam", expires=NOW + timedelta(days=7)) -> dic
     }
 
 
-HOLDER_ROW = {"holder_index": 1, "encrypted_share": "{}", "sig_pub": b"\x04" + bytes(64)}
+HOLDER_ROW = {
+    "holder_index": 1,
+    "encrypted_share": "{}",
+    "sig_pub": b"\x04" + bytes(64),
+    "fresh": True,
+}
 
 
 class Scripted(ScriptedConnection):
-    async def executemany(self, query, rows):
-        return self._answer(query)
+    pass
+
+
+# The requester's active key, version 1, unless a test scripts another answer.
+REQUESTER_KEY = "retired_at IS NULL FOR SHARE"
 
 
 def repository(answers: dict[str, object]):
-    connection = Scripted(answers)
+    connection = Scripted({REQUESTER_KEY: 1, **answers})
     return PostgresRecoveryRequests(ScriptedPool(connection)), connection
 
 
@@ -81,7 +91,9 @@ def audited(connection: ScriptedConnection) -> list[str]:
 
 
 def _new_request(conversations=(CONVERSATION,)) -> NewRequest:
-    return NewRequest(TENANT, REQUEST, "sam", 1, RECOVERY, "why", conversations, bytes(64), NOW)
+    return NewRequest(
+        TENANT, REQUEST, "access", "sam", 1, RECOVERY, "why", conversations, bytes(64), NOW
+    )
 
 
 def _check(recoverable=True, accessible=False, requested=False) -> dict:
@@ -180,7 +192,9 @@ async def test_lists_report_a_lapsed_open_request_as_expired():
 
 async def test_an_unknown_request_is_not_found_and_audited():
     requests, connection = repository({})
-    assert await requests.progress(TENANT, "sam", REQUEST, NOW) == Refused("not_found")
+    assert await requests.progress(TENANT, "sam", REQUEST, NOW, may_supervise=True) == Refused(
+        "not_found"
+    )
     assert len(audited(connection)) == 1
 
 
@@ -188,14 +202,14 @@ async def test_a_lapsed_request_closes_as_expired_under_the_system_actor():
     requests, connection = repository(
         {LOCK: _row(expires=NOW), K: 1, "FROM recovery_decisions d WHERE": []}
     )
-    progress = await requests.progress(TENANT, "sam", REQUEST, NOW)
+    progress = await requests.progress(TENANT, "sam", REQUEST, NOW, may_supervise=True)
     assert progress.request.status == "expired"
     assert any("DELETE FROM recovery_partials" in call for call in connection.calls)
 
 
 async def test_a_request_without_remaining_scope_closes_as_scope_gone():
     requests, _ = repository({LOCK: _row(), REMAINING: [], K: 1})
-    progress = await requests.progress(TENANT, "sam", REQUEST, NOW)
+    progress = await requests.progress(TENANT, "sam", REQUEST, NOW, may_supervise=True)
     assert (progress.request.status, progress.remaining) == ("scope_gone", ())
 
 
@@ -293,9 +307,13 @@ async def test_a_decline_is_recorded():
 
 async def test_partials_need_an_open_request_and_k_valid_approvals():
     closed, _ = repository({LOCK: _row(status="completed")})
-    assert await closed.partials(TENANT, "sam", REQUEST, NOW) == Refused("closed")
+    assert await closed.partials(TENANT, "sam", REQUEST, NOW, may_supervise=True) == Refused(
+        "closed"
+    )
     short, _ = repository({LOCK: _row(), REMAINING: SCOPE, K: 2, VALID: [{"holder_index": 1}]})
-    assert await short.partials(TENANT, "sam", REQUEST, NOW) == Refused("not_enough_approvals")
+    assert await short.partials(TENANT, "sam", REQUEST, NOW, may_supervise=True) == Refused(
+        "not_enough_approvals"
+    )
 
 
 async def test_partials_are_served_grouped_by_decision():
@@ -325,7 +343,7 @@ async def test_partials_are_served_grouped_by_decision():
             ],
         }
     )
-    served = await requests.partials(TENANT, "sam", REQUEST, NOW)
+    served = await requests.partials(TENANT, "sam", REQUEST, NOW, may_supervise=True)
     assert served.approvals[0].blobs == {KEY: "{p}"}
     assert served.approvals[0].signed_partials == ((KEY, b"\x00"),)
     assert served.wraps[0].key_id == KEY
@@ -342,27 +360,37 @@ async def test_partials_are_served_grouped_by_decision():
 )
 async def test_a_rejection_needs_an_open_request_and_an_approval(answers, refused):
     requests, _ = repository(answers)
-    assert await requests.reject(TENANT, "sam", REQUEST, (1, 1), "proof_invalid", NOW) == refused
+    assert (
+        await requests.reject(
+            TENANT, "sam", REQUEST, (1, 1), "proof_invalid", NOW, may_supervise=True
+        )
+        == refused
+    )
 
 
 async def test_an_integrity_report_is_the_requesters_alone_while_open():
     mine, connection = repository({LOCK: _row(), REMAINING: SCOPE})
-    assert await mine.record_integrity_failure(TENANT, "sam", REQUEST, "trust", NOW) is None
+    assert (
+        await mine.record_integrity_failure(
+            TENANT, "sam", REQUEST, "trust", NOW, may_supervise=True
+        )
+        is None
+    )
     assert len(audited(connection)) == 1
     theirs, _ = repository({LOCK: _row(), REMAINING: SCOPE})
-    assert await theirs.record_integrity_failure(TENANT, "carol", REQUEST, "trust", NOW) == Refused(
-        "not_found"
-    )
+    assert await theirs.record_integrity_failure(
+        TENANT, "carol", REQUEST, "trust", NOW, may_supervise=True
+    ) == Refused("not_found")
     closed, _ = repository({LOCK: _row(status="completed")})
-    assert await closed.record_integrity_failure(TENANT, "sam", REQUEST, "trust", NOW) == Refused(
-        "closed"
-    )
+    assert await closed.record_integrity_failure(
+        TENANT, "sam", REQUEST, "trust", NOW, may_supervise=True
+    ) == Refused("closed")
 
 
 async def test_filing_closes_the_requesters_lapsed_requests_first():
     requests, connection = repository(
         {
-            "expires_at <= $2 FOR UPDATE": [{"request_id": uuid.UUID(REQUEST)}],
+            "expires_at <= $2 ORDER BY request_id FOR UPDATE": [{"request_id": uuid.UUID(REQUEST)}],
             "AS requested": [_check()],
             "FROM conversation_keys": SCOPE,
         }
@@ -383,7 +411,9 @@ async def test_a_wrap_already_held_is_not_audited_again():
             "RETURNING key_id": None,
         }
     )
-    await requests.store_wraps(TENANT, "sam", REQUEST, [_wrap()], 1, _always, NOW)
+    await requests.store_wraps(
+        TENANT, "sam", REQUEST, [_wrap()], 1, _always, NOW, may_supervise=True
+    )
     # Only the completion is audited, not a wrap that was not inserted.
     assert len(audited(connection)) == 1
 
@@ -411,7 +441,7 @@ def _wrap(key_id=KEY, conversation_id=CONVERSATION) -> NewWrap:
     ("answers", "wraps", "version", "refused"),
     [
         ({LOCK: _row(status="expired")}, [_wrap()], 1, "closed"),
-        ({LOCK: _row(), REMAINING: SCOPE}, [_wrap()], 2, "signature_invalid"),
+        ({LOCK: _row(), REMAINING: SCOPE}, [_wrap()], 2, "key_changed"),
         (
             {LOCK: _row(), REMAINING: SCOPE, K: 2, VALID: [{"holder_index": 1}]},
             [_wrap()],
@@ -435,7 +465,7 @@ def _wrap(key_id=KEY, conversation_id=CONVERSATION) -> NewWrap:
 async def test_wraps_are_refused_whole(answers, wraps, version, refused):
     requests, connection = repository(answers)
     assert await requests.store_wraps(
-        TENANT, "sam", REQUEST, wraps, version, _always, NOW
+        TENANT, "sam", REQUEST, wraps, version, _always, NOW, may_supervise=True
     ) == Refused(refused)
     assert not any("INSERT INTO key_wraps" in call for call in connection.calls)
 
@@ -445,7 +475,7 @@ async def test_storing_wraps_completes_and_lists_the_dropped_keys():
         {LOCK: _row(), REMAINING: SCOPE, K: 1, VALID: [{"holder_index": 1}]}
     )
     dropped = await requests.store_wraps(
-        TENANT, "sam", REQUEST, [_wrap(), _wrap(key_id="gone")], 1, _always, NOW
+        TENANT, "sam", REQUEST, [_wrap(), _wrap(key_id="gone")], 1, _always, NOW, may_supervise=True
     )
     assert dropped == ("gone",)
     assert any("SET status = $2" in call for call in connection.calls)
@@ -468,7 +498,7 @@ async def test_spent_requests_go_with_their_history_and_an_audit_event():
     connection = Scripted({"SELECT r.request_id": [{"request_id": uuid.UUID(REQUEST)}]})
     await _forget_spent_requests(connection, TENANT, NOW)
     deletes = [call for call in connection.calls if call.startswith("DELETE FROM recovery_")]
-    assert len(deletes) == 4
+    assert len(deletes) == 5
     assert len(audited(connection)) == 1
 
 
@@ -479,3 +509,170 @@ async def test_a_scope_larger_than_one_approval_can_carry_is_refused():
     requests, connection = repository({"AS requested": [_check()], "FROM conversation_keys": keys})
     assert await requests.file(_new_request(), _always) == Refused("scope_too_large")
     assert not any("INSERT INTO recovery_requests" in call for call in connection.calls)
+
+
+def _candidate(keys: int, cid: str | None = None) -> Candidate:
+    return Candidate(
+        cid or str(uuid.uuid4()), NOW, NOW, NOW, False, False, tuple(str(i) for i in range(keys))
+    )
+
+
+def test_a_batch_takes_whole_conversations_and_stops_at_the_first_that_does_not_fit():
+    big, small, later = _candidate(1500), _candidate(600), _candidate(10)
+    too_large = _candidate(2001)
+
+    batch, conversations, keys = batched([big, small, later, too_large])
+
+    assert batch == [big]
+    assert (conversations, keys) == (2, 610)
+
+
+def test_a_batch_may_fill_to_the_limit_exactly():
+    batch, conversations, _ = batched([_candidate(1999), _candidate(1)])
+    assert len(batch) == 2 and conversations == 0
+
+
+async def test_own_candidates_read_the_callers_conversations():
+    row = {
+        "conversation_id": uuid.UUID(CONVERSATION),
+        "started_at": NOW,
+        "ended_at": NOW,
+        "retention_until": NOW,
+        "legal_hold": False,
+        "incomplete": False,
+        "key_ids": [KEY],
+    }
+    requests, _ = repository({"AS key_ids": [row]})
+    batch, conversations, keys = await requests.own_candidates(TENANT, "alice", RECOVERY, NOW)
+    assert [c.conversation_id for c in batch] == [CONVERSATION]
+    assert (conversations, keys) == (0, 0)
+
+
+async def test_filing_under_another_key_version_writes_nothing():
+    requests, connection = repository({REQUESTER_KEY: 2})
+    assert await requests.file(_new_request(), _always) == Refused("key_changed")
+    assert not any("pg_advisory_xact_lock" in call for call in connection.calls)
+
+
+async def test_more_access_conversations_than_allowed_are_refused_before_any_check():
+    conversations = tuple(str(uuid.uuid4()) for _ in range(51))
+    requests, connection = repository({})
+    assert await requests.file(_new_request(conversations), _always) == Refused("scope_too_large")
+    assert not any("AS requested" in call for call in connection.calls)
+
+
+def _key_recovery(conversations=(CONVERSATION,)) -> NewRequest:
+    return NewRequest(
+        TENANT, REQUEST, "key_recovery", "alice", 1, RECOVERY, "why", conversations, bytes(64), NOW
+    )
+
+
+async def test_a_key_recovery_of_someone_elses_conversation_is_not_found_and_audited():
+    check = {**_check(), "employee_sub": "bob"}
+    requests, connection = repository({"AS requested": [check]})
+    assert await requests.file(_key_recovery(), _always) == Refused("not_found")
+    assert len(audited(connection)) == 1
+
+
+async def test_a_key_recovery_of_her_own_conversation_files():
+    check = {**_check(), "employee_sub": "alice"}
+    requests, connection = repository({"AS requested": [check], "FROM conversation_keys": SCOPE})
+    assert await requests.file(_key_recovery(), _always) == (ScopeKey(CONVERSATION, KEY),)
+    assert any("INSERT INTO recovery_requests" in call for call in connection.calls)
+
+
+async def test_a_second_open_key_recovery_is_refused_before_any_check():
+    requests, connection = repository({"kind = 'key_recovery'": True})
+    assert await requests.file(_key_recovery(), _always) == Refused("request_exists")
+    assert not any("AS requested" in call for call in connection.calls)
+
+
+async def test_an_access_request_without_supervise_is_forbidden_and_writes_nothing():
+    requests, connection = repository({LOCK: _row(), REMAINING: SCOPE})
+    refused = await requests.progress(TENANT, "sam", REQUEST, NOW, may_supervise=False)
+    assert refused == Refused("forbidden")
+    assert audited(connection) == []
+
+
+async def test_partials_under_a_changed_key_are_refused():
+    requests, _ = repository({REQUESTER_KEY: 2, LOCK: _row(), REMAINING: SCOPE})
+    refused = await requests.partials(TENANT, "sam", REQUEST, NOW, may_supervise=True)
+    assert refused == Refused("key_changed")
+
+
+async def test_own_requests_may_be_narrowed_to_a_kind():
+    requests, connection = repository({"r.requester_sub = $1": [{**_row(), "conversations": 1}]})
+    [(row, count)] = await requests.own_requests(TENANT, "sam", NOW, "access")
+    assert (row.request_id, count) == (REQUEST, 1)
+
+
+REPORTED = "FROM recovery_unrecoverable_keys WHERE request_id"
+
+
+async def test_a_reported_key_is_recorded_and_audited_by_its_key():
+    requests, connection = repository({LOCK: _row(), REMAINING: SCOPE})
+    reported = await requests.record_integrity_failure(
+        TENANT, "sam", REQUEST, "wrap_damaged", NOW, may_supervise=True, key_id=KEY
+    )
+    assert reported is None
+    assert any("INSERT INTO recovery_unrecoverable_keys" in call for call in connection.calls)
+    assert len(audited(connection)) == 1
+
+
+@pytest.mark.parametrize(
+    ("stage", "key_id", "signed", "answer"),
+    [
+        ("partial_hash", KEY, False, Refused("bad_stage")),
+        ("wrap_damaged", "other", False, Refused("not_found")),
+        ("wrap_damaged", "other", True, None),
+    ],
+)
+async def test_only_a_wrap_stage_for_a_key_in_scope_is_recorded(stage, key_id, signed, answer):
+    requests, connection = repository(
+        {LOCK: _row(), REMAINING: SCOPE, "FROM recovery_request_keys WHERE request_id = $1": signed}
+    )
+    result = await requests.record_integrity_failure(
+        TENANT, "sam", REQUEST, stage, NOW, may_supervise=True, key_id=key_id
+    )
+    assert result == answer
+    assert not any("INSERT INTO recovery_unrecoverable_keys" in call for call in connection.calls)
+
+
+async def test_storing_needs_no_wrap_for_a_reported_key():
+    requests, connection = repository(
+        {
+            REPORTED: [{"key_id": uuid.UUID(KEY)}],
+            LOCK: _row(),
+            REMAINING: SCOPE,
+            K: 1,
+            VALID: [{"holder_index": 1}],
+        }
+    )
+    dropped = await requests.store_wraps(
+        TENANT, "sam", REQUEST, [], 1, _always, NOW, may_supervise=True
+    )
+    assert dropped == ()
+    assert any("SET status = $2" in call for call in connection.calls)
+
+
+async def test_a_key_recovery_may_list_more_than_fifty_conversations():
+    conversations = tuple(str(uuid.uuid4()) for _ in range(51))
+    checks = [
+        {**_check(), "conversation_id": uuid.UUID(c), "employee_sub": "alice"}
+        for c in conversations
+    ]
+    requests, connection = repository({"AS requested": checks, "FROM conversation_keys": SCOPE})
+    assert await requests.file(_key_recovery(conversations), _always) == (
+        ScopeKey(CONVERSATION, KEY),
+    )
+
+
+@pytest.mark.parametrize(("keys", "answer"), [(2000, "filed"), (2001, "scope_too_large")])
+async def test_a_key_recovery_carries_up_to_two_thousand_keys(keys, answer):
+    scope = [
+        {"conversation_id": uuid.UUID(CONVERSATION), "key_id": uuid.uuid4()} for _ in range(keys)
+    ]
+    check = {**_check(), "employee_sub": "alice"}
+    requests, _ = repository({"AS requested": [check], "FROM conversation_keys": scope})
+    result = await requests.file(_key_recovery(), _always)
+    assert (result if isinstance(result, Refused) else Refused("filed")) == Refused(answer)

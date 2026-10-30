@@ -174,6 +174,7 @@ def _ceremony_body(snapshot: CeremonySnapshot) -> dict[str, Any]:
 def _state_body(state: CeremonyState) -> dict[str, Any]:
     return {
         "recovery_key": None if state.recovery_key is None else _key_body(state.recovery_key),
+        "usable_shares": state.usable_shares,
         "ceremony": None if state.ceremony is None else _ceremony_body(state.ceremony),
         "last_failed": (
             None

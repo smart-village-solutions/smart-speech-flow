@@ -4,12 +4,15 @@ import type {
   NewRecoveredWrap,
   RecoveryIntegrityStage,
   Rejection,
+  RequestKind,
   ScopePair,
 } from '@/core/crypto/recovery-crypto.port';
 import { AppError } from '@/core/http/AppError';
 import {
   toApprovalDetail,
-  toCandidates,
+  toApprovalsList,
+  toRecoveryCandidates,
+  toOwnCandidates,
   toEmployees,
   toProgress,
   toScope,
@@ -18,6 +21,8 @@ import {
 } from './requests.mapper';
 import type {
   ApprovalDetail,
+  ApprovalsList,
+  OwnCandidates,
   RecoveryCandidate,
   RecoveryEmployee,
   RequestProgress,
@@ -29,6 +34,7 @@ const BASE = '/api/admin/recording/recovery';
 
 export interface FiledRequest {
   requestId: string;
+  kind: RequestKind;
   reason: string;
   conversationIds: readonly string[];
   signature: Bytes;
@@ -37,15 +43,21 @@ export interface FiledRequest {
 export interface RecoveryRequestsRepository {
   employees(): Promise<RecoveryEmployee[]>;
   candidates(employee: string, from: string, to: string): Promise<RecoveryCandidate[]>;
+  ownCandidates(): Promise<OwnCandidates>;
   file(request: Readonly<FiledRequest>): Promise<ScopePair[]>;
-  requests(): Promise<RequestSummary[]>;
+  requests(kind?: RequestKind): Promise<RequestSummary[]>;
   progress(requestId: string): Promise<RequestProgress>;
   partials(requestId: string): Promise<ServedPartials>;
   reject(requestId: string, rejection: Readonly<Rejection>): Promise<void>;
-  reportIntegrity(requestId: string, stage: RecoveryIntegrityStage | 'trust'): Promise<void>;
+  /** With a key ID, that key's recovery wrap is unusable and leaves the scope (§9.6). */
+  reportIntegrity(
+    requestId: string,
+    stage: RecoveryIntegrityStage | 'trust',
+    keyId?: string
+  ): Promise<void>;
   storeWraps(requestId: string, wraps: readonly NewRecoveredWrap[]): Promise<string[]>;
   cancel(requestId: string): Promise<void>;
-  approvals(): Promise<RequestSummary[]>;
+  approvals(): Promise<ApprovalsList>;
   approval(requestId: string): Promise<ApprovalDetail>;
   approve(
     requestId: string,
@@ -91,17 +103,20 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
   return {
     employees: async () => toEmployees(await get('/employees')),
     candidates: async (employee, from, to) =>
-      toCandidates(await get('/candidates', { employee, from, to })),
+      toRecoveryCandidates(await get('/candidates', { employee, from, to })),
+    ownCandidates: async () => toOwnCandidates(await get('/own/candidates')),
     file: async (request) =>
       toScope(
         await post('/requests', {
           request_id: request.requestId,
+          kind: request.kind,
           reason: request.reason,
           conversation_ids: request.conversationIds,
           signature: toBase64Url(request.signature),
         })
       ),
-    requests: async () => toSummaries(await get('/requests')),
+    requests: async (kind) =>
+      toSummaries(await get('/requests', kind === undefined ? undefined : { kind })),
     progress: async (requestId) => toProgress(await get(`/requests/${requestId}`)),
     partials: async (requestId) => toServedPartials(await get(`/requests/${requestId}/partials`)),
     reject: async (requestId, rejection) => {
@@ -111,8 +126,9 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
         fault: rejection.fault,
       });
     },
-    reportIntegrity: async (requestId, stage) => {
-      await post(`/requests/${requestId}/integrity-failures`, { stage });
+    reportIntegrity: async (requestId, stage, keyId) => {
+      const body = keyId === undefined ? { stage } : { stage, key_id: keyId };
+      await post(`/requests/${requestId}/integrity-failures`, body);
     },
     storeWraps: async (requestId, wraps) => {
       const body = await post(`/requests/${requestId}/wraps`, {
@@ -128,7 +144,7 @@ export function createRecoveryRequestsRepository(http: AxiosInstance): RecoveryR
     cancel: async (requestId) => {
       await post(`/requests/${requestId}/cancel`);
     },
-    approvals: async () => toSummaries(await get('/approvals')),
+    approvals: async () => toApprovalsList(await get('/approvals')),
     approval: async (requestId) => toApprovalDetail(await get(`/approvals/${requestId}`)),
     approve: async (requestId, partials, signature) => {
       await post(`/approvals/${requestId}`, {

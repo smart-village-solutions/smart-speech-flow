@@ -157,7 +157,8 @@
       "ceremony": "Wiederherstellungsschlüssel",
       "archive": "Meine Aufzeichnungen",
       "recoveryRequests": "Wiederherstellungsanträge",
-      "recoveryApprovals": "Wiederherstellungsfreigaben"
+      "recoveryApprovals": "Wiederherstellungsfreigaben",
+      "keyRecovery": "Meine Schlüsselwiederherstellung"
     },
     "dashboard": {
       "welcome": {
@@ -249,7 +250,23 @@
       "unlockedTitle": "Ihre Schlüssel sind entsperrt",
       "fingerprintHint": "Vergleichen Sie diesen Fingerabdruck telefonisch oder persönlich, wenn Sie gebeten werden, Ihren Schlüssel zu bestätigen.",
       "lockAction": "Sperren",
-      "unavailable": "Archivschlüssel sind gerade nicht verfügbar."
+      "unavailable": "Archivschlüssel sind gerade nicht verfügbar.",
+      "reenrol": {
+        "start": "Passphrase vergessen? Neuen Schlüssel einrichten",
+        "warningTitle": "Bevor Sie einen neuen Schlüssel einrichten",
+        "warningLocked": "Ihre Gespräche bleiben gesperrt, bis die Schlüsselwiederherstellung abgeschlossen ist.",
+        "warningRecovered": "Zugriffe, die Sie als Aufsicht wiederhergestellt haben, und Freigaben brauchen neue Anträge.",
+        "warningRequests": "Ihre offenen Anträge werden abgebrochen.",
+        "warningCustodian": "Ihr Anteil als Verwahrende Person ist bis zur nächsten Neuverteilung nicht nutzbar. Danach sind noch {{usable}} von {{k}} nötigen Anteilen nutzbar.",
+        "continue": "Weiter",
+        "cancel": "Abbrechen",
+        "submit": "Neuen Schlüssel einrichten",
+        "pending": "Bitte öffnen Sie den Bestätigungslink, den wir Ihnen per E-Mail geschickt haben. Bis dahin gilt Ihr bisheriger Schlüssel.",
+        "done": "Ihr neuer Schlüssel ist aktiv.",
+        "changed": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
+        "ceremony": "Während einer laufenden Schlüsselzeremonie, an der Sie teilnehmen, nicht möglich.",
+        "failed": "Der neue Schlüssel konnte nicht eingerichtet werden."
+      }
     },
     "ceremony": {
       "title": "Wiederherstellungsschlüssel",
@@ -311,7 +328,8 @@
       "abortTitle": "Zeremonie abbrechen?",
       "abortBody": "Alle bisherigen Beiträge verfallen. Die Zeremonie muss danach vollständig neu gestartet werden.",
       "abortFailed": "Die Zeremonie konnte nicht abgebrochen werden. Bitte versuchen Sie es erneut.",
-      "keepGoing": "Weitermachen"
+      "keepGoing": "Weitermachen",
+      "usableShares": "{{usable}} von {{k}} nötigen Anteilen nutzbar"
     },
     "recording": {
       "off": "Keine Aufnahme",
@@ -549,7 +567,8 @@
         "fingerprintHint": "Lesen Sie ihn der antragstellenden Person telefonisch oder persönlich vor und vergleichen Sie jede Gruppe.",
         "confirmed": "Ich habe diesen Fingerabdruck telefonisch oder persönlich mit der antragstellenden Person verglichen.",
         "action": "Zustimmen",
-        "approving": "Prüfen und zustimmen …"
+        "approving": "Prüfen und zustimmen …",
+        "askFiled": "Fragen Sie auch, ob die Person diesen Antrag selbst gestellt hat. Wenn nicht, lehnen Sie ihn ab."
       },
       "decline": {
         "action": "Ablehnen",
@@ -580,9 +599,33 @@
         "REQUEST_CLOSED": "Dieser Antrag ist abgeschlossen.",
         "NOT_ENOUGH_APPROVALS": "Noch haben nicht genug Verwahrende zugestimmt.",
         "SCOPE_NOT_COVERED": "Nicht jedes Gespräch des Antrags war abgedeckt. Bitte erneut versuchen.",
-        "SCOPE_TOO_LARGE": "Diese Gespräche haben mehr Schlüssel, als ein Antrag tragen kann. Wählen Sie weniger aus."
+        "SCOPE_TOO_LARGE": "Diese Gespräche haben mehr Schlüssel, als ein Antrag tragen kann. Wählen Sie weniger aus.",
+        "SHARE_STALE": "Ihr Anteil gehört zu einem früheren Schlüssel und öffnet nichts mehr. Er kommt mit der nächsten Neuverteilung der Anteile zurück.",
+        "KEY_CHANGED": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
+        "PERMISSION_REQUIRED": "Dafür fehlt Ihnen inzwischen die Berechtigung."
       },
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "kind": {
+        "access": "Zugriff",
+        "key_recovery": "Schlüsselwiederherstellung"
+      }
+    },
+    "keyRecovery": {
+      "title": "Meine Schlüsselwiederherstellung",
+      "intro": "Gespräche, die Ihr aktueller Schlüssel nicht öffnen kann, stellen die Verwahrenden für Sie wieder her. Niemand außer Ihnen sieht dabei Inhalte.",
+      "batch": "Gespräche in diesem Antrag: {{count}}",
+      "remaining": "Danach bleiben {{conversations}} Gespräche für einen weiteren Antrag.",
+      "fingerprint": "Ihr Schlüssel-Fingerabdruck",
+      "fingerprintHint": "Die Verwahrenden fragen Sie telefonisch oder persönlich nach diesem Wert. Nennen Sie ihn nur, wenn Sie diesen Antrag selbst gestellt haben.",
+      "reason": "Begründung",
+      "file": "Antrag signieren und stellen",
+      "next": "Nächsten Antrag stellen",
+      "progress": "{{done}} von {{total}}",
+      "unrecoverable": "Nicht wiederherstellbare Schlüssel: {{count}}",
+      "none": "Ihr Schlüssel öffnet alle Ihre Gespräche.",
+      "stepUpBody": "Für den Antrag ist eine frische Anmeldung mit zweitem Faktor nötig.",
+      "open": "Zugang wiederherstellen",
+      "banner": "Gespräche, die sich mit Ihrem Schlüssel nicht öffnen lassen: {{count}}"
     }
   }
 }

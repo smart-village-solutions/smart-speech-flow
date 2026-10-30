@@ -26,6 +26,8 @@ export interface RecoveryKey {
   mode: 'standard' | 'enhanced';
   transcriptDisplay: string;
   activatedAt: string;
+  /** Custodian shares their holders' current keys still open; null when not reported (§9.6). */
+  usableShares: number | null;
 }
 
 /** The tenant's latest ceremony, when it ended without a key. */
