@@ -5,10 +5,10 @@ wurden mit dem lokalen TTS-Service und dessen sprachspezifischen Coqui- bzw.
 MMS-Modellen erzeugt. Alle Dateien sind WAV mit 16 kHz, Mono und 16-Bit-PCM.
 Die Präfixe der Dateinamen geben Quell- und Zielsprache an.
 
-Der Unterordner [`duration_set`](duration_set/) enthält zusätzlich je eine
-kurze, mittlere und lange Probe für jede vom TTS-Service unterstützte
-Quellsprache (`am`, `ar`, `de`, `en`, `fa`, `ku`, `ru`, `ti`, `tr`, `uk`).
-Die exakten eingesprochenen Texte und die gemessenen Dauern stehen in dessen
+The [`duration_set`](duration_set/) subdirectory contains short, medium, and
+long samples for these supported source languages: `am`, `ar`, `de`, `en`,
+`fa`, `ru`, `tr`, and `uk`. It covers a subset of the current TTS language set.
+The spoken text and measured duration of each sample are recorded in
 [`transcripts.json`](duration_set/transcripts.json).
 
 | Datei | Sprechsprache | Sprechtext |

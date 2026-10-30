@@ -210,7 +210,7 @@ def test_skip_list_defaults_to_the_languages_refinement_does_not_help(env):
 
     refiner = refiner_module.get_translation_refiner()
 
-    assert refiner.skip_target_languages == frozenset("am ti ku fa pl bg el sq hi".split())
+    assert refiner.skip_target_languages == frozenset("am fa pl bg el sq hi".split())
 
 
 def test_skip_list_can_be_emptied(env):

@@ -11,7 +11,7 @@ describe('language repository', () => {
     const languages = await repository.listCustomerLanguages();
 
     expect(languages.map((language) => language.code)).toEqual([
-      ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'],
+      ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'fa'],
       ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
     ]);
     expect(languages).not.toContainEqual(expect.objectContaining({ code: 'de' }));

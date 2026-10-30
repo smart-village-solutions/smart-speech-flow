@@ -10,7 +10,7 @@ from services.tts import fetch_voices
 from services.tts.voices import VOICES, voice_dir
 
 PRODUCT_LANGUAGES = {
-    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 }  # fmt: skip
 
@@ -30,7 +30,7 @@ def test_every_file_is_pinned_to_a_revision_and_a_hash():
 
 
 def test_only_mms_voices_need_numbers_spelled():
-    assert {v.lang for v in VOICES.values() if v.engine == "mms"} == {"am", "ti"}
+    assert {v.lang for v in VOICES.values() if v.engine == "mms"} == {"am"}
     assert all(v.spell_numbers == (v.engine == "mms") for v in VOICES.values())
 
 

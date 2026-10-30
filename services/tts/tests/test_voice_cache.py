@@ -10,7 +10,7 @@ import pytest
 from services.tts.tests.conftest import FakeNvml
 
 LANGS = [
-    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 ]  # fmt: skip
 MIB = 1024 * 1024

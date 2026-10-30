@@ -1,4 +1,4 @@
-"""MMS voices for the languages Piper has none for (am, ti).
+"""MMS synthesis for Amharic, which has no Piper voice.
 
 Loaded as a bare VitsModel rather than through transformers' pipeline, so the
 device and the seed are ours. The checkpoints expect romanized input; the

@@ -171,7 +171,7 @@ describe('toGuestLanguages', () => {
     const languages = toGuestLanguages(guestLanguagesBody);
 
     expect(languages.map((language) => language.code)).toEqual([
-      ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'],
+      ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'fa'],
       ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
     ]);
     expect(languages[0]).toEqual({

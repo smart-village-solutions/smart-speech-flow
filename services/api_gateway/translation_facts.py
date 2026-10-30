@@ -14,8 +14,8 @@ from typing import Dict, FrozenSet, List, Tuple
 _EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹०१२३४५६७८९", "0123456789" * 3)
 
 # Monday first. Stems, so inflected forms (we wtorek, kedden, четверга) match.
-# Amharic, Tigrinya and Kurdish are left out until someone who reads them
-# checks the names; for them only numbers are compared.
+# Amharic is left out until someone who reads it
+# checks the names; for Amharic only numbers are compared.
 _WEEKDAYS: Dict[str, List[List[str]]] = {
     "de": [["montag"], ["dienstag"], ["mittwoch"], ["donnerstag"], ["freitag"],
            ["samstag", "sonnabend"], ["sonntag"]],

@@ -49,7 +49,7 @@ describe('LanguageSelectScreen', () => {
     ).toHaveClass('pt-content-top');
   });
 
-  it("lists 20 guest languages, omitting German and Albanian, without the supported-languages route", async () => {
+  it('lists 20 guest languages, omitting German and Albanian, without the supported-languages route', async () => {
     server.use(
       http.get('*/api/languages/supported', () => new HttpResponse(null, { status: 500 }))
     );
@@ -58,9 +58,12 @@ describe('LanguageSelectScreen', () => {
 
     const arabic = await screen.findByRole('button', { name: /العربية/ });
     const list = arabic.closest('ul') as HTMLElement;
-    expect(within(list).getAllByRole('button')).toHaveLength(20);
+    expect(within(list).getAllByRole('button')).toHaveLength(18);
     expect(screen.queryByRole('button', { name: /Shqip|Albanian/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Deutsch/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Kurdish|Kurmancî|Tigrinya|ትግርኛ/ })
+    ).not.toBeInTheDocument();
   });
 
   it("shows Studio's name and icon where Studio provides the language, bundled ones elsewhere", async () => {

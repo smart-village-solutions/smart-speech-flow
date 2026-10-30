@@ -105,21 +105,12 @@ describe('right-to-left languages', () => {
     expect(document.documentElement.dir).toBe('rtl');
   });
 
-  // Kurmancî is Latin script, unlike Sorani; Ge'ez also runs left to right.
-  it('leaves Kurmancî and Tigrinya left to right', async () => {
-    const { unmount } = renderWithProviders(<AppRoutes />, {
-      route: `/s/${SESSION_ID}/info/ku`,
-      services: { session: sessionService(sessionIn('ku', 'pending')) },
-    });
-    expect(await screen.findByRole('button', { name: 'Dest pê bike' })).toBeInTheDocument();
-    expect(document.documentElement.dir).toBe('ltr');
-    unmount();
-
+  it('leaves Amharic left to right', async () => {
     renderWithProviders(<AppRoutes />, {
-      route: `/s/${SESSION_ID}/info/ti`,
-      services: { session: sessionService(sessionIn('ti', 'pending')) },
+      route: `/s/${SESSION_ID}/info/am`,
+      services: { session: sessionService(sessionIn('am', 'pending')) },
     });
-    expect(await screen.findByRole('button', { name: 'ንጀምር' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'እንጀምር' })).toBeInTheDocument();
     expect(document.documentElement.dir).toBe('ltr');
   });
 });
