@@ -32,6 +32,7 @@ export interface RecordingView {
 
 export interface AdminRecordingView extends RecordingView {
   canRequest: boolean;
+  staffRelease?: StaffRelease | null;
   /** The gateway's code when the employee may not ask now. */
   unavailableReason: string | null;
   /** A first request may carry the guest's name and the ID check; a resume carries neither. */
@@ -42,6 +43,7 @@ export interface AdminRecordingView extends RecordingView {
 
 /** What the employee adds to a first request (spec §6). */
 export interface RecordingAsk {
+  staffReleaseSha256?: string;
   guestName?: string;
   idChecked?: boolean;
 }
@@ -50,6 +52,10 @@ export interface RecordingAsk {
 export interface ConsentText {
   requestId: string;
   consentKind: ConsentKind;
+  textSha256?: string;
+  documentationConsent?: { acceptLabel: string; declineLabel: string } | null;
+  acceptLabel?: string | null;
+  declineLabel?: string | null;
   language: string;
   /** Sanitised by the gateway; its SHA-256 is what a yes carries. */
   html: string;
@@ -61,10 +67,20 @@ export interface ConsentText {
 
 /** What a yes carries: the hash of the text shown, and on a first yes the name and signature. */
 export interface ConsentEvidence {
+  documentationConsent?: boolean;
   textSha256: string;
   name?: string;
   /** Base64 of the drawn PNG. */
   signaturePng?: string;
   /** The guest confirmed by tapping instead of signing. */
   cannotSign?: boolean;
+}
+
+/** The employee release shown before each section. */
+export interface StaffRelease {
+  language: string;
+  html: string;
+  acceptLabel: string;
+  declineLabel: string;
+  sha256: string;
 }

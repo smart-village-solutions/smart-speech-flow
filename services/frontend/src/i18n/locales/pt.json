@@ -74,7 +74,10 @@
       "cannotSign": "Não consigo assinar e confirmo com um toque.",
       "nameRequired": "Digite seu nome, por favor.",
       "signatureRequired": "Assine ou confirme que não consegue assinar, por favor.",
-      "textChanged": "O texto mudou. Leia-o novamente antes de responder, por favor."
+      "textChanged": "O texto mudou. Leia-o novamente antes de responder, por favor.",
+      "originalLanguage": "Idioma original: {{language}}",
+      "documentationRequired": "Confirme separadamente o consentimento para a documentação.",
+      "staffReleaseChanged": "O texto de autorização do funcionário foi alterado. Peça ao funcionário para retirar este pedido e enviar um novo."
     }
   },
   "feedback": {

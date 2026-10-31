@@ -74,7 +74,10 @@
       "cannotSign": "我无法签名，点按确认。",
       "nameRequired": "请输入您的姓名。",
       "signatureRequired": "请签名，或确认您无法签名。",
-      "textChanged": "文本已更改。请在回答前重新阅读。"
+      "textChanged": "文本已更改。请在回答前重新阅读。",
+      "originalLanguage": "原文语言：{{language}}",
+      "documentationRequired": "请单独确认您同意记录存档。",
+      "staffReleaseChanged": "工作人员的授权文本已更改。请工作人员撤回此请求并发送新请求。"
     }
   },
   "feedback": {

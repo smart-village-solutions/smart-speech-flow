@@ -25,6 +25,7 @@ from ..recording.consent_evidence import (
     GuestAnswer,
     decode_signature,
 )
+from ..recording.consent_text import staff_release
 from ..recording.consent_voice import ReadAloudUnavailableError
 from ..recording.permissions import REQUEST, coded, permissions_of
 from ..recording.session_service import RecordingSessions, RecordingUnavailableError
@@ -71,12 +72,14 @@ class RecordingRequestBody(BaseModel):
 
 
 class RecordingAskBody(RecordingRequestBody):
+    staff_release_sha256: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
     # A first request only: the employee may type the guest's name for them to confirm.
     guest_name: str | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
     id_checked: bool = False
 
 
 class RecordingAnswerBody(RecordingRequestBody):
+    documentation_consent: bool = False
     consent: bool
     # A yes's evidence (§6); a no needs none of it.
     text_sha256: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
@@ -123,16 +126,19 @@ async def admin_recording_state(
     key: AdminKey, claims: Claims, sessions: Sessions
 ) -> dict[str, Any]:
     state = await sessions.state(key)
-    reason, id_check = None, None
+    reason, id_check, release = None, None, None
     if REQUEST not in permissions_of(claims):
         reason = "PERMISSION_REQUIRED"
     else:
         try:
-            id_check = (await sessions.check_available(key.tenant_id)).id_check
+            policy = await sessions.check_available(key.tenant_id)
+            id_check = policy.id_check
+            release = staff_release(policy)
         except RecordingUnavailableError as error:
             reason = error.code
     return state_body(state) | {
         "can_request": reason is None,
+        "staff_release": release.record() if release is not None else None,
         "unavailable_reason": reason,
         "next_consent_kind": "resume" if state.consented else "first",
         "id_check": id_check,
@@ -153,6 +159,7 @@ async def request_recording(
             requested_by=claims["sub"],
             proposed_name=name or None,
             id_checked=body.id_checked,
+            staff_release_sha256=body.staff_release_sha256,
         )
     )
 
@@ -201,6 +208,10 @@ async def guest_consent_text(key: GuestKey, sessions: Sessions, manager: Manager
         "consent_kind": served.kind,
         "language": served.text.language,
         "html": served.text.html,
+        "text_sha256": served.text.answer_sha256,
+        "accept_label": served.text.accept_label,
+        "decline_label": served.text.decline_label,
+        "documentation_consent": served.text.documentation_consent,
         "signature": served.signature,
         "proposed_name": served.proposed_name,
     }
@@ -223,7 +234,7 @@ async def guest_consent_audio(
     served = await _served(sessions, key, await _guest_language(manager, key))
     if served.request_id != str(request_id):
         raise coded(409, "RECORDING_REQUEST_STALE", "No open question")
-    if served.text.sha256 != text_sha256:
+    if served.text.answer_sha256 != text_sha256:
         raise coded(409, "CONSENT_TEXT_MISMATCH", "The text has changed")
     container = optional_container(request)
     if container is None:
@@ -253,6 +264,7 @@ async def answer_recording(
             name=body.name,
             signature_png=signature,
             cannot_sign=body.cannot_sign,
+            documentation_consent=body.documentation_consent,
         )
     return await _changed(
         sessions.answer(key, request_id=str(body.request_id), consent=body.consent, reply=reply)

@@ -74,7 +74,10 @@
       "cannotSign": "Nem tudok aláírni, koppintással erősítem meg.",
       "nameRequired": "Kérjük, adja meg a nevét.",
       "signatureRequired": "Kérjük, írja alá, vagy erősítse meg, hogy nem tud aláírni.",
-      "textChanged": "A szöveg megváltozott. Kérjük, olvassa el újra, mielőtt válaszol."
+      "textChanged": "A szöveg megváltozott. Kérjük, olvassa el újra, mielőtt válaszol.",
+      "originalLanguage": "Eredeti nyelv: {{language}}",
+      "documentationRequired": "Kérjük, külön erősítse meg a dokumentáláshoz adott hozzájárulását.",
+      "staffReleaseChanged": "A munkatárs engedélyezési szövege megváltozott. Kérje meg a munkatársat, hogy vonja vissza ezt a kérést, és küldjön újat."
     }
   },
   "feedback": {

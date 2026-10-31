@@ -74,7 +74,10 @@
       "cannotSign": "Nie mogę się podpisać i potwierdzam dotknięciem.",
       "nameRequired": "Prosimy wpisać imię i nazwisko.",
       "signatureRequired": "Prosimy złożyć podpis lub potwierdzić, że nie można się podpisać.",
-      "textChanged": "Tekst się zmienił. Prosimy przeczytać go ponownie przed udzieleniem odpowiedzi."
+      "textChanged": "Tekst się zmienił. Prosimy przeczytać go ponownie przed udzieleniem odpowiedzi.",
+      "originalLanguage": "Język oryginału: {{language}}",
+      "documentationRequired": "Potwierdź osobno zgodę na dokumentowanie.",
+      "staffReleaseChanged": "Treść zgody pracownika uległa zmianie. Poproś pracownika o wycofanie tej prośby i wysłanie nowej."
     }
   },
   "feedback": {

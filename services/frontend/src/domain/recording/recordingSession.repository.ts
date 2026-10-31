@@ -60,6 +60,9 @@ function status(body: unknown): RecordingStatus {
 function evidenceBody(evidence: ConsentEvidence): Record<string, unknown> {
   return {
     text_sha256: evidence.textSha256,
+    ...(evidence.documentationConsent === undefined
+      ? {}
+      : { documentation_consent: evidence.documentationConsent }),
     ...(evidence.name === undefined ? {} : { name: evidence.name }),
     ...(evidence.signaturePng === undefined ? {} : { signature_png: evidence.signaturePng }),
     ...(evidence.cannotSign === undefined ? {} : { cannot_sign: evidence.cannotSign }),
@@ -81,6 +84,9 @@ export function createRecordingSessionRepository(http: AxiosInstance): Recording
     async request(sessionId, requestId, ask = {}) {
       const response = await http.post<unknown>(`${base('admin', sessionId)}/request`, {
         request_id: requestId,
+        ...(ask.staffReleaseSha256 === undefined
+          ? {}
+          : { staff_release_sha256: ask.staffReleaseSha256 }),
         ...(ask.guestName === undefined ? {} : { guest_name: ask.guestName }),
         ...(ask.idChecked === undefined ? {} : { id_checked: ask.idChecked }),
       });

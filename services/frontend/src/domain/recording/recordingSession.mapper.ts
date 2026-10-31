@@ -31,7 +31,16 @@ const view = status.extend({
   consent_kind: consentKind.optional(),
 });
 
+const staffRelease = z.object({
+  language: z.string().min(1),
+  html: z.string().min(1),
+  accept_label: z.string().min(1),
+  decline_label: z.string().min(1),
+  sha256: z.string().min(1),
+});
+
 const adminView = view.extend({
+  staff_release: staffRelease.nullish(),
   can_request: z.boolean(),
   unavailable_reason: z.string().nullable(),
   next_consent_kind: consentKind,
@@ -45,6 +54,15 @@ const consentText = z.object({
   html: z.string().min(1),
   signature: policyLevel,
   proposed_name: z.string().nullable(),
+  text_sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  documentation_consent: z
+    .object({ accept_label: z.string().min(1), decline_label: z.string().min(1) })
+    .nullish(),
+  accept_label: z.string().nullable().optional(),
+  decline_label: z.string().nullable().optional(),
 });
 
 function toStatus(parsed: z.infer<typeof status>): RecordingStatus {
@@ -90,6 +108,16 @@ export function toAdminRecordingView(body: unknown): AdminRecordingView {
   return {
     ...toView(parsed),
     canRequest: parsed.can_request,
+    staffRelease:
+      parsed.staff_release == null
+        ? null
+        : {
+            language: parsed.staff_release.language,
+            html: parsed.staff_release.html,
+            acceptLabel: parsed.staff_release.accept_label,
+            declineLabel: parsed.staff_release.decline_label,
+            sha256: parsed.staff_release.sha256,
+          },
     unavailableReason: parsed.unavailable_reason,
     nextConsentKind: parsed.next_consent_kind,
     idCheck: parsed.id_check,
@@ -105,5 +133,15 @@ export function toConsentText(body: unknown): ConsentText {
     html: parsed.html,
     signature: parsed.signature,
     proposedName: parsed.proposed_name,
+    textSha256: parsed.text_sha256,
+    documentationConsent:
+      parsed.documentation_consent == null
+        ? undefined
+        : {
+            acceptLabel: parsed.documentation_consent.accept_label,
+            declineLabel: parsed.documentation_consent.decline_label,
+          },
+    acceptLabel: parsed.accept_label,
+    declineLabel: parsed.decline_label,
   };
 }

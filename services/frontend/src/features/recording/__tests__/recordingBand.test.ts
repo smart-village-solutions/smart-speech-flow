@@ -143,3 +143,46 @@ describe('the band', () => {
     expect(elapsed(5_000, 0)).toBe('00:00');
   });
 });
+
+describe('Studio recording status wording', () => {
+  const copy = {
+    locale: 'de',
+    waiting: 'Studio waiting',
+    running: 'Studio running',
+    stopped: 'Studio stopped',
+    renewedReleaseRequired: 'Release again',
+  };
+  it('uses matching wording while keeping the controls', () => {
+    expect(bandView('admin', slice('asking'), true, true, copy)).toMatchObject({
+      labelText: copy.waiting,
+      action: 'cancel',
+    });
+    expect(bandView('customer', slice('on'), true, false, copy)).toMatchObject({
+      labelText: copy.running,
+      action: 'stop',
+    });
+    expect(
+      bandView('customer', slice('off', { reason: 'stopped_by_employee' }), true, false, copy)
+    ).toMatchObject({
+      labelText: copy.stopped,
+      detailText: copy.renewedReleaseRequired,
+      action: null,
+    });
+    expect(
+      bandView('admin', slice('off', { reason: 'stopped_by_guest' }), true, true, copy)
+    ).toMatchObject({ labelText: copy.stopped, action: 'request' });
+  });
+  it('keeps bundled pause reasons when liveness fails and never calls a refusal stopped', () => {
+    expect(bandView('customer', slice('on'), false, false, copy)).toMatchObject({
+      labelKey: 'recording.paused',
+      detailKey: 'recording.reason.liveness',
+    });
+    expect(bandView('customer', slice('on'), false, false, copy)).not.toHaveProperty('labelText');
+    expect(
+      bandView('customer', slice('off', { reason: 'declined' }), true, false, copy)
+    ).toBeNull();
+    expect(
+      bandView('admin', slice('off', { reason: 'declined' }), true, true, copy)
+    ).not.toHaveProperty('labelText');
+  });
+});

@@ -45,9 +45,11 @@ export function RecordingBand({ view, now, onAction }: Readonly<RecordingBandPro
                 className="size-2 shrink-0 rounded-full bg-white motion-safe:animate-pulse"
               />
             )}
-            <output className="truncate">
-              {t(view.labelKey)}
-              {view.detailKey !== null && ` · ${t(view.detailKey)}`}
+            <output lang={view.language} className="min-w-0 text-wrap">
+              {view.labelText ?? t(view.labelKey)}
+              {view.detailText !== undefined
+                ? ` · ${view.detailText}`
+                : view.detailKey !== null && ` · ${t(view.detailKey)}`}
             </output>
             {view.since !== null && (
               <span className="shrink-0 font-semibold tabular-nums">

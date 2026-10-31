@@ -361,10 +361,11 @@ async def say_yes(
     name: str | None = GUEST_NAME,
     signature_png: bytes | None = None,
     cannot_sign: bool = False,
+    documentation_consent: bool = True,
 ) -> RecordingState:
     """A guest's yes as the screen sends it: the hash of the text it was served, and a name."""
     try:
-        digest: str | None = (await service.consent(key, language)).text.sha256
+        digest: str | None = (await service.consent(key, language)).text.answer_sha256
     except (RecordingConflictError, RecordingUnavailableError):
         digest = None  # no open question: the answer itself meets the refusal
     reply = GuestAnswer(
@@ -373,5 +374,6 @@ async def say_yes(
         name=name,
         signature_png=signature_png,
         cannot_sign=cannot_sign,
+        documentation_consent=documentation_consent,
     )
     return await service.answer(key, request_id=request_id, consent=True, reply=reply)
