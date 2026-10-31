@@ -648,4 +648,8 @@ if __name__ == "__main__":
         host=os.environ.get("SSF_LOCAL_BIND_HOST", "127.0.0.1"),
         port=8000,
         reload=True,
+        # Match the container's fragment-limited WebSocket backend.
+        ws="websockets",
+        # This backend's INFO connection logs contain ticket-bearing URLs.
+        log_level="warning",
     )
