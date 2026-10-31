@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
-websockets
+# 17.4 bounds the number of fragments accepted for a message.
+websockets>=17.4
 prometheus_client
 requests
 python-multipart
