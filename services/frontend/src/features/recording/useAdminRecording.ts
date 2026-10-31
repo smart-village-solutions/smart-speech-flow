@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch } from 'react';
 import { useServices } from '@/app/providers/services';
 import { randomId } from '@/core/ids';
 import type {
+  AdminRecordingView,
   ConsentKind,
   PolicyLevel,
   RecordingStatus,
@@ -39,18 +40,24 @@ export function useAdminRecording(
   });
   // The open request's id, needed to cancel it; read back after a reload.
   const requestId = useRef<string | null>(null);
+  const adoptView = useCallback(
+    (view: AdminRecordingView) => {
+      setCanRequest(view.canRequest);
+      setNext({
+        kind: view.nextConsentKind,
+        idCheck: view.idCheck,
+        staffRelease: view.staffRelease ?? null,
+      });
+      requestId.current = view.request?.requestId ?? requestId.current;
+      dispatch({ type: 'recording/state', status: view.status });
+    },
+    [dispatch]
+  );
   const refreshRelease = useCallback(async () => {
     const view = await recordingSession.adminView(sessionId);
-    setCanRequest(view.canRequest);
-    setNext({
-      kind: view.nextConsentKind,
-      idCheck: view.idCheck,
-      staffRelease: view.staffRelease ?? null,
-    });
-    requestId.current = view.request?.requestId ?? requestId.current;
-    dispatch({ type: 'recording/state', status: view.status });
+    adoptView(view);
     return view;
-  }, [dispatch, recordingSession, sessionId]);
+  }, [adoptView, recordingSession, sessionId]);
   const first = useFirstRequest(sessionId, dispatch, requestId, refreshRelease);
   const preparing = useRef(false);
   const { phase } = slice.status;
@@ -64,14 +71,7 @@ export function useAdminRecording(
       .adminView(sessionId)
       .then((view) => {
         if (cancelled) return;
-        setCanRequest(view.canRequest);
-        setNext({
-          kind: view.nextConsentKind,
-          idCheck: view.idCheck,
-          staffRelease: view.staffRelease ?? null,
-        });
-        requestId.current = view.request?.requestId ?? requestId.current;
-        dispatch({ type: 'recording/state', status: view.status });
+        adoptView(view);
       })
       .catch(() => {
         // Recording unavailable on this gateway: no band, nothing to offer.
@@ -80,7 +80,7 @@ export function useAdminRecording(
     return () => {
       cancelled = true;
     };
-  }, [dispatch, phase, recordingSession, sessionId]);
+  }, [adoptView, phase, recordingSession, sessionId]);
 
   const run = useCallback(
     async (change: () => Promise<RecordingStatus>) => {

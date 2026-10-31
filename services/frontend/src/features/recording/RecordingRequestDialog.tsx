@@ -8,9 +8,7 @@ import type {
 } from '@/domain/recording/recordingSession.types';
 import { RichText } from '@/ui/patterns/RichText';
 import { QuestionDialog } from '@/ui/patterns/QuestionDialog';
-import { Checkbox } from '@/ui/primitives/Checkbox';
-import { TextField } from '@/ui/primitives/TextField';
-import { NAME_MAX_LENGTH } from './consentLimits';
+import { RequestIdentityFields } from './RequestIdentityFields';
 
 interface RecordingRequestDialogProps {
   /** The policy's ID check; null when unknown, which offers none. */
@@ -33,7 +31,7 @@ export function RecordingRequestDialog({
   onSubmit,
   onCancel,
 }: Readonly<RecordingRequestDialogProps>) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [idChecked, setIdChecked] = useState(false);
   const first = kind === 'first';
@@ -59,40 +57,35 @@ export function RecordingRequestDialog({
       onCancel={onCancel}
     >
       <p className="mt-2 text-note leading-chat text-fg-muted">{t('admin.recording.ask.body')}</p>
-      {staffRelease !== null &&
-        staffRelease.language.split('-')[0] !== i18n.language.split('-')[0] && (
-          <p className="mt-2 text-note text-fg-muted">
-            {t('recording.consent.originalLanguage', { language: staffRelease.language })}
-          </p>
-        )}
-      {staffRelease !== null && (
-        <div
-          lang={staffRelease.language}
-          className="mt-4 flex flex-col gap-3 text-note leading-chat"
-        >
-          <RichText html={staffRelease.html} />
-        </div>
-      )}
+      <StaffReleaseContent release={staffRelease} />
       {first && (
-        <div className="mt-4 flex flex-col gap-1.5">
-          <TextField
-            label={t('admin.recording.ask.name')}
-            value={name}
-            autoComplete="off"
-            maxLength={NAME_MAX_LENGTH}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <p className="text-meta text-fg-muted">{t('admin.recording.ask.nameHint')}</p>
-        </div>
-      )}
-      {offered && (
-        <Checkbox className="mt-4" checked={idChecked} onCheckedChange={setIdChecked}>
-          {t('admin.recording.ask.idChecked')}
-        </Checkbox>
-      )}
-      {first && idCheck === 'required' && (
-        <p className="mt-2 text-meta text-fg-muted">{t('admin.recording.ask.idRequired')}</p>
+        <RequestIdentityFields
+          idCheck={idCheck}
+          name={name}
+          idChecked={idChecked}
+          onNameChange={setName}
+          onIdCheckedChange={setIdChecked}
+        />
       )}
     </QuestionDialog>
+  );
+}
+
+/** The employee reviews the served language, with source fallback identified visibly. */
+function StaffReleaseContent({ release }: Readonly<{ release: StaffRelease | null }>) {
+  const { t, i18n } = useTranslation();
+  if (release === null) return null;
+  const sourceLanguage = release.language.split('-')[0] !== i18n.language.split('-')[0];
+  return (
+    <>
+      {sourceLanguage && (
+        <p className="mt-2 text-note text-fg-muted">
+          {t('recording.consent.originalLanguage', { language: release.language })}
+        </p>
+      )}
+      <div lang={release.language} className="mt-4 flex flex-col gap-3 text-note leading-chat">
+        <RichText html={release.html} />
+      </div>
+    </>
   );
 }

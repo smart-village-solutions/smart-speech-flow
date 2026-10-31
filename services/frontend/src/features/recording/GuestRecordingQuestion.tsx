@@ -1,14 +1,14 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ConsentEvidence,
   ConsentText,
   RecordingRequest,
 } from '@/domain/recording/recordingSession.types';
-import { Checkbox } from '@/ui/primitives/Checkbox';
 import { QuestionDialog } from '@/ui/patterns/QuestionDialog';
 import { ConsentBody, type ReadAloud } from './ConsentBody';
-import { GuestConsentForm, type ConsentFormValues } from './GuestConsentForm';
+import { DocumentationConsentChoice } from './DocumentationConsentChoice';
+import { useGuestConsentForm } from './useGuestConsentForm';
+import { GuestConsentForm } from './GuestConsentForm';
 
 interface GuestRecordingQuestionProps {
   /** The open question, or null when none is asked. */
@@ -20,24 +20,6 @@ interface GuestRecordingQuestionProps {
   /** The i18n key of the last answer's refusal; the question stays open. */
   error: string | null;
   onAnswer: (consent: boolean, evidence?: ConsentEvidence) => void;
-}
-
-/** The checks the gateway makes too, made first so a guest never waits to learn them. */
-function missing(values: ConsentFormValues, text: ConsentText): string | null {
-  if (text.consentKind === 'resume') return null;
-  if (values.name.trim() === '') return 'recording.consent.nameRequired';
-  const unsigned = values.signaturePng === null && !values.cannotSign;
-  return text.signature === 'required' && unsigned ? 'recording.consent.signatureRequired' : null;
-}
-
-function evidenceOf(values: ConsentFormValues, text: ConsentText, hash: string): ConsentEvidence {
-  if (text.consentKind === 'resume') return { textSha256: hash };
-  return {
-    textSha256: hash,
-    name: values.name.trim(),
-    ...(values.signaturePng === null ? {} : { signaturePng: values.signaturePng }),
-    ...(values.cannotSign ? { cannotSign: true } : {}),
-  };
 }
 
 /**
@@ -54,33 +36,10 @@ export function GuestRecordingQuestion({
   onAnswer,
 }: Readonly<GuestRecordingQuestionProps>) {
   const { t } = useTranslation();
-  const [edited, setEdited] = useState<ConsentFormValues | null>(null);
-  const [documentationAcceptedHash, setDocumentationAcceptedHash] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState<string | null>(null);
-  const resume = request?.consentKind === 'resume';
   const text = consent?.text ?? null;
-  const values = edited ?? {
-    name: text?.proposedName ?? '',
-    signaturePng: null,
-    cannotSign: false,
-  };
-
-  const documentationAccepted =
-    text?.documentationConsent == null ||
-    (consent !== null && documentationAcceptedHash === consent.hash);
-
-  const confirm = () => {
-    if (consent === null || !documentationAccepted) return;
-    const reason = missing(values, consent.text);
-    setBlocked(reason);
-    if (reason === null)
-      onAnswer(true, {
-        ...evidenceOf(values, consent.text, consent.hash),
-        ...(text?.documentationConsent == null ? {} : { documentationConsent: true }),
-      });
-  };
-
-  const shown = blocked ?? error;
+  const form = useGuestConsentForm(consent, onAnswer);
+  const resume = request?.consentKind === 'resume';
+  const shown = form.blocked ?? error;
 
   return (
     <QuestionDialog
@@ -90,39 +49,23 @@ export function GuestRecordingQuestion({
       confirmLabel={text?.acceptLabel ?? t('recording.ask.yes')}
       cancelLabel={text?.declineLabel ?? t('recording.ask.no')}
       error={shown === null ? null : t(shown)}
-      confirmDisabled={consent === null || !documentationAccepted}
-      onConfirm={confirm}
+      confirmDisabled={consent === null || !form.documentationAccepted}
+      onConfirm={form.confirm}
       onCancel={() => onAnswer(false)}
     >
       <ConsentBody text={text} failed={textFailed} voice={voice} />
-      {text?.documentationConsent != null && (
-        <div lang={text.language} className="mt-4">
-          <Checkbox
-            checked={documentationAccepted}
-            onCheckedChange={(accepted) =>
-              setDocumentationAcceptedHash(accepted ? (consent?.hash ?? null) : null)
-            }
-          >
-            {text.documentationConsent.acceptLabel}
-          </Checkbox>
-          <button
-            type="button"
-            className="mt-2 text-label text-fg-link"
-            onClick={() => onAnswer(false)}
-          >
-            {text.documentationConsent.declineLabel}
-          </button>
-        </div>
-      )}
+      <DocumentationConsentChoice
+        text={text}
+        accepted={form.documentationAccepted}
+        onAccept={form.acceptDocumentation}
+        onDecline={() => onAnswer(false)}
+      />
       {text?.consentKind === 'first' && (
         <GuestConsentForm
-          values={values}
+          values={form.values}
           proposed={text.proposedName !== null}
           signature={text.signature}
-          onChange={(next) => {
-            setEdited(next);
-            setBlocked(null);
-          }}
+          onChange={form.edit}
         />
       )}
     </QuestionDialog>
