@@ -134,13 +134,13 @@ mypy-extensions==1.1.0
     #   black
     #   isort
     #   mypy
-nltk==3.10.3
+nltk==3.10.4
     # via safety
 nodeenv==1.10.0
     # via pre-commit
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
-packaging==26.2
+packaging==26.3
     # via
     #   black
     #   build
@@ -150,6 +150,7 @@ packaging==26.2
     #   pytest
     #   safety
     #   safety-schemas
+    #   virtualenv
     #   wheel
 pathspec==1.1.1
     # via
@@ -216,7 +217,7 @@ pytest-asyncio==1.3.0
     # via -r requirements-dev.in
 pytest-cov==7.1.0
     # via -r requirements-dev.in
-python-discovery==1.6.0
+python-discovery==1.6.2
     # via virtualenv
 pytokens==0.4.1
     # via black
@@ -286,11 +287,11 @@ typing-extensions==4.16.0
     #   typing-inspection
 typing-inspection==0.4.2
     # via pydantic
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   requests
     #   types-requests
-virtualenv==21.7.9
+virtualenv==21.15.2
     # via
     #   -r requirements-dev.in
     #   pre-commit
