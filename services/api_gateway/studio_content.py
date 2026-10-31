@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .studio_html import safe_html
+from .studio_legal import LegalTexts
 from .studio_locales import GUEST_LANGUAGES, SkipReason, guest_languages_by_code
 from .studio_runtime_flow import RuntimeConfigurationFetcher
 from .studio_v2 import (
@@ -41,6 +42,7 @@ class TenantContent:
     staff: StaffContent | None
     # Keyed by SSF language code, in SSF's order.
     guest_languages: Mapping[str, GuestLanguageContent]
+    legal_texts: LegalTexts | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +105,7 @@ def _tenant_content(read: RuntimeRead, on_skip: Callable[[SkipReason], None]) ->
         time_zone=content.time_zone,
         branding=content.branding,
         staff=_staff(content.staff),
+        legal_texts=content.legal_texts,
         guest_languages=MappingProxyType(
             {code: _guest(mapped[code]) for code in GUEST_LANGUAGES if code in mapped}
         ),

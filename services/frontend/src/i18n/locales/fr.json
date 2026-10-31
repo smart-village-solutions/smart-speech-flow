@@ -74,7 +74,10 @@
       "cannotSign": "Je ne peux pas signer et je confirme d'un toucher.",
       "nameRequired": "Veuillez saisir votre nom.",
       "signatureRequired": "Veuillez signer ou confirmer que vous ne pouvez pas signer.",
-      "textChanged": "Le texte a changé. Veuillez le relire avant de répondre."
+      "textChanged": "Le texte a changé. Veuillez le relire avant de répondre.",
+      "originalLanguage": "Langue d’origine : {{language}}",
+      "documentationRequired": "Veuillez confirmer séparément le consentement à la documentation.",
+      "staffReleaseChanged": "Le texte d’autorisation de l’agent a changé. Demandez à l’agent de retirer cette demande et d’en envoyer une nouvelle."
     }
   },
   "feedback": {

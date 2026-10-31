@@ -74,7 +74,10 @@
       "cannotSign": "Nuk mund të nënshkruaj dhe konfirmoj me prekje.",
       "nameRequired": "Ju lutemi shkruani emrin tuaj.",
       "signatureRequired": "Ju lutemi nënshkruani ose konfirmoni që nuk mund të nënshkruani.",
-      "textChanged": "Teksti ka ndryshuar. Ju lutemi lexojeni përsëri para se të përgjigjeni."
+      "textChanged": "Teksti ka ndryshuar. Ju lutemi lexojeni përsëri para se të përgjigjeni.",
+      "originalLanguage": "Gjuha origjinale: {{language}}",
+      "documentationRequired": "Ju lutemi konfirmoni veçmas pëlqimin për dokumentimin.",
+      "staffReleaseChanged": "Teksti i miratimit të punonjësit ka ndryshuar. Kërkojini punonjësit ta tërheqë këtë kërkesë dhe të dërgojë një të re."
     }
   },
   "feedback": {

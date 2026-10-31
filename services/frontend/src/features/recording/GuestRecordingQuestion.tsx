@@ -5,6 +5,7 @@ import type {
   ConsentText,
   RecordingRequest,
 } from '@/domain/recording/recordingSession.types';
+import { Checkbox } from '@/ui/primitives/Checkbox';
 import { QuestionDialog } from '@/ui/patterns/QuestionDialog';
 import { ConsentBody, type ReadAloud } from './ConsentBody';
 import { GuestConsentForm, type ConsentFormValues } from './GuestConsentForm';
@@ -54,6 +55,7 @@ export function GuestRecordingQuestion({
 }: Readonly<GuestRecordingQuestionProps>) {
   const { t } = useTranslation();
   const [edited, setEdited] = useState<ConsentFormValues | null>(null);
+  const [documentationAcceptedHash, setDocumentationAcceptedHash] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
   const resume = request?.consentKind === 'resume';
   const text = consent?.text ?? null;
@@ -63,11 +65,19 @@ export function GuestRecordingQuestion({
     cannotSign: false,
   };
 
+  const documentationAccepted =
+    text?.documentationConsent == null ||
+    (consent !== null && documentationAcceptedHash === consent.hash);
+
   const confirm = () => {
-    if (consent === null) return;
+    if (consent === null || !documentationAccepted) return;
     const reason = missing(values, consent.text);
     setBlocked(reason);
-    if (reason === null) onAnswer(true, evidenceOf(values, consent.text, consent.hash));
+    if (reason === null)
+      onAnswer(true, {
+        ...evidenceOf(values, consent.text, consent.hash),
+        ...(text?.documentationConsent == null ? {} : { documentationConsent: true }),
+      });
   };
 
   const shown = blocked ?? error;
@@ -76,14 +86,34 @@ export function GuestRecordingQuestion({
     <QuestionDialog
       open={request !== null}
       title={t(resume ? 'recording.ask.resumeTitle' : 'recording.ask.title')}
-      confirmLabel={t('recording.ask.yes')}
-      cancelLabel={t('recording.ask.no')}
+      choicesLanguage={text?.language}
+      confirmLabel={text?.acceptLabel ?? t('recording.ask.yes')}
+      cancelLabel={text?.declineLabel ?? t('recording.ask.no')}
       error={shown === null ? null : t(shown)}
-      confirmDisabled={consent === null}
+      confirmDisabled={consent === null || !documentationAccepted}
       onConfirm={confirm}
       onCancel={() => onAnswer(false)}
     >
       <ConsentBody text={text} failed={textFailed} voice={voice} />
+      {text?.documentationConsent != null && (
+        <div lang={text.language} className="mt-4">
+          <Checkbox
+            checked={documentationAccepted}
+            onCheckedChange={(accepted) =>
+              setDocumentationAcceptedHash(accepted ? (consent?.hash ?? null) : null)
+            }
+          >
+            {text.documentationConsent.acceptLabel}
+          </Checkbox>
+          <button
+            type="button"
+            className="mt-2 text-label text-fg-link"
+            onClick={() => onAnswer(false)}
+          >
+            {text.documentationConsent.declineLabel}
+          </button>
+        </div>
+      )}
       {text?.consentKind === 'first' && (
         <GuestConsentForm
           values={values}

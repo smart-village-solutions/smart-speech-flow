@@ -84,6 +84,8 @@ class RecordingState:
     # A first request's extras, kept only while the guest is asked (§6).
     proposed_name: str | None = None
     id_checked_at: datetime | None = None
+    # The exact employee release reviewed for this request, never supplied as text by a browser.
+    staff_release: dict[str, str] | None = None
 
     @property
     def recording(self) -> bool:
@@ -161,6 +163,7 @@ def request(
     now: datetime,
     proposed_name: str | None = None,
     id_checked: bool = False,
+    staff_release: dict[str, str] | None = None,
 ) -> RecordingState:
     """Ask the guest. A name and ID check belong to a first request only."""
     if state.request_id == request_id:
@@ -176,6 +179,7 @@ def request(
         request_kind="first" if first else "resume",
         requested_by=requested_by,
         answer=None,
+        staff_release=staff_release,
         proposed_name=proposed_name if first else None,
         id_checked_at=now if first and id_checked else None,
     )

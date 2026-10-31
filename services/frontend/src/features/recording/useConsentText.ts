@@ -5,7 +5,7 @@ import type { ConsentText } from '@/domain/recording/recordingSession.types';
 
 interface Loaded {
   text: ConsentText;
-  /** SHA-256 of `text.html`, the very string rendered: what a yes sends back. */
+  /** The served version digest, or the HTML digest for an older gateway. */
   hash: string;
 }
 
@@ -30,7 +30,7 @@ export function useConsentText(
     void (async () => {
       try {
         const text = await recordingSession.consentText(sessionId);
-        const hash = await sha256Hex(text.html);
+        const hash = text.textSha256 ?? (await sha256Hex(text.html));
         if (!cancelled) setLoaded({ text, hash });
       } catch {
         if (!cancelled) setFailedFor(requestId);
