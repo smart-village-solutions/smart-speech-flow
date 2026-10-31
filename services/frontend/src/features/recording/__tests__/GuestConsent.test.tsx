@@ -25,6 +25,11 @@ const arming = {
 
 interface Served {
   consent_kind?: 'first' | 'resume';
+  language?: string;
+  documentation_consent?: { accept_label: string; decline_label: string };
+  accept_label?: string;
+  decline_label?: string;
+  text_sha256?: string;
   html?: string;
   signature?: 'off' | 'optional' | 'required';
   proposed_name?: string | null;
@@ -127,6 +132,72 @@ afterEach(() => {
 });
 
 describe('the consent question, as the guest answers it', () => {
+  it('shows served choices and explicitly identifies source-language wording', async () => {
+    const { answers } = gateway({
+      language: 'de',
+      accept_label: 'Abschnitt freigeben',
+      decline_label: 'Ablehnen',
+      consent_kind: 'resume',
+    });
+    const { dialog } = await ask({ kind: 'resume' });
+    expect(within(dialog).getByText(/Original.*de/)).toBeInTheDocument();
+    const yes = within(dialog).getByRole('button', { name: 'Abschnitt freigeben' });
+    expect(yes).toHaveAttribute('lang', 'de');
+    expect(
+      within(dialog)
+        .getByText('The staff member would like to record this conversation.')
+        .closest('[lang]')
+    ).toHaveAttribute('lang', 'de');
+    await userEvent.click(yes);
+    await vi.waitFor(() => expect(answers[0]).toMatchObject({ text_sha256: sha256(HTML) }));
+  });
+
+  it('requires documentation consent separately before the renewed section release', async () => {
+    const { answers } = gateway({
+      consent_kind: 'resume',
+      accept_label: 'Release this section',
+      decline_label: 'Decline section',
+      documentation_consent: {
+        accept_label: 'I consent to documentation',
+        decline_label: 'I decline documentation',
+      },
+    });
+    const { dialog } = await ask({ kind: 'resume' });
+    const release = within(dialog).getByRole('button', { name: 'Release this section' });
+    expect(release).toBeDisabled();
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', { name: 'I consent to documentation' })
+    );
+    expect(release).toBeEnabled();
+    await userEvent.click(release);
+    await vi.waitFor(() =>
+      expect(answers[0]).toMatchObject({ consent: true, documentation_consent: true })
+    );
+  });
+
+  it.each([
+    ['DOCUMENTATION_CONSENT_REQUIRED', 'Please confirm the documentation consent separately.'],
+    [
+      'STAFF_RELEASE_TEXT_MISMATCH',
+      'The employee release has changed. Please ask the staff member to withdraw this request and send a new one.',
+    ],
+  ])('explains a refused legal confirmation: %s', async (code, message) => {
+    gateway({ consent_kind: 'resume' }, code);
+    const { dialog } = await ask({ kind: 'resume' });
+    await yes();
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
+  });
+
+  it('uses the served version digest for the answer and read-aloud clip', async () => {
+    const digest = 'b'.repeat(64);
+    const { answers } = gateway({ consent_kind: 'resume', text_sha256: digest });
+    const { dialog, player } = await ask({ kind: 'resume' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Read aloud' }));
+    await vi.waitFor(() => expect(player.played[0]).toContain(`text_sha256=${digest}`));
+    await yes();
+    await vi.waitFor(() => expect(answers[0]).toMatchObject({ text_sha256: digest }));
+  });
+
   it('reads the text again and says why when the text changed under the guest', async () => {
     const { answers, reads } = gateway({}, 'CONSENT_TEXT_MISMATCH');
     const { dialog } = await ask();

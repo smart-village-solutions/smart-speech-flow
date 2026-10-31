@@ -26,6 +26,7 @@ from pydantic import (
     model_validator,
 )
 
+from .studio_legal import LegalTexts
 from .studio_v1 import is_safe_https_url
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,7 @@ class RecordingPolicy(_StudioModel):
     texts: tuple[RecordingTexts, ...] = Field(default=(), max_length=40, strict=False)
     # Not part of the block: the read's revision, which versions Studio's texts.
     configuration_revision: str = ""
+    legal_texts: LegalTexts | None = None
 
     @model_validator(mode="after")
     def _audit_outlives_archive(self) -> Self:
@@ -299,6 +301,7 @@ class RuntimeContent(_StudioModel):
     branding: Branding
     staff: StaffContent | None
     guest_languages: tuple[GuestLanguageContent, ...]
+    legal_texts: LegalTexts | None = None
 
 
 class RuntimeRead(_StudioModel):
@@ -390,12 +393,20 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
     branding = Branding.model_validate(
         _branding_body(body.get("branding")), context={"section": "branding"}
     )
+    legal = (
+        _validate_or_none(LegalTexts, body.get("legalTexts"), "legalTexts")
+        if body.get("legalTexts") is not None
+        else None
+    )
+    recording = _recording_policy(body.get("recording"), view.configuration_revision)
+    if recording is not None:
+        recording = recording.model_copy(update={"legal_texts": legal})
     return RuntimeRead(
         policy=RuntimePolicy(
             contract_version=view.contract_version,
             configuration_revision=view.configuration_revision,
             tenant_id=view.tenant.id,
-            recording=_recording_policy(body.get("recording"), view.configuration_revision),
+            recording=recording,
         ),
         content=RuntimeContent(
             display_name=tenant.display_name,
@@ -403,6 +414,7 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
             branding=branding,
             staff=_validate_or_none(StaffContent, body.get("staff"), "staff"),
             guest_languages=_guest_languages(body.get("guestLanguages")),
+            legal_texts=legal,
         ),
     )
 

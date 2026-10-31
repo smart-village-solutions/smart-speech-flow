@@ -40,6 +40,7 @@ class GuestAnswer:
     name: str | None = None
     signature_png: bytes | None = None
     cannot_sign: bool = False
+    documentation_consent: bool = False
 
 
 def decode_signature(encoded: str | None) -> bytes | None:
@@ -59,9 +60,13 @@ def evidence(policy: RecordingPolicy, asked: RecordingState, answer: GuestAnswer
     """The fields a yes adds to `consent.json`; raises when the yes must be refused."""
     kind = asked.request_kind or "first"
     served = consent_text(policy, answer.language, kind)
-    if not hmac.compare_digest((answer.text_sha256 or "").encode(), served.sha256.encode()):
+    if not hmac.compare_digest((answer.text_sha256 or "").encode(), served.answer_sha256.encode()):
         raise ConsentEvidenceError("CONSENT_TEXT_MISMATCH", status=409)
+    if served.documentation_consent is not None and not answer.documentation_consent:
+        raise ConsentEvidenceError("DOCUMENTATION_CONSENT_REQUIRED")
     fields: dict[str, Any] = text_fields(policy, served)
+    if served.documentation_consent is not None:
+        fields["documentation_consent"] = {"accepted": True, "text_sha256": served.answer_sha256}
     if kind == "first":
         fields["guest"] = _guest(asked.proposed_name, answer.name)
         fields["signature"] = _signature(policy, answer)

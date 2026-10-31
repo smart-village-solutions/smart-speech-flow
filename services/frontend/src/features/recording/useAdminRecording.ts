@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState, type Dispatch } from 'react';
 import { useServices } from '@/app/providers/services';
 import { randomId } from '@/core/ids';
 import type {
+  AdminRecordingView,
   ConsentKind,
   PolicyLevel,
   RecordingStatus,
+  StaffRelease,
 } from '@/domain/recording/recordingSession.types';
 import type { RecordingAction, RecordingSlice } from './recording.slice';
 import type { BandAction } from './recordingBand';
@@ -14,6 +16,7 @@ import { useFirstRequest } from './useFirstRequest';
 interface NextRequest {
   kind: ConsentKind;
   idCheck: PolicyLevel | null;
+  staffRelease: StaffRelease | null;
 }
 
 type AdminDispatch = Dispatch<RecordingAction | { type: 'error/raised'; errorKey: string }>;
@@ -30,10 +33,33 @@ export function useAdminRecording(
 ) {
   const { recordingSession } = useServices();
   const [canRequest, setCanRequest] = useState(false);
-  const [next, setNext] = useState<NextRequest>({ kind: 'first', idCheck: null });
+  const [next, setNext] = useState<NextRequest>({
+    kind: 'first',
+    idCheck: null,
+    staffRelease: null,
+  });
   // The open request's id, needed to cancel it; read back after a reload.
   const requestId = useRef<string | null>(null);
-  const first = useFirstRequest(sessionId, dispatch, requestId);
+  const adoptView = useCallback(
+    (view: AdminRecordingView) => {
+      setCanRequest(view.canRequest);
+      setNext({
+        kind: view.nextConsentKind,
+        idCheck: view.idCheck,
+        staffRelease: view.staffRelease ?? null,
+      });
+      requestId.current = view.request?.requestId ?? requestId.current;
+      dispatch({ type: 'recording/state', status: view.status });
+    },
+    [dispatch]
+  );
+  const refreshRelease = useCallback(async () => {
+    const view = await recordingSession.adminView(sessionId);
+    adoptView(view);
+    return view;
+  }, [adoptView, recordingSession, sessionId]);
+  const first = useFirstRequest(sessionId, dispatch, requestId, refreshRelease);
+  const preparing = useRef(false);
   const { phase } = slice.status;
 
   useEffect(() => {
@@ -45,10 +71,7 @@ export function useAdminRecording(
       .adminView(sessionId)
       .then((view) => {
         if (cancelled) return;
-        setCanRequest(view.canRequest);
-        setNext({ kind: view.nextConsentKind, idCheck: view.idCheck });
-        requestId.current = view.request?.requestId ?? requestId.current;
-        dispatch({ type: 'recording/state', status: view.status });
+        adoptView(view);
       })
       .catch(() => {
         // Recording unavailable on this gateway: no band, nothing to offer.
@@ -57,7 +80,7 @@ export function useAdminRecording(
     return () => {
       cancelled = true;
     };
-  }, [dispatch, phase, recordingSession, sessionId]);
+  }, [adoptView, phase, recordingSession, sessionId]);
 
   const run = useCallback(
     async (change: () => Promise<RecordingStatus>) => {
@@ -72,12 +95,26 @@ export function useAdminRecording(
 
   const onAction = useCallback(
     (action: BandAction) => {
-      if (action === 'request' && next.kind === 'first') {
-        first.show();
-      } else if (action === 'request') {
-        const id = randomId();
-        requestId.current = id;
-        void run(() => recordingSession.request(sessionId, id));
+      if (action === 'request') {
+        if (preparing.current) return;
+        preparing.current = true;
+        void (async () => {
+          try {
+            const view = await refreshRelease();
+            if (!view.canRequest) return;
+            if (view.nextConsentKind === 'first' || view.staffRelease != null) {
+              first.show();
+            } else {
+              const id = randomId();
+              requestId.current = id;
+              await run(() => recordingSession.request(sessionId, id));
+            }
+          } catch (error) {
+            dispatch({ type: 'error/raised', errorKey: adminRecordingErrorKey(error) });
+          } finally {
+            preparing.current = false;
+          }
+        })();
       } else if (action === 'cancel' && requestId.current !== null) {
         const id = requestId.current;
         void run(() => recordingSession.cancel(sessionId, id));
@@ -85,8 +122,8 @@ export function useAdminRecording(
         void run(() => recordingSession.stop(sessionId, 'admin'));
       }
     },
-    [first, next.kind, recordingSession, run, sessionId]
+    [dispatch, first, recordingSession, refreshRelease, run, sessionId]
   );
 
-  return { canRequest, onAction, firstRequest: { ...first, idCheck: next.idCheck } };
+  return { canRequest, onAction, firstRequest: { ...first, ...next } };
 }

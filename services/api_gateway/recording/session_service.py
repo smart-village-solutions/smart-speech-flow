@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hmac
 import logging
 import time
 import uuid
@@ -36,7 +37,7 @@ from . import session_state as rs
 from .archive_service import ArchiveUnavailableError, ConversationArchive, MessageArtefacts
 from .audit import GUEST_ACTOR, AuditEvent
 from .consent_evidence import ConsentEvidenceError, GuestAnswer, evidence
-from .consent_text import ConsentText, consent_text
+from .consent_text import ConsentText, consent_text, staff_release
 from .consent_voice import ConsentVoice
 from .records import PlaybackEvent
 from .session_state import ConsentKind, Phase, Reason, RecordingState, Snapshot
@@ -155,12 +156,18 @@ class RecordingSessions:
         requested_by: str,
         proposed_name: str | None = None,
         id_checked: bool = False,
+        staff_release_sha256: str | None = None,
     ) -> RecordingState:
         current = await self._store.load(key)
         if current.request_id == request_id:
             return current  # a replay: the checks were made when it was new
         self._require_guest(key)
         policy = await self.check_available(key.tenant_id)
+        release = staff_release(policy)
+        if release is not None and not hmac.compare_digest(
+            release.sha256, staff_release_sha256 or ""
+        ):
+            raise ConsentEvidenceError("STAFF_RELEASE_TEXT_MISMATCH", status=409)
         id_checked = id_checked and policy.id_check != "off"
 
         def transition(state: RecordingState, now: datetime) -> RecordingState:
@@ -177,6 +184,7 @@ class RecordingSessions:
                 now=now,
                 proposed_name=proposed_name,
                 id_checked=id_checked,
+                staff_release=release.record() if release is not None else None,
             )
 
         return await self._change(key, requested_by, transition)
@@ -224,7 +232,19 @@ class RecordingSessions:
             # The policy is read again at the guest's yes; a failure refuses it.
             # A replay or a stale answer needs no read: the transition settles it.
             policy = await self.check_available(key.tenant_id)
+            release = staff_release(policy)
+            previous = current.staff_release
+            if (release is None) != (previous is None) or (
+                release is not None
+                and not hmac.compare_digest(release.sha256, (previous or {}).get("sha256", ""))
+            ):
+                raise ConsentEvidenceError("STAFF_RELEASE_TEXT_MISMATCH", status=409)
             fields = evidence(policy, current, reply or GuestAnswer(language=""))
+            if previous is not None:
+                fields["staff_release"] = previous | {
+                    "actor": current.requested_by or "",
+                    "at": current.since.isoformat() if current.since else "",
+                }
         window_id = str(uuid.uuid4())
         return await self._change(
             key,

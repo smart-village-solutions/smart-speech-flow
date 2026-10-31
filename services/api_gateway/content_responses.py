@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from .message_models import SUPPORTED_LANGUAGES
 from .studio_content import TenantContent
+from .studio_legal import LocalizedRecordingStatus, recording_status
 from .studio_locales import GUEST_LANGUAGES
 from .studio_v2 import FeedbackForm, InstallationContent, Media
 
@@ -126,6 +127,7 @@ class GuestLanguagesResponse(_Body):
 
 
 class ProvidedGuestContent(_Body):
+    recording_status: LocalizedRecordingStatus | None = None
     provided: Literal[True] = True
     revision: str
     explanation_html: str
@@ -133,6 +135,7 @@ class ProvidedGuestContent(_Body):
 
 
 class UnprovidedGuestContent(_Body):
+    recording_status: LocalizedRecordingStatus | None = None
     provided: Literal[False] = False
 
 
@@ -168,6 +171,7 @@ class ContentStaff(_Body):
 
 
 class StaffContentResponse(_Body):
+    recording_status: LocalizedRecordingStatus | None = None
     revision: str
     time_zone: str | None
     branding: ContentBranding
@@ -230,9 +234,11 @@ def guest_content_response(
     content: TenantContent | None, language: str
 ) -> ProvidedGuestContent | UnprovidedGuestContent:
     studio = content.guest_languages.get(language) if content is not None else None
+    status = recording_status(content.legal_texts, language) if content is not None else None
     if content is None or studio is None:
-        return UnprovidedGuestContent()
+        return UnprovidedGuestContent(recording_status=status)
     return ProvidedGuestContent(
+        recording_status=status,
         revision=content.revision,
         explanation_html=studio.explanation_html,
         feedback=_form(studio.feedback),
@@ -242,6 +248,9 @@ def guest_content_response(
 def staff_content_response(content: TenantContent) -> StaffContentResponse:
     staff = content.staff
     return StaffContentResponse(
+        recording_status=recording_status(
+            content.legal_texts, staff.locale if staff is not None else "de-DE"
+        ),
         revision=content.revision,
         time_zone=content.time_zone,
         branding=ContentBranding.model_validate(content.branding.model_dump()),

@@ -1,5 +1,6 @@
 import type { RealtimeStatus } from '@/core/realtime/realtime.port';
 import type { ClientRole } from '@/core/roles';
+import type { RecordingStatusCopy } from '@/domain/content/content.types';
 import type { RecordingSlice } from './recording.slice';
 
 /** A screen that heard no ping for this long renders "paused" itself (spec §5.2). */
@@ -10,6 +11,9 @@ export type BandAction = 'request' | 'cancel' | 'stop';
 export interface BandView {
   variant: 'live' | 'neutral';
   labelKey: string;
+  labelText?: string;
+  detailText?: string;
+  language?: string;
   /** A second part after the label: why a recording is paused. */
   detailKey: string | null;
   /** Epoch ms the elapsed time counts from; live only. */
@@ -54,7 +58,7 @@ function neutral(labelKey: string, action: BandAction | null): BandView {
  * What the band shows, or null for no band (SCREEN_SPECS "Recording"). The
  * guest sees nothing while off, and the question instead of a band while asked.
  */
-export function bandView(
+function bundledBandView(
   role: ClientRole,
   slice: RecordingSlice,
   live: boolean,
@@ -76,6 +80,31 @@ export function bandView(
     case 'paused':
       return pausedView(live ? (reason ?? 'liveness') : 'liveness');
   }
+}
+
+/** Studio copy only replaces the actual state it describes; pause reasons stay bundled. */
+export function bandView(
+  role: ClientRole,
+  slice: RecordingSlice,
+  live: boolean,
+  canRequest: boolean,
+  copy?: RecordingStatusCopy | null
+): BandView | null {
+  const view = bundledBandView(role, slice, live, canRequest);
+  if (copy == null) return view;
+  const { phase, reason } = slice.status;
+  if (phase === 'off' && (reason === 'stopped_by_employee' || reason === 'stopped_by_guest')) {
+    return {
+      ...(view ?? neutral('admin.recording.off', null)),
+      labelText: copy.stopped,
+      detailText: copy.renewedReleaseRequired,
+      language: copy.locale,
+    };
+  }
+  if (view === null) return null;
+  if (phase === 'asking') return { ...view, labelText: copy.waiting, language: copy.locale };
+  if (phase === 'on' && live) return { ...view, labelText: copy.running, language: copy.locale };
+  return view;
 }
 
 /** `MM:SS`, zero-padded; hours roll into the minutes. */

@@ -74,7 +74,10 @@
       "cannotSign": "Non posso firmare e confermo con un tocco.",
       "nameRequired": "Inserisca il suo nome.",
       "signatureRequired": "Firmi oppure confermi di non poter firmare.",
-      "textChanged": "Il testo è cambiato. Lo rilegga prima di rispondere."
+      "textChanged": "Il testo è cambiato. Lo rilegga prima di rispondere.",
+      "originalLanguage": "Lingua originale: {{language}}",
+      "documentationRequired": "Conferma separatamente il consenso alla documentazione.",
+      "staffReleaseChanged": "Il testo di autorizzazione del dipendente è cambiato. Chiedi al dipendente di ritirare questa richiesta e inviarne una nuova."
     }
   },
   "feedback": {

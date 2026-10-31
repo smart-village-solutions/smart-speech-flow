@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
 import { ConversationSurface } from '@/features/conversation/ConversationSurface';
 import { useConversationScreen } from '@/features/conversation/useConversationScreen';
+import { useStaffContent } from '@/features/content/useStaffContent';
 import { RecordingIndicator } from '@/features/recording/RecordingIndicator';
 import { RecordingRequestDialog } from '@/features/recording/RecordingRequestDialog';
 import { useAdminRecording } from '@/features/recording/useAdminRecording';
@@ -42,7 +43,14 @@ export function AdminSessionScreen({
   const { languageOf } = useStaffLocalisation();
   const { recording, connection } = screen.state;
   const admin = useAdminRecording(sessionId, recording, screen.dispatch);
-  const band = useRecordingBand('admin', recording, connection, admin.canRequest);
+  const { content } = useStaffContent();
+  const band = useRecordingBand(
+    'admin',
+    recording,
+    connection,
+    admin.canRequest,
+    content?.recordingStatus
+  );
   usePlaybackReports(sessionId, 'admin', band.view?.variant === 'live');
 
   // A code SSF does not list would read as "Sprache offen", i.e. not yet chosen.
@@ -70,6 +78,8 @@ export function AdminSessionScreen({
           <RecordingIndicator band={band} onAction={admin.onAction} />
           {admin.firstRequest.open && (
             <RecordingRequestDialog
+              kind={admin.firstRequest.kind}
+              staffRelease={admin.firstRequest.staffRelease}
               idCheck={admin.firstRequest.idCheck}
               error={admin.firstRequest.error}
               sending={admin.firstRequest.sending}

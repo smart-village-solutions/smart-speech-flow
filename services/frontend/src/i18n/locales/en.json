@@ -74,7 +74,10 @@
       "cannotSign": "I cannot sign and confirm by tapping.",
       "nameRequired": "Please enter your name.",
       "signatureRequired": "Please sign, or confirm that you cannot sign.",
-      "textChanged": "The text has changed. Please read it again before you answer."
+      "textChanged": "The text has changed. Please read it again before you answer.",
+      "originalLanguage": "Original language: {{language}}",
+      "documentationRequired": "Please confirm the documentation consent separately.",
+      "staffReleaseChanged": "The employee release has changed. Please ask the staff member to withdraw this request and send a new one."
     }
   },
   "feedback": {
@@ -414,7 +417,8 @@
         "ARCHIVE_UNAVAILABLE": "No recording archive is set up for this installation.",
         "ARCHIVE_WRITE_FAILED": "The guest's consent could not be saved. The guest can try again.",
         "generic": "The recording could not be changed.",
-        "ID_CHECK_REQUIRED": "Please check the guest's ID document first."
+        "ID_CHECK_REQUIRED": "Please check the guest's ID document first.",
+        "STAFF_RELEASE_TEXT_MISMATCH": "The release text has changed. Withdraw any open request, then review the text and request recording again."
       },
       "ask": {
         "title": "Request recording",

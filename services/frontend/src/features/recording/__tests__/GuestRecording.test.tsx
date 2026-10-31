@@ -69,6 +69,52 @@ afterEach(() => {
 });
 
 describe('recording, as the guest sees it', () => {
+  it('shows tenant status for an unprovided language and preserves liveness warnings', async () => {
+    server.use(
+      http.get(`*/api/customer/session/${SESSION}`, () =>
+        HttpResponse.json({
+          session_id: SESSION,
+          status: 'active',
+          customer_language: 'en',
+          admin_connected: true,
+          customer_connected: true,
+          is_active: true,
+          can_send_messages: true,
+          created_at: new Date().toISOString(),
+          warning_at: new Date().toISOString(),
+          timeout_at: new Date().toISOString(),
+        })
+      ),
+      http.get(`*/api/customer/session/${SESSION}/content/:language`, () =>
+        HttpResponse.json({
+          provided: false,
+          recordingStatus: {
+            locale: 'de',
+            waiting: 'Studio waiting',
+            running: 'Studio running',
+            stopped: 'Studio stopped',
+            renewedReleaseRequired: 'Release again',
+          },
+        })
+      )
+    );
+    const wire = render();
+    await screen.findByRole('button', { name: 'Record' });
+    await wire.status('connected');
+    await wire.receive(frame('on', 3));
+    expect(await screen.findByText('Studio running')).toHaveAttribute('lang', 'de');
+    expect(screen.getByRole('button', { name: 'Stop recording' })).toBeInTheDocument();
+    await wire.status('disconnected');
+    expect(
+      await screen.findByText('Recording paused · connection interrupted')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Studio running')).toBeNull();
+    await wire.receive({ ...frame('off', 4), reason: 'stopped_by_employee' });
+    expect(await screen.findByText('Studio stopped · Release again')).toBeInTheDocument();
+    await wire.receive({ ...frame('off', 5), reason: 'declined' });
+    expect(screen.queryByText('Studio stopped · Release again')).toBeNull();
+  });
+
   it('asks the question and sends the yes with its request id', async () => {
     let answered: unknown;
     serveConsent('first');

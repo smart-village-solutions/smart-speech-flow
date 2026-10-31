@@ -1,5 +1,6 @@
 import type { RealtimeStatus } from '@/core/realtime/realtime.port';
 import type { ClientRole } from '@/core/roles';
+import type { RecordingStatusCopy } from '@/domain/content/content.types';
 import type { RecordingSlice } from './recording.slice';
 import { bandView, isLive, type BandView } from './recordingBand';
 import { useNow } from './useNow';
@@ -14,9 +15,10 @@ export function useRecordingBand(
   role: ClientRole,
   slice: RecordingSlice,
   connection: RealtimeStatus,
-  canRequest: boolean
+  canRequest: boolean,
+  copy?: RecordingStatusCopy | null
 ): RecordingBandState {
   const now = useNow(slice.status.phase !== 'off');
-  const view = bandView(role, slice, isLive(slice, connection, now), canRequest);
+  const view = bandView(role, slice, isLive(slice, connection, now), canRequest, copy);
   return { view, now };
 }
