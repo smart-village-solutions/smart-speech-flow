@@ -103,7 +103,7 @@ idna==3.18
     #   requests
 iniconfig==2.3.0
     # via pytest
-isort==9.0.1
+isort==9.0.2
     # via -r requirements-dev.in
 jinja2==3.1.6
     # via safety
