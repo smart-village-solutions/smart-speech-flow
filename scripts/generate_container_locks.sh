@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-EXPECTED_PIP_TOOLS_VERSION="7.5.2"
+EXPECTED_PIP_TOOLS_VERSION="7.6.2"
 PIP_COMPILE="${PIP_COMPILE:-pip-compile}"
 
 if ! "${PIP_COMPILE}" --version | grep -q "${EXPECTED_PIP_TOOLS_VERSION}"; then

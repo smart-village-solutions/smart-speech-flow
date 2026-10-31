@@ -17,7 +17,7 @@ repos:
 
   # Import Sorting
   - repo: https://github.com/PyCQA/isort
-    rev: 9.0.1
+    rev: 9.0.2
     hooks:
       # No args: isort reads [tool.isort] in pyproject.toml.
       - id: isort

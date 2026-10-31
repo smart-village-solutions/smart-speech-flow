@@ -47,7 +47,7 @@ click==8.4.2
     #   safety
 coverage[toml]==7.15.2
     # via pytest-cov
-cryptography==50.0.1
+cryptography==50.0.2
     # via
     #   -r requirements-dev.in
     #   authlib
@@ -103,7 +103,7 @@ idna==3.18
     #   requests
 iniconfig==2.3.0
     # via pytest
-isort==9.0.1
+isort==9.0.2
     # via -r requirements-dev.in
 jinja2==3.1.6
     # via safety
@@ -164,7 +164,7 @@ pip-audit==2.7.3
     # via -r requirements-dev.in
 pip-requirements-parser==32.0.1
     # via pip-audit
-pip-tools==7.6.1
+pip-tools==7.6.2
     # via -r requirements-dev.in
 platformdirs==4.10.1
     # via
@@ -271,7 +271,7 @@ types-pyopenssl==24.1.0.20240722
     # via types-redis
 types-redis==4.6.0.20241004
     # via -r requirements-dev.in
-types-requests==2.33.0.20260402
+types-requests==2.33.0.20261006
     # via -r requirements-dev.in
 types-setuptools==83.0.0.20260716
     # via types-cffi
