@@ -109,7 +109,7 @@ class LoadTestingFramework:
 
         # Test data generators
         # Alle 10 unterstützten Sprachen
-        self.languages = ["de", "en", "ar", "tr", "ru", "uk", "am", "fa", "ku", "ti"]
+        self.languages = ["de", "en", "ar", "tr", "ru", "uk", "am", "fa"]
         self.message_templates = [
             "Hello, I need help with my account",
             "Can you assist me with technical support?",

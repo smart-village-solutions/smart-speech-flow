@@ -106,12 +106,6 @@ VOICES = {
             "4cd0ca01824b460f490224e284f9b68ecf07f91f3c654ba3bce59d4eb7646082",
         ),
         _piper(
-            "ku",
-            "ku_TR-berfin_renas-medium",
-            "bc0b2cf086f9a33ca1d7ca2ca80b6f35f8917d0c89afe4a645c5b9d56ac355c4",
-            "66d0da87aa8e572c7e6ee67647aa6af6008e85e38819679f17dc9b86e3affca8",
-        ),
-        _piper(
             "it",
             "it_IT-serena-medium",
             "fe4e26b2c1236e2a44d2e295cad564d94a0d8b0a9fca1ccdfd70dd4af3116eb5",
@@ -199,24 +193,6 @@ VOICES = {
                     "4dd1eadcae389def443ecce4db0356300dc337a48990ac9d423c8568c5f489f3"
                 ),
                 "vocab.json": "8b1991a22048d0ddb437c0a4361a1d3a13f72846cafaba6b4cdc6dae4d33da8b",
-            },
-        ),
-        _mms(
-            "ti",
-            "facebook/mms-tts-tir",
-            "cd216946d4d313dc9083f492d9e7dba151dbd90e",
-            {
-                "config.json": "dea2b227ff3c02a13b4f75dc25d3d693c7d047beb77f7b17bdeb6234ddcf9123",
-                "model.safetensors": (
-                    "19a3dd1a9d2f40028d99cd3742d766a0924ee208dad309de4d2ca3eb6361be6f"
-                ),
-                "special_tokens_map.json": (
-                    "7a1cc941d7ea26ad0a9f78e166a97a76b21de2f09e320e3b564bf2e22c5d85c4"
-                ),
-                "tokenizer_config.json": (
-                    "cf6fdbc91183488ecd6189e2820580af1753954f40d0966a9582337bb365a20a"
-                ),
-                "vocab.json": "a07287509379fb6a2337f2342f4abd9602c42fa42ead319d2fedf748ce162504",
             },
         ),
     )

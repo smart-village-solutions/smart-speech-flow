@@ -100,7 +100,7 @@ def test_transcribe_debug_response_identifies_large_v3_turbo():
 
 
 PRODUCT_LANGUAGES = [
-    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 ]  # fmt: skip
 
@@ -125,12 +125,13 @@ def test_transcribes_in_every_product_language(lang):
     assert response.json()["text"] == f"dummy transcription in {lang}"
 
 
-def test_transcribe_invalid_language():
+@pytest.mark.parametrize("language", ["xx", "ti", "ku"])
+def test_transcribe_invalid_language(language):
     with SAMPLE_WAV.open("rb") as f:
         response = client.post(
             "/transcribe",
             files={"file": ("sample.wav", f, "audio/wav")},
-            data={"lang": "xx"},
+            data={"lang": language},
         )
     assert response.status_code == 400
 

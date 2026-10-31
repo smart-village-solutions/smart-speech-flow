@@ -103,8 +103,6 @@ Returns the supported language map for the frontend, including default and popul
     "ru": {"name": "Russian", "native": "Русский"},
     "uk": {"name": "Ukrainian", "native": "Українська"},
     "am": {"name": "Amharic", "native": "አማርኛ"},
-    "ti": {"name": "Tigrinya", "native": "ትግርኛ"},
-    "ku": {"name": "Kurdish", "native": "Kurmancî"},
     "fa": {"name": "Persian", "native": "فارسی"},
     "it": {"name": "Italian", "native": "Italiano"},
     "ro": {"name": "Romanian", "native": "Română"},

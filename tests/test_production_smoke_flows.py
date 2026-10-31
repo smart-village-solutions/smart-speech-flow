@@ -13,9 +13,8 @@ import os
 import httpx
 import pytest
 
-
 REQUIRED_LANGUAGES = {
-    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 }  # fmt: skip
 SAMPLE_TEXTS = {
@@ -26,8 +25,6 @@ SAMPLE_TEXTS = {
     "ru": "Здравствуйте, добрый день.",
     "uk": "Добрий день.",
     "am": "ሰላም እንደምን አለህ።",
-    "ti": "ሰላም ከመይ ኣለኻ።",
-    "ku": "Silav, roj bas.",
     "fa": "سلام، روز بخیر.",
     "it": "Buongiorno e buona giornata.",
     "ro": "Bună ziua și o zi bună.",

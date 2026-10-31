@@ -104,23 +104,8 @@ def test_amharic_numbers_are_spelled(number, expected):
     assert mms(number, "am") == expected
 
 
-@pytest.mark.parametrize(
-    ("number", "expected"),
-    [
-        ("5", "ሓሙሽተ"),
-        ("10", "ዓሰርተ"),
-        ("15", "ዓሰርተ ሓሙሽተ"),
-        ("25", "ዕስራ ሓሙሽተ"),
-        ("300", "ሰለስተ ሚእቲ"),
-        ("999999", "ትሽዓተ ሚእቲ ቴስዓ ትሽዓተ ሽሕ ትሽዓተ ሚእቲ ቴስዓ ትሽዓተ"),
-    ],
-)
-def test_tigrinya_numbers_are_spelled(number, expected):
-    assert mms(number, "ti") == expected
-
-
 def test_mms_voices_get_times_spelled_too():
-    assert mms("ሰዓት 9:30", "ti") == "ሰዓት ትሽዓተ ሰላሳ"
+    assert mms("ሰዓት 9:30", "am") == "ሰዓት ዘጠኝ ሰላሳ"
 
 
 def test_numbers_beyond_the_speller_are_read_digit_by_digit():
@@ -144,7 +129,6 @@ def test_whitespace_is_collapsed():
         ("ar", "€1,000", "1000 يورو"),
         ("ar", "١٬٠٠٠ €", "1000 يورو"),
         ("fa", "€1,250,000", "1250000 یورو"),
-        ("ku", "1.000 €", "1000 euro"),
         ("de", "1.000.000 Euro", "1000000 Euro"),
         ("en", "1,000,000 euros", "1000000 euros"),
     ],
@@ -157,7 +141,6 @@ def test_thousands_groups_are_merged_in_every_language(lang, text, expected):
     ("lang", "text", "expected"),
     [
         ("am", "1,000 ዩሮ", "ሺህ ዩሮ"),
-        ("ti", "1.500 ዩሮ", "ሽሕ ሓሙሽተ ሚእቲ ዩሮ"),
         ("am", "€1,000", "ሺህ ዩሮ"),
     ],
 )
@@ -170,7 +153,6 @@ def test_ethiopic_thousands_are_one_number(lang, text, expected):
     [
         ("am", "3.5 ኪሎ", "ሶስት ነጥብ አምስት ኪሎ"),
         ("am", "0,25", "ዜሮ ነጥብ ሁለት አምስት"),
-        ("ti", "3,5 ኪሎ", "ሰለስተ ነጥቢ ሓሙሽተ ኪሎ"),
         ("am", "ዋጋው 3.5.", "ዋጋው ሶስት ነጥብ አምስት."),
         ("am", "1.2.3", "አንድ ሁለት ሶስት"),
     ],

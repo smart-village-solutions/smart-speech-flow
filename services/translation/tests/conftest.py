@@ -66,7 +66,7 @@ def _install_fake_transformers() -> None:
             return self
 
     class _FakeTokenizer:
-        lang_code_to_id = {"de": 0, "en": 1, "ar": 2, "tr": 3}
+        lang_code_to_id = {"de": 0, "en": 1, "ar": 2, "tr": 3, "ti": 4, "ku": 5}
 
         @classmethod
         def from_pretrained(cls, _name):

@@ -31,7 +31,6 @@
   - **Ukrainian:** `uk_UA-tetiana-high` (Apache 2.0)
   - **Arabic:** `ar_JO-kareem-medium` (licence not stated upstream)
   - **Persian:** `fa_IR-gyro-medium` (licence not stated upstream)
-  - **Kurdish (Kurmanji):** `ku_TR-berfin_renas-medium` (CC BY-NC 4.0)
   - **Italian:** `it_IT-serena-medium` (CC BY 4.0)
   - **Romanian:** `ro_RO-mihai-medium` (CC0)
   - **Polish:** `pl_PL-gosia-medium` (CC0)
@@ -46,13 +45,12 @@
   - **Hindi:** `hi_IN-priyamvada-medium` (CC BY-NC-SA 4.0)
 
 ## **4. Meta MMS-TTS** (TTS Service)
-- **Description:** Massively Multilingual Speech TTS from Meta, used for the two languages Piper has no voice for.
+- **Description:** Massively Multilingual Speech TTS from Meta, used for Amharic, which Piper has no voice for.
 - **Licence:** CC-BY-NC 4.0
 - **Link:** [https://huggingface.co/facebook/mms-tts](https://huggingface.co/facebook/mms-tts)
 - **Used in:** `services/tts/mms_engine.py`, loaded as `VitsModel` on the GPU.
 - **Voices:**
   - **Amharic:** [`facebook/mms-tts-amh`](https://huggingface.co/facebook/mms-tts-amh)
-  - **Tigrinya:** [`facebook/mms-tts-tir`](https://huggingface.co/facebook/mms-tts-tir)
 
 MMS was trained on text without digits, so `services/tts/speech_text.py` spells
-numbers out for these two languages before synthesis.
+numbers out for Amharic before synthesis.

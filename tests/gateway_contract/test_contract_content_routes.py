@@ -22,7 +22,6 @@ BUNDLED = {
     "ru": ("Russian", "Русский"),
     "uk": ("Ukrainian", "Українська"),
     "am": ("Amharic", "አማርኛ"),
-    "ti": ("Tigrinya", "ትግርኛ"),
     "fa": ("Persian", "فارسی"),
     "it": ("Italian", "Italiano"),
     "ro": ("Romanian", "Română"),
@@ -167,7 +166,7 @@ def test_guest_languages_are_ssfs_with_studio_names_and_icons(client, conversati
     assert response.status_code == 200
     languages = response.json()["languages"]
     assert [language["code"] for language in languages] == [
-        "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+        "en", "ar", "tr", "ru", "uk", "am", "fa",
         "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
     ]  # fmt: skip
     by_code = {language["code"]: language for language in languages}
@@ -181,11 +180,9 @@ def test_guest_languages_are_ssfs_with_studio_names_and_icons(client, conversati
     }
     assert by_code["ar"]["provided"] is True
     assert by_code["ar"]["icon"] is None
-    assert by_code["ku"]["nativeName"] == "Kurmancî"
     # Studio's pt-BR is SSF's Portuguese.
     assert by_code["pt"]["provided"] is True
     assert by_code["pt"]["nativeName"] == "Português (Brasil)"
-    assert by_code["ku"]["icon"] == guest_language(KASSEL, "kmr")["icon"]
     assert by_code["tr"]["nativeName"] == "Türkçe"
     for code, (name, native) in BUNDLED.items():
         assert by_code[code] == {"code": code, "name": name, "native": native, "provided": False}
@@ -204,7 +201,7 @@ def test_invalid_content_withdraws_only_that_language(client, conversations, stu
     turkish = client.get(content_path(session_id, "tr")).json()
 
     assert by_code["en"]["provided"] is False
-    assert all(by_code[code]["provided"] for code in ("ar", "tr", "ku"))
+    assert all(by_code[code]["provided"] for code in ("ar", "tr"))
     assert english == {"provided": False}
     assert turkish["provided"] is True
 
@@ -217,7 +214,7 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     languages = client.get(languages_path(session_id)).json()["languages"]
     content = client.get(content_path(session_id, "en")).json()
 
-    assert [language["provided"] for language in languages] == [False] * 21
+    assert [language["provided"] for language in languages] == [False] * 19
     assert content == {"provided": False}
 
 
@@ -371,7 +368,6 @@ def test_staff_content_for_the_tokens_tenant(client, identity):
             "en": "Englisch",
             "ar": "Arabisch",
             "tr": "Türkisch",
-            "ku": "Kurmandschi",
             "pt": "Portugiesisch (Brasilien)",
         },
     }

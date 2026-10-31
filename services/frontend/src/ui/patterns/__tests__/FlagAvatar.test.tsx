@@ -14,11 +14,11 @@ describe('FlagAvatar', () => {
 
   it('falls back to a text chip for a language with no country flag', () => {
     renderWithProviders(
-      <FlagAvatar language={{ code: 'ku', native: 'Kurmancî', english: 'Kurdish' }} />
+      <FlagAvatar language={{ code: 'xx', native: 'Unknown', english: 'Unknown' }} />
     );
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
-    expect(screen.getByText('KU')).toBeInTheDocument();
+    expect(screen.getByText('XX')).toBeInTheDocument();
   });
 
   it('shows a given icon instead of the bundled flag', () => {
@@ -38,16 +38,16 @@ describe('FlagAvatar', () => {
   it('shows a given icon for a language that otherwise gets the text chip', () => {
     renderWithProviders(
       <FlagAvatar
-        language={{ code: 'ku', native: 'Kurmancî', english: 'Kurdish' }}
-        iconUrl="https://studio.example.org/flags/ku.svg"
+        language={{ code: 'xx', native: 'Unknown', english: 'Unknown' }}
+        iconUrl="https://studio.example.org/flags/xx.svg"
       />
     );
 
-    expect(screen.getByRole('img', { name: 'Kurdish' })).toHaveAttribute(
+    expect(screen.getByRole('img', { name: 'Unknown' })).toHaveAttribute(
       'src',
-      'https://studio.example.org/flags/ku.svg'
+      'https://studio.example.org/flags/xx.svg'
     );
-    expect(screen.queryByText('KU')).not.toBeInTheDocument();
+    expect(screen.queryByText('XX')).not.toBeInTheDocument();
   });
 
   it('keeps the bundled flag when the icon is null', () => {

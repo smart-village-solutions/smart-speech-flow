@@ -169,7 +169,7 @@ def _build_asr_response(
 
 app = FastAPI(title="ASR Service")
 SUPPORTED_LANGS = [
-    "de", "en", "ar", "tr", "am", "fa", "ru", "uk", "ku", "ti",
+    "de", "en", "ar", "tr", "am", "fa", "ru", "uk",
     "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
 ]  # fmt: skip
 requests_total = Counter("asr_requests_total", "Total ASR requests")

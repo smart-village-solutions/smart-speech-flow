@@ -161,7 +161,7 @@ services:
       - LLM_REFINEMENT_MAX_TOKENS=${LLM_REFINEMENT_MAX_TOKENS:-256}
       # No colon before the dash: an explicitly empty value must survive so
       # "refine everything" is reachable through compose (see I4).
-      - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa,pl,bg,el,sq,hi}
+      - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,fa,pl,bg,el,sq,hi}
       # Pipeline Admission Control — bounds concurrent GPU pipeline work.
       # One GPU hosts asr, translation, tts and vllm together. Five is the
       # limit measured on the production card (2026-09-24): peak 15345 MiB of

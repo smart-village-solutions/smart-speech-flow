@@ -123,11 +123,10 @@ def test_guest_languages_are_keyed_by_ssf_code_in_ssf_order() -> None:
 
     content = StudioContentCache(on_skip=skipped.append).record(kassel_read(extra_locale="hr"))
 
-    assert list(content.guest_languages) == ["en", "ar", "tr", "ku", "pt"]
+    assert list(content.guest_languages) == ["en", "ar", "tr", "pt"]
     assert content.guest_languages["pt"].locale == "pt-BR"
-    assert content.guest_languages["ku"].locale == "kmr"
     assert content.guest_languages["ar"].icon is None
-    assert skipped == ["unsupported"]
+    assert skipped == ["unsupported", "unsupported"]
 
 
 def test_a_known_revision_is_reused_and_reports_no_second_skip() -> None:
@@ -138,7 +137,7 @@ def test_a_known_revision_is_reused_and_reports_no_second_skip() -> None:
     second = cache.record(kassel_read(extra_locale="hr"))
 
     assert second is first
-    assert skipped == ["unsupported"]
+    assert skipped == ["unsupported", "unsupported"]
 
 
 def test_the_pointer_follows_the_latest_read_and_ages() -> None:
@@ -238,4 +237,4 @@ def test_skipped_locales_are_counted_once_even_after_a_failed_insert(monkeypatch
     assert cache.try_record(kassel_read(extra_locale="hr")) is not None
     assert cache.try_record(kassel_read(extra_locale="hr")) is not None
 
-    assert skipped == ["unsupported"]
+    assert skipped == ["unsupported", "unsupported"]

@@ -14,9 +14,6 @@ from .studio_v2 import GuestLanguageContent
 
 STAFF_LANGUAGE = "de"
 GUEST_LANGUAGES = tuple(code for code in SUPPORTED_LANGUAGES if code != STAFF_LANGUAGE)
-# Studio's locale for a language SSF knows under another code.
-LOCALE_ALIASES = {"kmr": "ku"}
-
 SkipReason = Literal["unsupported", "duplicate"]
 SKIP_REASONS: tuple[SkipReason, ...] = ("unsupported", "duplicate")
 
@@ -24,8 +21,7 @@ SKIP_REASONS: tuple[SkipReason, ...] = ("unsupported", "duplicate")
 def ssf_language(locale: str) -> str | None:
     """SSF's guest language for a BCP 47 locale, by primary subtag, or None."""
     primary = locale.split("-", 1)[0].lower()
-    code = LOCALE_ALIASES.get(primary, primary)
-    return code if code in GUEST_LANGUAGES else None
+    return primary if primary in GUEST_LANGUAGES else None
 
 
 def guest_languages_by_code(

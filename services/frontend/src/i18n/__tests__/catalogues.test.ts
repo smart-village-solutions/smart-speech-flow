@@ -54,7 +54,7 @@ describe('translation catalogues', () => {
   it('covers every language the gateway offers', () => {
     expect([...SUPPORTED_UI_LOCALES].sort(byName)).toEqual(
       [
-        ...['am', 'ar', 'de', 'en', 'fa', 'ku', 'ru', 'ti', 'tr', 'uk'],
+        ...['am', 'ar', 'de', 'en', 'fa', 'ru', 'tr', 'uk'],
         ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
       ].sort(byName)
     );

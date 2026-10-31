@@ -164,7 +164,7 @@ export const installationBody = {
 };
 
 export const GUEST_LANGUAGE_CODES = [
-  ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'],
+  ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'fa'],
   ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
 ] as const;
 
@@ -175,8 +175,6 @@ const NAMES: Record<string, [string, string]> = {
   ru: ['Russian', 'Русский'],
   uk: ['Ukrainian', 'Українська'],
   am: ['Amharic', 'አማርኛ'],
-  ti: ['Tigrinya', 'ትግርኛ'],
-  ku: ['Kurdish', 'Kurmancî'],
   fa: ['Persian', 'فارسی'],
   it: ['Italian', 'Italiano'],
   ro: ['Romanian', 'Română'],

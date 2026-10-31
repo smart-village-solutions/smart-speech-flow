@@ -2,7 +2,7 @@
 
 FastAPI microservice that turns translated text into speech. Each product
 language has exactly one voice: Piper voices on the GPU for most languages,
-Meta MMS for Amharic and Tigrinya, which Piper has no voice for.
+Meta MMS for Amharic, which Piper has no voice for.
 
 ## Voices
 
@@ -15,7 +15,6 @@ Meta MMS for Amharic and Tigrinya, which Piper has no voice for.
 | Ukrainian (`uk`) | Piper | `uk_UA-tetiana-high` |
 | Arabic (`ar`) | Piper | `ar_JO-kareem-medium` |
 | Persian (`fa`) | Piper | `fa_IR-gyro-medium` |
-| Kurdish, Kurmanji (`ku`) | Piper | `ku_TR-berfin_renas-medium` |
 | Italian (`it`) | Piper | `it_IT-serena-medium` |
 | Romanian (`ro`) | Piper | `ro_RO-mihai-medium` |
 | Polish (`pl`) | Piper | `pl_PL-gosia-medium` |
@@ -29,7 +28,6 @@ Meta MMS for Amharic and Tigrinya, which Piper has no voice for.
 | Chinese, Mandarin (`zh`) | Piper | `zh_CN-huayan-medium` |
 | Hindi (`hi`) | Piper | `hi_IN-priyamvada-medium` |
 | Amharic (`am`) | MMS | `facebook/mms-tts-amh` |
-| Tigrinya (`ti`) | MMS | `facebook/mms-tts-tir` |
 
 `voices.py` pins every file to a revision and a SHA-256 hash. The image build
 downloads and verifies them (`fetch_voices.py`), so the service needs no
@@ -41,8 +39,8 @@ network access at runtime. Licences are listed in
 `speech_text.py` rewrites text before synthesis. Piper reads plain integers
 through espeak-ng, so only what espeak misreads is rewritten: clock times,
 money with cents, numbers with a leading zero (read digit by digit), and German
-days of the month. MMS voices cannot read digits at all, so for Amharic and
-Tigrinya every number is spelled out.
+days of the month. MMS voices cannot read digits at all, so for Amharic
+every number is spelled out.
 
 ## Endpoints
 
@@ -78,20 +76,19 @@ Set `TTS_DEVICE=cpu` to run the image on a machine without a GPU.
 At most `TTS_MAX_CONCURRENT_SYNTHESES` (default 1) syntheses run on the GPU at
 once; further requests wait, which bounds the VRAM the service needs.
 Keep it at 1 unless the card has room and only Piper voices are busy: the MMS
-voices seed through `torch.manual_seed`, which is process-wide, so concurrent
-Amharic or Tigrinya requests race on the seed. Values below 1, and a
+voice seeds through `torch.manual_seed`, which is process-wide, so concurrent
+Amharic requests race on the seed. Values below 1, and a
 `TTS_DEVICE` other than `cpu`, `cuda` or `cuda:<n>`, stop the service at
 startup.
 
 Voices are never loaded after startup and never evicted: there is one per
 language, so the set cannot grow, and a cold load would hold up a
 conversation for seconds. The service instead reads its own VRAM from NVML
-and compares it with `TTS_VRAM_BUDGET_MIB` (default 3072). On the production
-card the first ten voices hold 1722 MiB once each has spoken, flat from then
-on; the twelve added in October 2026 measured ~980 MiB more there (~71 MiB
-each to load, ~11 MiB each once spoken), so ~2700 MiB for all 22. A synthesis
-briefly adds about 200. Going over
-the budget does not change `status`, because every voice still works.
+and compares it with `TTS_VRAM_BUDGET_MIB` (default 3072). The current set
+contains 20 voices. Measure its VRAM on the target card;
+the earlier ~2700 MiB measurement included the two removed voices and does
+not establish the current total. A synthesis briefly adds about 200 MiB.
+Going over the budget does not change `status`, because every voice still works.
 Five minutes of readings over it log a warning (and an info line once back
 under), and twenty minutes fire the `TTSVRAMOverBudget` alert; a synthesis in
 flight lifts single readings for well under a second and counts for neither.

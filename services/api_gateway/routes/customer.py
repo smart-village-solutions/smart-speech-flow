@@ -46,6 +46,7 @@ from ..session_lifecycle import (
     SessionNotFoundError,
     SessionTerminatedError,
     TenantConflictError,
+    UnsupportedLanguageError,
 )
 from ..session_manager import TenantSessionManager
 from ..session_models import ClientType, SessionStatus
@@ -268,6 +269,8 @@ async def activate_session(
         raise HTTPException(status_code=409, detail=conflict.code) from None
     except GuestConflictError:
         raise guest_conflict() from None
+    except UnsupportedLanguageError:
+        raise HTTPException(status_code=400, detail="UNSUPPORTED_LANGUAGE") from None
 
 
 @router.get(
