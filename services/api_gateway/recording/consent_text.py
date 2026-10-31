@@ -24,7 +24,7 @@ from ..studio_v2 import RecordingPolicy, RecordingTexts
 from .session_state import ConsentKind
 
 # Bump with any change to a file in consent_texts/: archived records cite it.
-BUNDLED_VERSION: Final[str] = "bundled-1"
+BUNDLED_VERSION: Final[str] = "bundled-2"
 GERMAN: Final[str] = "de"
 _BUNDLED_DIRECTORY: Final[Path] = Path(__file__).with_name("consent_texts")
 _BREAKS: Final[re.Pattern[str]] = re.compile(r"</p>|</li>|<br\s?/?>")

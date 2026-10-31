@@ -21,7 +21,7 @@ from tests.test_recording_session_service import POLICY_FIELDS
 BUNDLED = Path(ct.__file__).with_name("consent_texts")
 # Archived records cite BUNDLED_VERSION: a changed text needs a new version.
 BUNDLED_DIGEST = {
-    "bundled-1": "fea1434bdbbae1d01aedad86907bd6d173206c40eb799ff488667e9018f9e269",
+    "bundled-2": "e6084d6de0e01d803b7645cd29f4227951ffe942de099f2f6d3def240dc1cb7a",
 }
 
 
@@ -79,8 +79,8 @@ def test_studio_text_wins_for_its_language_sanitised_and_versioned_by_revision()
 
 
 def test_the_first_studio_entry_for_a_language_wins() -> None:
-    policy = _policy(_studio("kmr", consent="<p>one</p>"), _studio("ku", consent="<p>two</p>"))
-    assert consent_text(policy, "ku", "first").html == "<p>one</p>"
+    policy = _policy(_studio("en-GB", consent="<p>one</p>"), _studio("en", consent="<p>two</p>"))
+    assert consent_text(policy, "en", "first").html == "<p>one</p>"
 
 
 def test_a_language_without_a_bundled_file_falls_back_to_german() -> None:
@@ -123,8 +123,20 @@ def test_read_aloud_text_has_one_paragraph_per_line_and_no_markup() -> None:
     assert consent_text(policy, "en", "first").plain() == "One & two.\nA\nB"
 
 
-
-@pytest.mark.parametrize("language", ["../consent_texts/en", "../../../../etc/x", "xx"])
+@pytest.mark.parametrize(
+    "language",
+    [
+        "../consent_texts/en",
+        "../../../../etc/x",
+        "xx",
+        "ti",
+        "ku",
+        "kmr",
+        "ti-ER",
+        "ku-TR",
+        "kmr-TR",
+    ],
+)
 def test_a_language_ssf_does_not_offer_never_names_a_file(language) -> None:
     # The guest's language comes from the activation request, unchecked.
     ct._bundled.cache_clear()
