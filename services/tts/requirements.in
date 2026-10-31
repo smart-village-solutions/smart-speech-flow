@@ -11,7 +11,7 @@ soundfile
 numpy>=2.5.4
 # The floor is the release Amharic (mms_engine.py) was last
 # verified on, by comparing token ids and audio with the previous pin (#432).
-transformers>=5.18.0
+transformers>=5.21.0
 httpx==0.28.1
 pytest==9.0.3
 psutil==7.2.2
