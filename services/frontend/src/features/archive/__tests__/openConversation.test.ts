@@ -135,13 +135,17 @@ describe('openConversation', () => {
     expect(vi.mocked(d.archive.object).mock.calls.map((call) => call[1])).not.toContain(
       IDS.otherKey
     );
-    expect(vi.mocked(d.archiveCrypto.openObject).mock.calls[0][1]).toEqual({
-      tenantId: 'tenant-kassel',
-      conversationId: IDS.conversation,
-      entryId: IDS.consent,
-      objectType: 'consent.json',
-      keyId: IDS.key,
-    });
+    expect(d.archiveCrypto.openObject).toHaveBeenCalledWith(
+      KEY,
+      {
+        tenantId: 'tenant-kassel',
+        conversationId: IDS.conversation,
+        entryId: IDS.consent,
+        objectType: 'consent.json',
+        keyId: IDS.key,
+      },
+      envelope(IDS.consent)
+    );
     expect(result.view.header.guestName).toBe('Amira Haddad');
     expect(d.archive.reportIntegrity).toHaveBeenCalledWith(IDS.conversation, 'object');
   });
