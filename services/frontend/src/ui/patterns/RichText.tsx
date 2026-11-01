@@ -1,5 +1,6 @@
 import { createElement, Fragment, isValidElement, useMemo, type ReactNode } from 'react';
 import { isSafeHttpsUrl } from '@/core/http/url';
+import { DROPPED_RICH_TEXT_ELEMENTS } from './richTextContent';
 
 const LINK_CLASS =
   'text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover';
@@ -11,21 +12,6 @@ const BLOCK_CLASS: Readonly<Record<string, string | undefined>> = {
   ol: 'list-inside list-decimal',
 };
 const FORMATTING = new Set(['strong', 'em']);
-/** Removed with everything inside; any other unknown element is unwrapped to its text. */
-const DROPPED = new Set([
-  'script',
-  'style',
-  'iframe',
-  'svg',
-  'math',
-  'template',
-  'noscript',
-  'object',
-  'embed',
-  'textarea',
-  'select',
-]);
-
 function isMailto(href: string): boolean {
   try {
     return new URL(href).protocol === 'mailto:';
@@ -87,7 +73,7 @@ function wrap(element: Element, inline: boolean, children: ReactNode[]): ReactNo
 }
 
 function buildElement(element: Element, inline: boolean): ReactNode[] {
-  if (DROPPED.has(element.localName)) return [];
+  if (DROPPED_RICH_TEXT_ELEMENTS.has(element.localName)) return [];
   if (element.localName === 'br') return [createElement('br')];
   const children = buildChildren(element, inline);
   return isBlank(children) ? [] : wrap(element, inline, children);

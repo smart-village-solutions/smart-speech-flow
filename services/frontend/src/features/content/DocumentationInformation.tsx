@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import type { LegalInformation } from '@/domain/content/content.types';
 import { RichText } from '@/ui/patterns/RichText';
+import { hasVisibleRichText } from '@/ui/patterns/richTextContent';
+import { directionFor } from '@/i18n';
 
 /** Shared sanitized source wording, without consent or recording controls. */
 export function LegalInformationSections({
@@ -27,7 +29,12 @@ export function DocumentationInformation({
   );
   if (
     !['mode2Consent', 'guestRecordingRelease'].every((id) =>
-      sections.some((section) => section.id === id)
+      sections.some(
+        (section) =>
+          section.id === id &&
+          section.headline.trim().length > 0 &&
+          hasVisibleRichText(section.bodyHtml)
+      )
     )
   )
     return null;
@@ -44,7 +51,7 @@ export function DocumentationInformation({
           version: information.version,
         })}
       </p>
-      <div lang={information.locale} dir="auto" className="space-y-5">
+      <div lang={information.locale} dir={directionFor(information.locale)} className="space-y-5">
         <LegalInformationSections information={{ ...information, sections }} />
       </div>
     </section>

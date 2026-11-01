@@ -153,7 +153,7 @@ describe('ordinary conversation entry', () => {
     expect(region).not.toHaveAttribute('dir');
     const wording = within(region).getByText('Source wording mode2Consent').closest('[lang]');
     expect(wording).toHaveAttribute('lang', 'de-DE');
-    expect(wording).toHaveAttribute('dir', 'auto');
+    expect(wording).toHaveAttribute('dir', 'ltr');
     expect(wording).not.toContainElement(
       within(region).getByText(CATALOGUES.ar.legal.informationNotice)
     );
@@ -353,4 +353,62 @@ describe('entry legal snapshot', () => {
     expect(await screen.findByText('ar wording mode2Consent')).toBeInTheDocument();
     expect(screen.queryByText('en wording mode2Consent')).not.toBeInTheDocument();
   });
+});
+
+describe.each(['documentationInformation', 'legalInformation'])(
+  '%s empty compatibility wording',
+  (field) => {
+    it.each(['mode2Consent', 'guestRecordingRelease'])(
+      'withdraws the inline pair if %s has an invisible body',
+      async (id) => {
+        const incomplete = {
+          ...information,
+          sections: information.sections.map((section) =>
+            section.id === id
+              ? { ...section, bodyHtml: '<p>&nbsp;<script>hidden text</script></p>' }
+              : section
+          ),
+        };
+        server.use(
+          guestContentHandler((language) =>
+            HttpResponse.json({
+              ...guestContentBody(language),
+              legalInformation: information,
+              [field]: incomplete,
+            })
+          )
+        );
+        renderScreen('guest consent');
+        await screen.findByTestId('guest-content-settled');
+        expect(screen.queryByRole('region')).not.toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+        ).toBeInTheDocument();
+      }
+    );
+  }
+);
+
+it.each([
+  ['AR-eg', 'rtl'],
+  ['fa-IR', 'rtl'],
+  ['de-DE', 'ltr'],
+])('sets the reference wording direction from source locale %s', async (locale, direction) => {
+  server.use(
+    guestContentHandler((language) =>
+      HttpResponse.json({
+        ...guestContentBody(language),
+        legalInformation: { ...information, locale },
+      })
+    )
+  );
+  renderScreen('guest consent');
+  await userEvent.click(
+    await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+  );
+  const wording = within(screen.getByRole('dialog'))
+    .getByText('Source wording mode2Consent')
+    .closest('[lang]');
+  expect(wording).toHaveAttribute('lang', locale);
+  expect(wording).toHaveAttribute('dir', direction);
 });

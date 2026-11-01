@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
+
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from .studio_legal import LegalTexts, legal_localization
+from .studio_legal import LegalChoice, LegalTexts, legal_localization
 
 
 class _InformationModel(BaseModel):
@@ -59,14 +61,39 @@ _DOCUMENTATION_GROUPS = (
 )
 
 
+class _VisibleTextParser(HTMLParser):
+    """Identify visible text while decoding character references in sanitized HTML."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.has_text = False
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.has_text = True
+
+
+def _has_wording(choice: LegalChoice | None) -> bool:
+    if choice is None or not choice.headline.strip():
+        return False
+    parser = _VisibleTextParser()
+    parser.feed(choice.body_html)
+    parser.close()
+    return parser.has_text
+
+
 def documentation_information(legal: LegalTexts | None, locale: str) -> LegalInformation | None:
     """Return the complete read-only documentation pair from one wording locale."""
     if legal is None:
         return None
     entry = legal_localization(legal, locale)
-    if entry is None or entry.mode2_consent is None or entry.guest_recording_release is None:
+    if entry is None or not all(
+        _has_wording(getattr(entry, field)) for _, field in _DOCUMENTATION_GROUPS
+    ):
         entry = legal_localization(legal, legal.source_locale)
-    if entry is None or entry.mode2_consent is None or entry.guest_recording_release is None:
+    if entry is None or not all(
+        _has_wording(getattr(entry, field)) for _, field in _DOCUMENTATION_GROUPS
+    ):
         return None
     return LegalInformation(
         locale=entry.locale,

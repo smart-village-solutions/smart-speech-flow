@@ -1,5 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTranslation } from 'react-i18next';
+import { directionFor } from '@/i18n';
 import type { LegalInformation } from '@/domain/content/content.types';
 import { cn } from '@/lib/cn';
 import type { LegalLinksTone } from '@/ui/patterns/LegalLinks';
@@ -50,7 +51,7 @@ export function LegalInformationDialog({
             aria-label={t('legal.informationTitle')}
             tabIndex={0}
             lang={information.locale}
-            dir="auto"
+            dir={directionFor(information.locale)}
             className="mt-4 min-h-0 space-y-5 overflow-y-auto text-note leading-chat text-fg-body"
           >
             <LegalInformationSections information={information} />

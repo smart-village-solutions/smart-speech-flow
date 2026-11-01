@@ -211,3 +211,79 @@ def test_absent_legal_texts_return_null_documentation_for_all_guest_content(lang
         ]
         is None
     )
+
+
+@pytest.mark.parametrize("document", ["mode2Consent", "guestRecordingRelease"])
+@pytest.mark.parametrize(
+    ("field", "empty_wording"),
+    [
+        ("headline", " \t\n\u00a0"),
+        ("bodyHtml", "<p><br></p>"),
+        ("bodyHtml", "<p>&nbsp;</p>"),
+        ("bodyHtml", "<p>&#160; &#x20;</p>"),
+        ("bodyHtml", "<p> \t\n</p>"),
+    ],
+)
+def test_visually_empty_translated_document_uses_complete_source_pair(
+    document, field, empty_wording
+):
+    block = legal_block()
+    translated = deepcopy(block["localizations"][0])
+    translated["locale"] = "en-GB"
+    translated[document][field] = empty_wording
+    block["localizations"].append(translated)
+    content = StudioContentCache().record(read(block))
+    body = guest_content_response(GuestContent("ask", content), "en").model_dump(by_alias=True)
+
+    assert body["legalInformation"]["locale"] == "en-GB"
+    reference = next(
+        part for part in body["legalInformation"]["sections"] if part["id"] == document
+    )
+    assert reference[field] == empty_wording.replace("&#160;", "&nbsp;").replace("&#x20;", " ")
+    information = body["documentationInformation"]
+    assert (information["locale"], information["version"]) == ("de-DE", "synthetic-draft")
+    assert [(part["id"], part["headline"]) for part in information["sections"]] == [
+        ("mode2Consent", "Documentation"),
+        ("guestRecordingRelease", "Guest release"),
+    ]
+
+
+@pytest.mark.parametrize("document", ["mode2Consent", "guestRecordingRelease"])
+@pytest.mark.parametrize(
+    ("field", "empty_wording"),
+    [("headline", " \t\n\u00a0"), ("bodyHtml", "<p><br>&nbsp;</p>")],
+)
+def test_visually_empty_source_document_cannot_supply_a_documentation_pair(
+    document, field, empty_wording
+):
+    block = legal_block()
+    block["localizations"][0][document][field] = empty_wording
+    content = StudioContentCache().record(read(block))
+
+    for locale in ("de-DE", "en"):
+        body = guest_content_response(GuestContent("ask", content), locale).model_dump(
+            by_alias=True
+        )
+        assert body["documentationInformation"] is None
+        assert body["legalInformation"]["locale"] == "de-DE"
+
+
+@pytest.mark.parametrize("document", ["mode2Consent", "guestRecordingRelease"])
+@pytest.mark.parametrize(
+    "body_html",
+    ["<p>„…“ — العربية • 中文 &amp; €</p>", "<p>&lt;script&gt;literal&lt;/script&gt;</p>"],
+)
+def test_visible_unicode_and_escaped_literal_documentation_is_preserved(document, body_html):
+    block = legal_block()
+    translated = deepcopy(block["localizations"][0])
+    translated["locale"] = "en-GB"
+    translated[document]["bodyHtml"] = body_html
+    block["localizations"].append(translated)
+    content = StudioContentCache().record(read(block))
+    information = guest_content_response(GuestContent("ask", content), "en").model_dump(
+        by_alias=True
+    )["documentationInformation"]
+
+    assert information["locale"] == "en-GB"
+    section = next(part for part in information["sections"] if part["id"] == document)
+    assert section["bodyHtml"] == body_html
