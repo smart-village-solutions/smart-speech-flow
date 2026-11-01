@@ -1,27 +1,28 @@
 # KasselDIALOG design-system implementation audit
 
 Audit date: 2026-11-01. Implementation branch: `codex/consolidate-typography`.
-Reference: [published Figma library](https://www.figma.com/design/JsHzcu2sPXrKOx1GKLqfaD/Designsystem-KasselDIALOG?node-id=8-987).
-Typography baseline: `fedf07c8`; the keyboard-focus and inheritance corrections are included with this report.
+Reference: [Figma library](https://www.figma.com/design/JsHzcu2sPXrKOx1GKLqfaD/Designsystem-KasselDIALOG?node-id=8-987).
 
 ## Assessment
 
-The application already implements 37 of the 40 public UI families as reusable components or feature compositions. The other three are explicitly labelled design proposals in Figma. Publication makes those proposals available to designers; it does not implement their React APIs.
+All 40 public UI families now have reusable implementations or explicit feature compositions. StatusChip, InlineAlert and EmptyState are implemented and used in existing features. Figma and the frontend share 129 mapped tokens: 70 colors and 59 dimensions. Their resolved values are exported in [the contract](../../services/frontend/design-system.contract.json) and checked against actual browser styles.
 
-All 114 Figma tokens with CSS syntax were compared with their runtime values: 59 colors and 55 dimensions, each resolved under Light and Dark (228 comparisons). They match within CSSOM color serialization precision; alpha comparisons allow one 8-bit step. The additional proposed essential-muted color has no runtime mapping. Focus adopts the existing published proposal values in this branch.
+The library contains 64 canonical families: 40 public UI families, 16 public icon/asset families and eight private construction/example families. Three variable collections contain 276 variables. The 21 shared text styles retain six reading sizes: 12, 14, 16, 18, 24 and 28 px. Error and metadata captions have separate semantic roles; the 20 px TypingDots value is graphic geometry.
 
-The 19 shared Figma text styles use reading sizes 12, 14, 16, 18, 24 and 28 px. The 20 px TypingDots value is graphic geometry. Semantic aliases, weights, leading and tracking remain distinct.
+## Reconciled behavior
 
-## Corrections made during the audit
+- StatusChip supports neutral/success/warning/danger. The recovery adapter preserves its feature API while reusing the shared badge.
+- InlineAlert supports optional title/content and native announcement roles. Static notices may override the role. FeedbackError and administration errors reuse it.
+- EmptyState supports title, optional description and an action slot. Administration empty views reuse it.
+- TextField preserves Default/Compact input heights of 46/42 px, vertical padding of 10/8 px, a 6 px label gap, 14/21 labels and 16/24 values. Invalid borders persist during focus. External help and generated error descriptions coexist.
+- Textarea offers plain/field variants, three rows by default, and consistent invalid/disabled/focus treatments. Feedback, recovery and archive fields reuse it.
+- IconButton supports 32/36/64 px visual sizes, selection and disabled opacity. Shared icon controls and shorter buttons have at least 44 px hit areas. Rating buttons are 44 px and wrap on narrow screens.
+- CodeInput exposes an invalid state, used for rejected access codes. Figma State=Error maps to this prop; Filled remains content-derived.
+- Muted, placeholder and link colors are strengthened in both themes. Field/checkbox/code borders share a clearer semantic border. Four-tone notices share foreground, surface and border roles.
+- Focus uses a 2 px outline with a 2 px offset. Fixed-white header controls retain the Light outline; the themed dropdown inherits the active theme.
+- ScreenShell and the four Radix dialog surfaces explicitly use Inter and the 16 px body role, including portalled content.
 
-- Added a 2 px keyboard outline with a 2 px offset. Shared primitives carry `focus-ring`, which also works in Radix portals. Feature controls inside `ScreenShell` receive the same treatment. The native checkbox remains accessible and paints focus on its visible sibling.
-- Excluded the outline from focus-time transitions: the previous `transition-all` on Button animated its width from zero, briefly hiding focus.
-- Added `--focus-visible`: Light resolves to `#1d538b`, Dark to `#79b8f6`, from Figma's `proposed/focus/visible`. Only controls on the fixed-white header and light legal links override it to Light; the header's themed account dropdown keeps the Dark outline on its dark surface.
-- Set the default `ScreenShell` text role to 16 px. Unstyled children previously inherited the legacy body's 18 px.
-- Set Inter and the body role explicitly on all four Radix dialog surfaces: ConfirmDialog, QuestionDialog, FeedbackSheet and AdminInviteOverlay. Portals live outside ScreenShell and previously inherited the legacy system font and 18 px default.
-- Extended the existing compiled-CSS guard for focus tokens, the outline rule and the checkbox's peer-focus selector.
-
-Figma remains the published reference; this code audit did not edit or republish the library. Its descriptions still identify the focus treatment as a proposal, now adopted locally in this branch.
+Figma masters, dependent patterns and documentation were updated, including shared feedback examples in both themes. The original Alt-Stand references remain separate.
 
 ## Public UI families
 
@@ -33,7 +34,7 @@ Figma remains the published reference; this code audit did not edit or republish
 | `KD/NewSessionAction` | `AdminNewSessionButton` [features/admin/AdminNewSessionButton.tsx](../../services/frontend/src/features/admin/AdminNewSessionButton.tsx) | Source component |
 | `KD/CodeInput` | `CodeInput` [ui/patterns/CodeInput.tsx](../../services/frontend/src/ui/patterns/CodeInput.tsx) | Source component |
 | `KD/Checkbox` | `Checkbox` [ui/primitives/Checkbox.tsx](../../services/frontend/src/ui/primitives/Checkbox.tsx) | Source component |
-| `KD/StatusChip` | No generic equivalent | Design proposal |
+| `KD/StatusChip` | `StatusChip` [ui/primitives/StatusChip.tsx](../../services/frontend/src/ui/primitives/StatusChip.tsx) | Shared component |
 | `KD/ConversationRow` | `AdminSessionRow` [features/admin/AdminSessionRow.tsx](../../services/frontend/src/features/admin/AdminSessionRow.tsx) | Source component |
 | `KD/LanguageOption` | `LanguageSelectScreen` [features/language-select/LanguageSelectScreen.tsx](../../services/frontend/src/features/language-select/LanguageSelectScreen.tsx) | Feature composition |
 | `KD/OrganizationLink` | `TenantLoginScreen` [features/login/TenantLoginScreen.tsx](../../services/frontend/src/features/login/TenantLoginScreen.tsx) | Feature composition |
@@ -62,58 +63,56 @@ Figma remains the published reference; this code audit did not edit or republish
 | `KD/QuestionDialog` | `QuestionDialog` [ui/patterns/QuestionDialog.tsx](../../services/frontend/src/ui/patterns/QuestionDialog.tsx) | Source component |
 | `KD/SystemLoadCard` | `SystemLoadCard` [features/admin/SystemLoadCard.tsx](../../services/frontend/src/features/admin/SystemLoadCard.tsx) | Source component |
 | `KD/ConversationHistory` | `AdminSessionList` [features/admin/AdminSessionList.tsx](../../services/frontend/src/features/admin/AdminSessionList.tsx) | Source component |
-| `KD/EmptyState` | Inline feature notices only | Design proposal |
+| `KD/EmptyState` | `EmptyState` [ui/patterns/EmptyState.tsx](../../services/frontend/src/ui/patterns/EmptyState.tsx) | Shared component |
 | `KD/AppHeader` | `AppHeader` [ui/patterns/AppHeader.tsx](../../services/frontend/src/ui/patterns/AppHeader.tsx) | Source component |
 | `KD/CopyLink` | `InviteShareRow` [features/admin/InviteShareRow.tsx](../../services/frontend/src/features/admin/InviteShareRow.tsx) | Source component |
 | `KD/Invitation` | `AdminInviteOverlay` [features/admin/AdminInviteOverlay.tsx](../../services/frontend/src/features/admin/AdminInviteOverlay.tsx) | Source component |
-| `KD/InlineAlert` | Feature-specific errors and notices only | Design proposal |
+| `KD/InlineAlert` | `InlineAlert` [ui/patterns/InlineAlert.tsx](../../services/frontend/src/ui/patterns/InlineAlert.tsx) | Shared component |
 | `KD/Textarea` | `Textarea` [ui/primitives/Textarea.tsx](../../services/frontend/src/ui/primitives/Textarea.tsx) | Source component |
 | `KD/IntroductionCard` | `AdminDashboardScreen` [features/admin/AdminDashboardScreen.tsx](../../services/frontend/src/features/admin/AdminDashboardScreen.tsx) | Feature composition |
 
+
 ## Assets and private parts
 
-The other 16 public families comprise 12 icon roles and four asset/pattern roles:
+The other 16 public families cover 12 icon roles (Feedback, Theme, Home, Account, Microphone, Keyboard, Playback, Close, Star, Arrow, Send, Pause), HeaderLogo, LegalLinks, SponsorStrip and FlagAvatar. Existing assets and lucide-react usages remain their source. HeaderLogo and SponsorStrip keep white contexts; QR/signature keep invariant color pairs.
 
-| Figma role | Source |
-| --- | --- |
-| Icon/Feedback, Theme, Home, Account, Microphone, Keyboard, Playback, Close, Star, Arrow, Send, Pause | Existing `lucide-react` usages. Theme and playback select their icon dynamically; arrows mirror under RTL. This audit checks roles and usage, not vector path identity. |
-| HeaderLogo | [AppHeader](../../services/frontend/src/ui/patterns/AppHeader.tsx), `/assets/Logo.png`. Its colored, fixed-white header asset is distinct from the monochrome BrandLogo component. |
-| LegalLinks | [LegalLinks](../../services/frontend/src/ui/patterns/LegalLinks.tsx), with a fixed-Light tone for white surfaces. |
-| SponsorStrip | [StartPageFooter](../../services/frontend/src/ui/patterns/StartPageFooter.tsx), `/assets/Foerdermittelgeber.png` and `/assets/Stadt.png`. |
-| FlagAvatar | [FlagAvatar](../../services/frontend/src/ui/patterns/FlagAvatar.tsx), sizes 16 / 22 / 40 / 72 px. Studio-supplied imagery remains dynamic. |
-
-Eight `.KD/*` families are private construction parts and composition examples. They do not require corresponding public React exports.
+Eight `.KD/*` families remain private construction parts and examples, without corresponding public React exports.
 
 ## API correspondence
 
-- Button.Variant maps to `variant="pill|sheet|compact"`. React children provide label/icon content; callers own action colors.
-- Checkbox.Checked maps to native `checked`; State follows focus, hover and `disabled`. It does not need a runtime State prop.
-- TextField.Density maps to `density`. ShowLabel maps inversely to `labelHidden`. Filled is derived from the actual value, while `error` supplies the error text and accessible invalid state.
-- Textarea.Plain is the primitive; Field is the treatment composed by FeedbackQuestion. Filled and interaction states are derived from content and native input state.
-- IconButton's 32 / 36 px sizes map to `tone="close|default"`. ComposerControls owns the specialized 64 px actions. Figma's icon swap maps to React children.
-- AppHeader.Layout is derived from breakpoints and the shell's keyboard state. Navigation visibility maps to `showNavigation`; account content is supplied through `trailing`.
-- Message and feedback lifecycles come from domain state. Figma prototypes are illustrations, not substitutes for runtime state machines, keyboard behavior or screen-reader announcements.
+- Button.Variant maps to `variant="pill|sheet|compact"`; React children supply label/icon content.
+- Checkbox.Checked maps to native checked; State follows focus, hover and disabled.
+- TextField.Density maps to density. ShowLabel maps inversely to labelHidden. Filled derives from value. The error prop supplies generated error text and invalid semantics; native aria-invalid also works.
+- Textarea.Variant maps to `variant="plain|field"`. Native content, aria-invalid and disabled determine state.
+- IconButton.Size maps to `size="small|medium|large"`; the existing tone API stays compatible. Selection uses aria-pressed.
+- StatusChip.Tone and InlineAlert.Tone map to lowercase tone props. InlineAlert and EmptyState optional actions use normal React slots; Figma uses instance-swap properties.
+- Ratings remain button groups with aria-pressed inside fieldsets. ScaleInput labels are optional.
+- AppHeader.Layout follows breakpoints and keyboard state. Message and feedback lifecycles remain domain-driven.
 
-## Remaining differences and limits
+## Repeatable validation
 
-1. **Generic proposals:** StatusChip, EmptyState and InlineAlert have no equivalent shared API. The recovery feature has its own [StatusChip / Chip](../../services/frontend/src/features/recovery/StatusChip.tsx), with request-specific semantics and different tones; it is not the generic four-tone Figma component.
-2. **Additional visual states:** some error/disabled/selected skins in Figma remain proposals, especially on Textarea and IconButton. Native disabled behavior exists; that does not imply every proposed skin is implemented.
-3. **TextField density and leading:** the published Default and Compact filled masters both measure 67 px high with an 8 px vertical input padding and 4 px label gap. Their labels use 14/21 px and values 16/24 px. [TextField](../../services/frontend/src/ui/primitives/TextField.tsx) intentionally retains 10 / 8 px vertical padding for Default / Compact and a 6 px label gap; leading currently inherits 1.6. The published Figma pair therefore loses the density distinction agreed during consolidation. Preserve that code distinction; reconcile the Figma density geometry and field leading in a dedicated update before claiming pixel parity.
-4. **Muted text:** `proposed/text/essential-muted` is not adopted. Existing low-contrast muted/placeholder colors remain; this audit is not a contrast or accessibility release certification.
-5. **Mobile targets:** the published 32 / 36 px icon controls and smaller rating controls need a separate hit-area review against the project's intended mobile targets. Their geometry was preserved rather than silently diverging from Figma.
-6. **Code Connect:** Button and TextField currently return empty Code Connect maps. Source links and the matrix above exist, but generated connected snippets are not configured.
-7. **Legacy and other branding:** NotFoundPage, ToastContext and legacy body defaults are outside the KasselDIALOG ScreenShell migration. The SSF brand retains its own accent and logo treatment. They were not restyled to manufacture whole-repository parity.
-8. **Coverage:** six responsive Light/Dark browser cases cover the shared controls, real AdminHeader including its themed account dropdown, default shell typography and ConfirmDialog. Dialog dismissal, native checkbox keyboard toggling and horizontal overflow were checked. Other feature workflows and assistive technologies still require their own validation.
+From `services/frontend`:
 
-## Validation
+```sh
+npm ci
+npx playwright install chromium
+npm run dev
+# Open /design-system.html?theme=dark&dir=rtl
+npm run test:design-system
+npm test
+npm run build
+npm run lint
+bash scripts/check-tokens.sh
+```
 
-The browser reproduction first failed because keyboard focus was absent and portal typography inherited system-ui / 18 px. After the corrections:
+The gallery uses real components/providers and the Kassel brand DOM attribute. It is a development HTML entry, not a production route. Twelve browser cases cover Light/Dark at 320/390/800 px in LTR/RTL: keyboard behavior, focus/invalid/disabled states, field geometry, hit areas, ratings, dialog dismissal and horizontal overflow. Two cases compare every mapped token against the Figma contract. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an installed browser.
 
-- All 228 mapped-token comparisons pass.
-- Shared focus is visible immediately at widths 320 / 390 / 800 px in Light and Dark.
-- The fixed-white header controls retain the Light outline in Dark mode; the account dropdown uses the Dark outline.
-- Default shell and ConfirmDialog text use Inter / 16 px.
-- Checkbox Space toggling and dialog Escape dismissal work; tested layouts have no horizontal overflow.
-- Final checks pass: `bash scripts/check-tokens.sh`, `npm run build`, `npm run lint`, and all 1,541 tests across 173 frontend test files. The build retains its existing large-chunk warning; the suite retains its baseline asynchronous test/MSW warnings.
+Current checks: 1,554 unit/component tests across 175 files, 14 browser cases, build, lint and compiled-CSS checks. Browser checks include alpha-composited contrast for muted/placeholder and notice text, field borders, and fixed-white header versus themed dropdown focus. The Figma integrity audit reports zero alias, binding, instance, matrix, prototype, font, placeholder, duplicate-family, documentation-overflow or token-parity issues. Independent code review has no open findings. The existing large-chunk warning and baseline asynchronous/MSW test warnings remain.
 
-The check script is committed. The browser harness was a temporary audit fixture and is removed after verification; it does not add a production route or dependency.
+## Publication and limits
+
+The earlier baseline was published. This reconciliation changes the Figma working file; the connector cannot publish team-library updates. Publish from **Assets → Libraries → This file → Publish** before distributing the update to consuming files.
+
+Button and TextField Code Connect maps remain empty. Source references and this matrix exist; connected snippets are not configured. Older pinned source URLs describe the original baseline; this branch and the contract describe the reconciliation.
+
+These checks establish shared-component/token agreement, not every product workflow or screen-reader combination. Legacy NotFoundPage/ToastContext and SSF-specific branding remain separate from the KasselDIALOG migration.

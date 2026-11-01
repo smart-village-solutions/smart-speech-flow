@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/primitives/Button';
+import { InlineAlert } from '@/ui/patterns/InlineAlert';
 
 interface FeedbackErrorProps {
   reasonKey: string;
@@ -16,9 +17,8 @@ export function FeedbackError({ reasonKey, action }: Readonly<FeedbackErrorProps
   const { t } = useTranslation();
 
   return (
-    <div role="alert" className="flex flex-col gap-1 rounded-xl bg-surface-danger-hover px-4 py-3">
-      <p className="text-label font-medium text-fg-danger">{t('feedback.failed')}</p>
-      <p className="text-caption leading-chat text-fg-danger">{t(reasonKey)}</p>
+    <InlineAlert tone="danger" title={t('feedback.failed')}>
+      <p>{t(reasonKey)}</p>
       {action && (
         <Button
           variant="compact"
@@ -28,6 +28,6 @@ export function FeedbackError({ reasonKey, action }: Readonly<FeedbackErrorProps
           {action.label}
         </Button>
       )}
-    </div>
+    </InlineAlert>
   );
 }

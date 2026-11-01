@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 import type { FeedbackQuestion as Question } from '@/domain/feedback/feedbackForm.types';
 import { ScaleInput } from '@/ui/patterns/ScaleInput';
 import { StarRating } from '@/ui/patterns/StarRating';
+import { Textarea } from '@/ui/primitives/Textarea';
 
 type Answer = number | string | null;
 
@@ -78,14 +79,14 @@ function QuestionInput({ question, value, onChange }: Readonly<FeedbackQuestionP
       );
     case 'longText':
       return (
-        <textarea
+        <Textarea
+          variant="field"
           rows={3}
           aria-label={question.question}
           maxLength={question.maxLength}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
           placeholder={question.placeholder}
-          className="focus-ring w-full resize-none rounded-xl border border-border-header bg-surface-field px-4 py-3 text-body leading-chat text-fg-body outline-none transition-colors duration-150 placeholder:text-fg-placeholder focus:border-accent-60"
         />
       );
   }

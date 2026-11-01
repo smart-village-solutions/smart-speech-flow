@@ -6,19 +6,24 @@ interface CheckboxProps {
   onCheckedChange: (checked: boolean) => void;
   children: ReactNode;
   className?: string;
+  disabled?: boolean;
 }
 
-export function Checkbox({ checked, onCheckedChange, children, className }: Readonly<CheckboxProps>) {
+export function Checkbox({ checked, onCheckedChange, children, className, disabled = false }: Readonly<CheckboxProps>) {
   const id = useId();
 
   return (
-    <label htmlFor={id} className={cn('group flex cursor-pointer items-start gap-3', className)}>
+    <label
+      htmlFor={id}
+      className={cn('group flex min-h-12 cursor-pointer items-start gap-3 py-3', disabled && 'cursor-not-allowed opacity-50', className)}
+    >
       <span className="relative mt-0.5 shrink-0">
         <input
           id={id}
           type="checkbox"
           className="peer sr-only"
           checked={checked}
+          disabled={disabled}
           onChange={(event) => onCheckedChange(event.target.checked)}
         />
         <span
@@ -27,7 +32,7 @@ export function Checkbox({ checked, onCheckedChange, children, className }: Read
             'flex size-5 items-center justify-center rounded-box border-2 transition-colors duration-150 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus',
             checked
               ? 'border-accent bg-accent'
-              : 'border-border-checkbox bg-transparent group-hover:border-border-checkbox-hover'
+              : cn('border-border-checkbox bg-transparent', !disabled && 'group-hover:border-border-checkbox-hover')
           )}
         >
           {checked && (
@@ -43,7 +48,7 @@ export function Checkbox({ checked, onCheckedChange, children, className }: Read
           )}
         </span>
       </span>
-      <span className="text-note leading-snug tracking-prose text-fg-consent transition-colors duration-150 group-hover:text-fg-consent-hover">
+      <span className={cn('text-note leading-snug tracking-prose text-fg-consent transition-colors duration-150', !disabled && 'group-hover:text-fg-consent-hover')}>
         {children}
       </span>
     </label>

@@ -41,7 +41,7 @@ export function AppHeader({
                 type="button"
                 onClick={onBack}
                 aria-label={t('header.back')}
-                className="flex items-center gap-1.5 text-black/60 transition-colors duration-150 hover:text-black [--focus-visible:var(--focus-visible-on-light)]"
+                className="hit-target relative flex items-center gap-1.5 text-black/60 transition-colors duration-150 hover:text-black [--focus-visible:var(--focus-visible-on-light)]"
               >
                 <ArrowLeft size={17} strokeWidth={2.5} className="rtl:-scale-x-100" />
                 <span className="text-note font-medium tracking-back">{t('header.back')}</span>
