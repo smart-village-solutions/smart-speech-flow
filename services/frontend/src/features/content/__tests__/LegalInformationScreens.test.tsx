@@ -131,47 +131,53 @@ describe.each(['guest consent', 'guest conversation', 'staff conversation'])(
   }
 );
 
-// The ordinary conversation entry must expose documentation wording without
-// treating the page visit or Get Started as a recording release.
+// The entry introduces the service; counsel wording is available only on request.
 describe('ordinary conversation entry', () => {
-  it('shows documentation and guest release wording inline, retaining the separate reference dialog', async () => {
-    server.use(
-      guestContentHandler((language) =>
-        HttpResponse.json({
-          ...guestContentBody(language),
-          storage: { mode: 'disabled' },
-          storageQuestionHtml: null,
-          legalInformation: information,
-        })
-      )
-    );
-    renderScreen('guest consent');
-    const region = await screen.findByRole('region', {
-      name: CATALOGUES.ar.legal.informationTitle,
-    });
-    expect(region).not.toHaveAttribute('lang');
-    expect(region).not.toHaveAttribute('dir');
-    const wording = within(region).getByText('Source wording mode2Consent').closest('[lang]');
-    expect(wording).toHaveAttribute('lang', 'de-DE');
-    expect(wording).toHaveAttribute('dir', 'ltr');
-    expect(wording).not.toContainElement(
-      within(region).getByText(CATALOGUES.ar.legal.informationNotice)
-    );
-    for (const id of ['mode2Consent', 'guestRecordingRelease']) {
-      expect(within(region).getByText(`Source wording ${id}`)).toBeInTheDocument();
+  it.each([undefined, information])(
+    'keeps all counsel wording out of the entry with compatibility information %j',
+    async (documentationInformation) => {
+      server.use(
+        guestContentHandler((language) =>
+          HttpResponse.json({
+            ...guestContentBody(language),
+            storage: { mode: 'disabled' },
+            storageQuestionHtml: null,
+            legalInformation: information,
+            documentationInformation,
+          })
+        )
+      );
+      renderScreen('guest consent');
+      const trigger = await screen.findByRole('button', {
+        name: CATALOGUES.ar.legal.informationTitle,
+      });
+      expect(
+        screen.getByText(
+          CATALOGUES.ar.consent.intro.replace('$t(app.name)', CATALOGUES.ar.app.name)
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByText(CATALOGUES.ar.consent.howTo)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          CATALOGUES.ar.consent.intro.replace('$t(app.name)', CATALOGUES.ar.app.name)
+        ).parentElement?.children
+      ).toHaveLength(2);
+      expect(screen.queryByRole('region')).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      for (const section of information.sections) {
+        expect(screen.queryByRole('heading', { name: section.headline })).not.toBeInTheDocument();
+        expect(screen.queryByText(`Source wording ${section.id}`)).not.toBeInTheDocument();
+      }
+      await userEvent.click(trigger);
+      const dialog = screen.getByRole('dialog');
+      for (const section of information.sections) {
+        expect(within(dialog).getByRole('heading', { name: section.headline })).toBeInTheDocument();
+        expect(within(dialog).getByText(`Source wording ${section.id}`)).toBeInTheDocument();
+      }
+      expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
     }
-    for (const id of ['mode3Consent', 'staffRecordingRelease']) {
-      expect(within(region).queryByText(`Source wording ${id}`)).not.toBeInTheDocument();
-    }
-    expect(within(region).getByText(/de-DE/)).toHaveTextContent('source-2026-42');
-    expect(within(region).queryByRole('button')).not.toBeInTheDocument();
-    expect(within(region).queryByRole('checkbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
-    ).toBeInTheDocument();
-  });
+  );
 });
 
 describe('entry legal snapshot', () => {
@@ -193,79 +199,17 @@ describe('entry legal snapshot', () => {
       );
       try {
         renderScreen('guest consent');
-        expect(await screen.findByText('Source wording mode2Consent')).toBeInTheDocument();
+        await userEvent.click(
+          await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+        );
+        expect(
+          within(screen.getByRole('dialog')).getByText('Source wording mode2Consent')
+        ).toBeInTheDocument();
       } finally {
         release();
       }
     }
   );
-
-  it.each([null, { ...information, sections: information.sections.slice(0, 1) }])(
-    'does not use reference wording when documentation information is %j',
-    async (documentationInformation) => {
-      server.use(
-        guestContentHandler((language) =>
-          HttpResponse.json({
-            ...guestContentBody(language),
-            legalInformation: information,
-            documentationInformation,
-          })
-        )
-      );
-      renderScreen('guest consent');
-      await screen.findByTestId('guest-content-settled');
-      expect(
-        screen.queryByRole('region', { name: CATALOGUES.ar.legal.informationTitle })
-      ).not.toBeInTheDocument();
-      expect(
-        screen.getByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
-      ).toBeInTheDocument();
-    }
-  );
-
-  it('uses a complete independent documentation pair while retaining the full reference', async () => {
-    const pair = {
-      ...information,
-      version: 'pair-version',
-      sections: information.sections
-        .filter(({ id }) => ['mode2Consent', 'guestRecordingRelease'].includes(id))
-        .map((section) => ({ ...section, bodyHtml: `<p>Pair wording ${section.id}</p>` })),
-    };
-    server.use(
-      guestContentHandler((language) =>
-        HttpResponse.json({
-          ...guestContentBody(language),
-          legalInformation: information,
-          documentationInformation: pair,
-        })
-      )
-    );
-    renderScreen('guest consent');
-    expect(await screen.findByText('Pair wording mode2Consent')).toBeInTheDocument();
-    expect(screen.queryByText('Source wording mode2Consent')).not.toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
-    );
-    expect(
-      within(screen.getByRole('dialog')).getByText('Source wording mode3Consent')
-    ).toBeInTheDocument();
-  });
-
-  it('requires a complete pair from a legacy reference response', async () => {
-    server.use(
-      guestContentHandler((language) =>
-        HttpResponse.json({
-          ...guestContentBody(language),
-          legalInformation: { ...information, sections: information.sections.slice(0, 1) },
-        })
-      )
-    );
-    renderScreen('guest consent');
-    await screen.findByTestId('guest-content-settled');
-    expect(
-      screen.queryByRole('region', { name: CATALOGUES.ar.legal.informationTitle })
-    ).not.toBeInTheDocument();
-  });
 
   function CachedInformation() {
     const { content } = useGuestContent('A1B2C3D4', 'en');
@@ -273,7 +217,7 @@ describe('entry legal snapshot', () => {
   }
 
   it.each(['timeout', 'reconnect'])(
-    'keeps both inline and reference absent after a %s fallback',
+    'keeps the reference absent after a %s fallback',
     async (reason) => {
       let release!: () => void;
       const pending = new Promise<void>((resolve) => {
@@ -348,46 +292,23 @@ describe('entry legal snapshot', () => {
       </>,
       { route: '/s/A1B2C3D4/info/en' }
     );
-    expect(await screen.findByText('en wording mode2Consent')).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByRole('button', { name: CATALOGUES.en.legal.informationTitle })
+    );
+    expect(
+      within(screen.getByRole('dialog')).getByText('en wording mode2Consent')
+    ).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
     await userEvent.click(screen.getByRole('link', { name: 'Switch language' }));
-    expect(await screen.findByText('ar wording mode2Consent')).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+    );
+    expect(
+      within(screen.getByRole('dialog')).getByText('ar wording mode2Consent')
+    ).toBeInTheDocument();
     expect(screen.queryByText('en wording mode2Consent')).not.toBeInTheDocument();
   });
 });
-
-describe.each(['documentationInformation', 'legalInformation'])(
-  '%s empty compatibility wording',
-  (field) => {
-    it.each(['mode2Consent', 'guestRecordingRelease'])(
-      'withdraws the inline pair if %s has an invisible body',
-      async (id) => {
-        const incomplete = {
-          ...information,
-          sections: information.sections.map((section) =>
-            section.id === id
-              ? { ...section, bodyHtml: '<p>&nbsp;<script>hidden text</script></p>' }
-              : section
-          ),
-        };
-        server.use(
-          guestContentHandler((language) =>
-            HttpResponse.json({
-              ...guestContentBody(language),
-              legalInformation: information,
-              [field]: incomplete,
-            })
-          )
-        );
-        renderScreen('guest consent');
-        await screen.findByTestId('guest-content-settled');
-        expect(screen.queryByRole('region')).not.toBeInTheDocument();
-        expect(
-          screen.getByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
-        ).toBeInTheDocument();
-      }
-    );
-  }
-);
 
 it.each([
   ['AR-eg', 'rtl'],

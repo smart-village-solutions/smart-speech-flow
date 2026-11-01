@@ -21,8 +21,8 @@
     "retry": "Újra"
   },
   "consent": {
-    "intro": "A $t(app.name) automatikus, valós idejű fordítószolgáltatás, amely a különböző nyelveket beszélő emberek közötti beszélgetéseket segíti. A szolgáltatás kizárólag egy dedikált, privát szerveren fut.",
-    "howTo": "A felvétel indításához koppintson a mikrofon gombra. Ezután 20 másodperce van beszélni. A felvételt egy újabb koppintással korábban is befejezheti. Ehelyett szöveges bevitelt is használhat.",
+    "intro": "A $t(app.name) segíti a különböző nyelveket beszélő emberek közötti beszélgetéseket. Beszélhet vagy szöveget írhat be. Az Ön által elmondott vagy beírt szöveget a rendszer automatikusan lefordítja. A fordításban hibák is előfordulhatnak. Kérjen pontosítást, ha valami nem világos.",
+    "howTo": "Amikor elindítja a beszélgetést, elkezdődik a fordítás. Ezzel nem adja hozzájárulását dokumentációs célú felvétel készítéséhez. Ha felvételt terveznek, erről előzetesen külön tájékoztatást kap, és kérni fogják a hozzájárulását, valamint a felvétel minden egyes szakaszának jóváhagyását.",
     "getStarted": "Kezdés",
     "loading": "Az információk betöltése"
   },

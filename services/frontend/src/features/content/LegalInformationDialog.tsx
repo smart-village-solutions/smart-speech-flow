@@ -4,7 +4,7 @@ import { directionFor } from '@/i18n';
 import type { LegalInformation } from '@/domain/content/content.types';
 import { cn } from '@/lib/cn';
 import type { LegalLinksTone } from '@/ui/patterns/LegalLinks';
-import { LegalInformationSections } from './DocumentationInformation';
+import { LegalInformationSections } from './LegalInformationSections';
 import { Button } from '@/ui/primitives/Button';
 
 /** Reading source wording never submits a consent or recording decision. */

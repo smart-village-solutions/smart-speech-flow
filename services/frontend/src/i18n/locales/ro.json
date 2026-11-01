@@ -21,8 +21,8 @@
     "retry": "Încercați din nou"
   },
   "consent": {
-    "intro": "$t(app.name) este un serviciu automat de traducere în timp real, conceput pentru a sprijini conversațiile dintre persoane care vorbesc limbi diferite. Serviciul funcționează exclusiv pe un server privat dedicat.",
-    "howTo": "Pentru a începe înregistrarea, atingeți butonul microfonului. Veți avea apoi 20 de secunde pentru a vorbi. Puteți încheia înregistrarea și mai devreme, cu o nouă atingere. Ca alternativă, puteți folosi introducerea de text.",
+    "intro": "$t(app.name) facilitează conversațiile între persoane care vorbesc limbi diferite. Puteți vorbi sau introduce text. Ceea ce spuneți sau scrieți este tradus automat. Pot apărea erori. Cereți lămuriri dacă ceva nu este clar.",
+    "howTo": "Când începeți conversația, începe traducerea. Prin aceasta nu vă dați consimțământul pentru o înregistrare în scop de documentare. Dacă este prevăzută o înregistrare, veți primi în prealabil informații separate și vi se vor solicita consimțământul, precum și aprobarea pentru fiecare segment al înregistrării.",
     "getStarted": "Începeți",
     "loading": "Se încarcă informațiile"
   },

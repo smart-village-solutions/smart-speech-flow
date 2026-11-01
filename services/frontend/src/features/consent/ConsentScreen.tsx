@@ -8,7 +8,6 @@ import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { Button } from '@/ui/primitives/Button';
 import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
-import { DocumentationInformation } from '@/features/content/DocumentationInformation';
 import { ConsentProse } from './ConsentProse';
 import { ConsentSkeleton } from './ConsentSkeleton';
 import { useConsentScreen } from './useConsentScreen';
@@ -16,17 +15,8 @@ import { useConsentScreen } from './useConsentScreen';
 export function ConsentScreen() {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
-  const {
-    sessionId,
-    language,
-    ready,
-    copy,
-    legalInformation,
-    documentationInformation,
-    start,
-    goBack,
-    goHome,
-  } = useConsentScreen();
+  const { sessionId, language, ready, copy, legalInformation, start, goBack, goHome } =
+    useConsentScreen();
 
   return (
     <ScreenShell>
@@ -47,8 +37,6 @@ export function ConsentScreen() {
           {ready ? (
             <>
               <ConsentProse explanationHtml={copy.explanationHtml} />
-
-              <DocumentationInformation information={documentationInformation} />
 
               <Button
                 className="mt-10 bg-accent text-accent-on"

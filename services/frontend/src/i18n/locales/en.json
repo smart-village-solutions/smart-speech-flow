@@ -21,8 +21,8 @@
     "retry": "Try again"
   },
   "consent": {
-    "intro": "$t(app.name) is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.",
-    "howTo": "To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.",
+    "intro": "$t(app.name) supports conversations between people who speak different languages. You can speak or type text. Your contributions are translated automatically. Errors may occur. Please ask if anything is unclear.",
+    "howTo": "When you start the conversation, translation begins. This does not mean you consent to a recording for documentation purposes. If a recording is planned, you will be informed separately beforehand and asked for your consent as well as your approval for each recording segment.",
     "getStarted": "Get started",
     "loading": "Loading the information"
   },

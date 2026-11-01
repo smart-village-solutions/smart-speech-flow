@@ -21,8 +21,8 @@
     "retry": "Réessayer"
   },
   "consent": {
-    "intro": "$t(app.name) est un service automatique de traduction en temps réel, conçu pour faciliter les conversations entre des personnes qui parlent des langues différentes. Le service fonctionne exclusivement sur un serveur privé dédié.",
-    "howTo": "Pour lancer l'enregistrement, appuyez sur le bouton du microphone. Vous disposez alors de 20 secondes pour parler. Vous pouvez aussi arrêter l'enregistrement plus tôt en appuyant à nouveau. Vous pouvez également utiliser la saisie de texte.",
+    "intro": "$t(app.name) facilite les conversations entre des personnes qui parlent des langues différentes. Vous pouvez parler ou saisir du texte. Vos interventions sont traduites automatiquement. Des erreurs peuvent se produire. Demandez des précisions si quelque chose n’est pas clair.",
+    "howTo": "Lorsque vous démarrez la conversation, la traduction commence. Cela ne signifie pas que vous consentez à un enregistrement à des fins de documentation. Si un enregistrement est prévu, vous recevrez au préalable des informations distinctes et votre consentement vous sera demandé, ainsi que votre autorisation pour chaque partie de l’enregistrement.",
     "getStarted": "Commencer",
     "loading": "Chargement des informations"
   },

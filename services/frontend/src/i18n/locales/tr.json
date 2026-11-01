@@ -21,8 +21,8 @@
     "retry": "Tekrar deneyin"
   },
   "consent": {
-    "intro": "$t(app.name), farklı diller konuşan kişiler arasındaki görüşmeleri desteklemek için tasarlanmış otomatik bir gerçek zamanlı çeviri hizmetidir. Hizmet yalnızca ayrılmış, özel bir sunucuda çalışır.",
-    "howTo": "Kaydı başlatmak için mikrofon düğmesine dokunun. Konuşmak için 20 saniyeniz olacak. Bir kez daha dokunarak kaydı daha erken sonlandırabilirsiniz. Alternatif olarak metin girişini kullanabilirsiniz.",
+    "intro": "$t(app.name), farklı diller konuşan kişiler arasındaki görüşmeleri destekler. Konuşabilir veya metin yazabilirsiniz. Söyledikleriniz ve yazdıklarınız otomatik olarak çevrilir. Çeviride hatalar olabilir. Bir şey anlaşılır değilse açıklama isteyin.",
+    "howTo": "Görüşmeyi başlattığınızda çeviri başlar. Bu, görüşmenin belgeleme amacıyla kaydedilmesine rıza verdiğiniz anlamına gelmez. Kayıt yapılması planlanıyorsa önceden ayrıca bilgilendirilirsiniz. Veri koruma kapsamında rızanız ve her bir kayıt bölümü için ayrıca onayınız istenir.",
     "getStarted": "Başlayın",
     "loading": "Bilgiler yükleniyor"
   },

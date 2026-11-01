@@ -1729,16 +1729,6 @@
       },
       "ProvidedGuestContent": {
         "properties": {
-          "documentationInformation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LegalInformation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "explanationHtml": {
             "title": "Explanationhtml",
             "type": "string"
@@ -1785,7 +1775,6 @@
           }
         },
         "required": [
-          "documentationInformation",
           "legalInformation",
           "recordingStatus",
           "provided",
@@ -2435,16 +2424,6 @@
       },
       "UnprovidedGuestContent": {
         "properties": {
-          "documentationInformation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LegalInformation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "legalInformation": {
             "anyOf": [
               {
@@ -2473,7 +2452,6 @@
           }
         },
         "required": [
-          "documentationInformation",
           "legalInformation",
           "recordingStatus",
           "provided"

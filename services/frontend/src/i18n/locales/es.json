@@ -21,8 +21,8 @@
     "retry": "Reintentar"
   },
   "consent": {
-    "intro": "$t(app.name) es un servicio automático de traducción en tiempo real diseñado para facilitar las conversaciones entre personas que hablan idiomas distintos. El servicio funciona exclusivamente en un servidor privado dedicado.",
-    "howTo": "Para empezar a grabar, toque el botón del micrófono. Tendrá entonces 20 segundos para hablar. También puede terminar la grabación antes tocando de nuevo. Como alternativa, puede escribir el texto.",
+    "intro": "$t(app.name) facilita las conversaciones entre personas que hablan distintos idiomas. Puede hablar o escribir texto. Sus intervenciones se traducen automáticamente. Pueden producirse errores. Pida una aclaración si algo no está claro.",
+    "howTo": "Cuando inicia la conversación, comienza la traducción. Esto no significa que dé su consentimiento para una grabación con fines de documentación. Si se prevé una grabación, se le informará por separado con antelación y se le pedirá su consentimiento, así como su autorización para cada segmento de la grabación.",
     "getStarted": "Empezar",
     "loading": "Cargando la información"
   },
