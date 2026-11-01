@@ -7,7 +7,6 @@ import { consentCopy, type ConsentCopy } from './consentCopy';
 interface EntryContent {
   copy: ConsentCopy;
   legalInformation: LegalInformation | null | undefined;
-  documentationInformation: LegalInformation | null | undefined;
 }
 
 interface Shown extends EntryContent {
@@ -18,11 +17,6 @@ function entryContent(content: GuestContent | undefined): EntryContent {
   return {
     copy: consentCopy(content),
     legalInformation: content?.legalInformation,
-    // Explicit null is authoritative; only older servers need the reference fallback.
-    documentationInformation:
-      content?.documentationInformation !== undefined
-        ? content.documentationInformation
-        : content?.legalInformation,
   };
 }
 
