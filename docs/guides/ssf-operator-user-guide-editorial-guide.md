@@ -14,11 +14,17 @@ Der Entwurf ist ausschließlich eine Referenz für Seitenformat, Farb- und Bildw
 
 ## Dateien und Reihenfolge
 
-Die geplanten Folien liegen unter `docs/user-guide/pages/`, die verwendeten Bilder unter `docs/user-guide/images/`. Die Dateinamen beginnen mit einer zweistelligen Nummer und einem kurzen deutschen Thema, zum Beispiel `06-gespraech-eroeffnen.md`. Diese Nummern legen die Reihenfolge beim Zusammenführen fest. Bilder werden relativ zur Foliendatei eingebunden, zum Beispiel `../images/gespraechsansicht.png`.
+Numbered slide texts live under `docs/user-guide/pages/`; the two-digit filename
+prefix determines their order. The existing image examples below describe
+Markdown preview, not the current export behavior. The exporters do not render
+Markdown image references. Store approved captures under `screenshots/` and
+select PDF artwork through the mappings and special layouts documented in
+[Artwork selection and export formats](../user-guide/README.md#artwork-selection-and-export-formats).
+Keep pending image notes in HTML comments until those mappings are ready.
 
-Eine Markdown-Datei beschreibt eine geplante Folie. Titelblatt und Abschlussfolie dürfen von den folgenden Vorlagen abweichen. Ob eine Datei nach dem Export tatsächlich genau eine Querformatseite füllt, wird an der gesetzten Word-Datei und am PDF geprüft.
-
-Die 26 Folien-Dateien enthalten Textentwürfe. Geplante Bilder sind bis zur Erstellung der Screenshots in HTML-Kommentaren beschrieben. Nach der Bildredaktion werden sie mit beschreibendem Alternativtext eingebunden.
+Each Markdown file supplies one planned slide. The illustrated PDF and the
+text-only DOCX designer handoff serve different purposes; the DOCX does not
+reproduce the PDF layout or embed its images.
 
 ## Gemeinsame Regeln für jede Seite
 
@@ -110,6 +116,11 @@ Eine Schrittfolge enthält normalerweise zwei bis drei Schritte. Wenn ein Ablauf
 
 ## Erstellung von Word und PDF
 
-Die Markdown-Dateien werden in der festgelegten Reihenfolge zu einem Dokument zusammengeführt. Die bearbeitbare Word-Datei und das PDF sollen beide A4-Querformat (297 × 210 mm) verwenden und dieselbe Foliengestaltung zeigen. Die Gestaltungsvorlage regelt insbesondere Hintergrund, Logo, Überschriften, Text, Bilder und Ränder. Der konkrete Exportweg wird zunächst mit einer Musterfolie geprüft; erst dann wird die vollständige Dokumentenerzeugung eingerichtet.
+The current builders combine the numbered Markdown files in order. Both outputs
+use landscape format, but only the PDF includes the configured artwork and
+slide design. The DOCX contains editable text for the designer; the ZIP supplies
+its images separately and includes their page assignments. Follow the
+[rebuild instructions and artwork workflow](../user-guide/README.md#artwork-selection-and-export-formats)
+and check the illustrated PDF and text-only handoff separately.
 
 Vor der Freigabe werden beide Ausgaben visuell geprüft: Entspricht jede Markdown-Datei genau einer Folie? Sind Bilder und Markierungen aus normalem Betrachtungsabstand lesbar? Sind Kontrast und Textmenge angemessen? Gibt es leere oder überlaufende Folien? Die Inhalte werden ausschließlich gegen die heutige KasselDIALOG-Installation und ihre freigegebenen Quellen geprüft.

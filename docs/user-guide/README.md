@@ -32,6 +32,33 @@ version or release date.
 - Recheck the optional storage question and recording workflow against the
   chosen deployment. Regenerate and visually review the PDF and designer ZIP.
 
+## Artwork selection and export formats
+
+The Markdown image examples in the editorial templates are for Markdown
+preview only. The current exporters do **not** render `![alt](path)` image
+references; adding one to a numbered page will not add artwork to the PDF or
+DOCX. Keep planned-image notes in HTML comments until artwork is mapped.
+
+For the illustrated PDF:
+
+1. Store approved PNG captures under `screenshots/` with the checklist prefix,
+   for example `S05-...png`. Store vector artwork under `graphics/`.
+2. In `build_pdf.py`, update `MEDIA` to select a page's screenshot prefix,
+   caption, and index. `capture()` sorts matching filenames; an index selects
+   a particular match, and S16 selects the German (`-de.png`) capture.
+3. Check the special onboarding layouts in `draw_onboarding_images()` for
+   pages 04 and 05. Graphics G02–G04 are drawn by `guide_graphics.py`; the PDF
+   uses the configured placeholders when a page has no selected artwork.
+4. Rebuild and inspect the illustrated PDF, then rebuild the designer package
+   so its generated README records the current slide-to-artwork mapping.
+
+The DOCX is a **text-only designer handoff** in landscape format. It contains
+slide headings, text, tables, and links, without embedded screenshots or the
+PDF's visual layout. The designer ZIP contains that DOCX, separate screenshots
+and vector artwork, and a generated README with their page assignments. The
+illustrated PDF is the layout reference; the DOCX is not a matching visual
+export. Review the two deliverables for their respective purposes.
+
 ## Rebuild the draft
 
 Use a dedicated Python environment; these document-generation dependencies do
