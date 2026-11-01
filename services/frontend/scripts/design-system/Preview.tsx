@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '../../src/i18n';
 import { BrandContext } from '../../src/app/providers/brand';
@@ -157,6 +158,31 @@ export function Preview() {
             <Button className="bg-accent text-accent-on" onClick={() => setOpen(true)}>
               Open dialog
             </Button>
+            <Dialog.Root>
+              <Dialog.Trigger asChild>
+                <Button className="bg-accent text-accent-on">Open rating dialog</Button>
+              </Dialog.Trigger>
+              <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-50 bg-surface-scrim" />
+                <Dialog.Content
+                  aria-describedby={undefined}
+                  className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto bg-surface-panel p-5 font-sans text-body text-fg-body"
+                >
+                  <Dialog.Title>Rating feedback</Dialog.Title>
+                  <fieldset className="my-5">
+                    <legend>Portal rating</legend>
+                    <StarRating min={1} max={5} value={rating} onChange={setRating} />
+                  </fieldset>
+                  <fieldset className="my-5">
+                    <legend>Portal recommendation</legend>
+                    <ScaleInput min={0} max={10} value={score} onChange={setScore} />
+                  </fieldset>
+                  <Dialog.Close asChild>
+                    <Button className="bg-accent text-accent-on">Close ratings</Button>
+                  </Dialog.Close>
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
             <Button variant="sheet" disabled className="bg-accent text-accent-on">
               Disabled sheet
             </Button>

@@ -19,7 +19,7 @@ The library contains 64 canonical families: 40 public UI families, 16 public ico
 - IconButton supports 32/36/64 px visual sizes, selection and disabled opacity. Shared icon controls and shorter buttons have at least 44 px hit areas. Rating buttons are 44 px and wrap on narrow screens.
 - CodeInput exposes an invalid state, used for rejected access codes. Figma State=Error maps to this prop; Filled remains content-derived.
 - Muted, placeholder and link colors are strengthened in both themes. Field/checkbox/code borders share a clearer semantic border. Four-tone notices share foreground, surface and border roles.
-- Focus uses a 2 px outline with a 2 px offset. Fixed-white header controls retain the Light outline; the themed dropdown inherits the active theme.
+- Focus uses a 2 px outline with a 2 px offset. Fixed-white header controls retain the Light outline; the themed dropdown inherits the active theme. StarRating and ScaleInput carry the shared focus utility directly, so ratings also retain themed focus when rendered in a Radix portal outside ScreenShell. Browser cases explicitly cover this portal context.
 - ScreenShell and the four Radix dialog surfaces explicitly use Inter and the 16 px body role, including portalled content.
 
 Figma masters, dependent patterns and documentation were updated, including shared feedback examples in both themes. The original Alt-Stand references remain separate.
