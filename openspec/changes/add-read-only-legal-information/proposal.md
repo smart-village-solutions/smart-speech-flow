@@ -8,6 +8,7 @@ Kassel needs access to the imported wording before the recording infrastructure 
 - Add an accessible text dialog from guest consent and both conversation screens, clearly marked informational, with actual language/source version and close-only actions.
 - Deliver a minimal backport on the exact live Kassel source; do not include recording-mode cutover, data migration, retention changes or archive enablement.
 - Forward-port the informational feature to main so it survives later upgrades.
+- Per the user clarification on 2026-11-01, always use the two translated UI introduction paragraphs for ordinary entry, omitting Studio explanations there. Preserve the existing Studio response contract and reference dialog. Qualify consent statements for supported statutory recording policies.
 
 ## Impact
 - Affected spec: studio-content-delivery.

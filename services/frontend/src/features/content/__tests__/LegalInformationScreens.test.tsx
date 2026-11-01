@@ -3,8 +3,11 @@ import { GuestContentSettled, StaffContentSettled } from '@/test/ContentSettled'
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { Route, Routes } from 'react-router-dom';
+import { Link, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import { onlineManager } from '@tanstack/react-query';
+import { useGuestContent } from '@/features/content/useGuestContent';
+import { readConfig } from '@/app/config/env';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
@@ -127,3 +130,213 @@ describe.each(['guest consent', 'guest conversation', 'staff conversation'])(
     );
   }
 );
+
+// The entry introduces the service; counsel wording is available only on request.
+describe('ordinary conversation entry', () => {
+  it.each([undefined, information])(
+    'keeps all counsel wording out of the entry with compatibility information %j',
+    async (documentationInformation) => {
+      server.use(
+        guestContentHandler((language) =>
+          HttpResponse.json({
+            ...guestContentBody(language),
+            storage: { mode: 'disabled' },
+            storageQuestionHtml: null,
+            legalInformation: information,
+            documentationInformation,
+          })
+        )
+      );
+      renderScreen('guest consent');
+      const trigger = await screen.findByRole('button', {
+        name: CATALOGUES.ar.legal.informationTitle,
+      });
+      expect(
+        screen.getByText(
+          CATALOGUES.ar.consent.intro.replace('$t(app.name)', CATALOGUES.ar.app.name)
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByText(CATALOGUES.ar.consent.howTo)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          CATALOGUES.ar.consent.intro.replace('$t(app.name)', CATALOGUES.ar.app.name)
+        ).parentElement?.children
+      ).toHaveLength(2);
+      expect(screen.queryByRole('region')).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      for (const section of information.sections) {
+        expect(screen.queryByRole('heading', { name: section.headline })).not.toBeInTheDocument();
+        expect(screen.queryByText(`Source wording ${section.id}`)).not.toBeInTheDocument();
+      }
+      await userEvent.click(trigger);
+      const dialog = screen.getByRole('dialog');
+      for (const section of information.sections) {
+        expect(within(dialog).getByRole('heading', { name: section.headline })).toBeInTheDocument();
+        expect(within(dialog).getByText(`Source wording ${section.id}`)).toBeInTheDocument();
+      }
+      expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+    }
+  );
+});
+
+describe('entry legal snapshot', () => {
+  it.each(['pending', 'failed'])(
+    'shows route language terms when the language list is %s',
+    async (state) => {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.use(
+        http.get('*/api/customer/session/:id/languages', async () => {
+          if (state === 'pending') await pending;
+          return HttpResponse.json({}, { status: 503 });
+        }),
+        guestContentHandler((language) =>
+          HttpResponse.json({ ...guestContentBody(language), legalInformation: information })
+        )
+      );
+      try {
+        renderScreen('guest consent');
+        await userEvent.click(
+          await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+        );
+        expect(
+          within(screen.getByRole('dialog')).getByText('Source wording mode2Consent')
+        ).toBeInTheDocument();
+      } finally {
+        release();
+      }
+    }
+  );
+
+  function CachedInformation() {
+    const { content } = useGuestContent('A1B2C3D4', 'en');
+    return content?.legalInformation ? <span data-testid="information-cached" /> : null;
+  }
+
+  it.each(['timeout', 'reconnect'])(
+    'keeps the reference absent after a %s fallback',
+    async (reason) => {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.use(
+        guestContentHandler(async (language) => {
+          if (reason === 'reconnect') return HttpResponse.json({}, { status: 503 });
+          await pending;
+          return HttpResponse.json({
+            ...guestContentBody(language),
+            legalInformation: information,
+          });
+        })
+      );
+      renderWithProviders(
+        <>
+          <Routes>
+            <Route path="/s/:sessionId/info/:languageCode" element={<ConsentScreen />} />
+          </Routes>
+          <CachedInformation />
+        </>,
+        {
+          route: '/s/A1B2C3D4/info/en',
+          services: { config: { ...readConfig({}), requestTimeoutMs: 40 } },
+        }
+      );
+      try {
+        await screen.findByRole('button', { name: CATALOGUES.en.consent.getStarted });
+        if (reason === 'reconnect') {
+          server.use(
+            guestContentHandler((language) =>
+              HttpResponse.json({ ...guestContentBody(language), legalInformation: information })
+            )
+          );
+          onlineManager.setOnline(false);
+          onlineManager.setOnline(true);
+        } else release();
+        await screen.findByTestId('information-cached');
+        expect(screen.queryByText('Source wording mode2Consent')).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: CATALOGUES.en.legal.informationTitle })
+        ).not.toBeInTheDocument();
+      } finally {
+        release();
+        onlineManager.setOnline(true);
+      }
+    }
+  );
+
+  it('takes a fresh snapshot when the route language changes', async () => {
+    server.use(
+      guestContentHandler((language) =>
+        HttpResponse.json({
+          ...guestContentBody(language),
+          legalInformation: {
+            ...information,
+            sections: information.sections.map((section) => ({
+              ...section,
+              bodyHtml: `<p>${language} wording ${section.id}</p>`,
+            })),
+          },
+        })
+      )
+    );
+    renderWithProviders(
+      <>
+        <Link to="/s/A1B2C3D4/info/ar">Switch language</Link>
+        <Routes>
+          <Route path="/s/:sessionId/info/:languageCode" element={<ConsentScreen />} />
+        </Routes>
+      </>,
+      { route: '/s/A1B2C3D4/info/en' }
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: CATALOGUES.en.legal.informationTitle })
+    );
+    expect(
+      within(screen.getByRole('dialog')).getByText('en wording mode2Consent')
+    ).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('link', { name: 'Switch language' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+    );
+    expect(
+      within(screen.getByRole('dialog')).getByText('ar wording mode2Consent')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('en wording mode2Consent')).not.toBeInTheDocument();
+  });
+});
+
+it.each([
+  ['he-IL', 'rtl'],
+  ['ku-Yezi', 'rtl'],
+  ['und', 'auto'],
+  ['und-Hebr', 'rtl'],
+  ['und-Latn', 'ltr'],
+  ['ar-Latn', 'ltr'],
+  ['zz-ZZ', 'auto'],
+  ['AR-eg', 'rtl'],
+  ['fa-IR', 'rtl'],
+  ['de-DE', 'ltr'],
+])('sets the reference wording direction from source locale %s', async (locale, direction) => {
+  server.use(
+    guestContentHandler((language) =>
+      HttpResponse.json({
+        ...guestContentBody(language),
+        legalInformation: { ...information, locale },
+      })
+    )
+  );
+  renderScreen('guest consent');
+  await userEvent.click(
+    await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+  );
+  const wording = within(screen.getByRole('dialog'))
+    .getByText('Source wording mode2Consent')
+    .closest('[lang]');
+  expect(wording).toHaveAttribute('lang', locale);
+  expect(wording).toHaveAttribute('dir', direction);
+});

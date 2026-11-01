@@ -62,7 +62,7 @@ describe('legal information UI localization', () => {
     expect(within(dialog).getByText(copy.informationNotice)).toBeInTheDocument();
     const source = within(dialog).getByRole('region', { name: copy.informationTitle });
     expect(source).toHaveAttribute('lang', 'de-DE');
-    expect(source).toHaveAttribute('dir', 'auto');
+    expect(source).toHaveAttribute('dir', 'ltr');
     expect(within(source).getByText('Unveränderter Quelltext')).toBeInTheDocument();
     expect(within(source).getByRole('heading', { name: 'Quellüberschrift' })).toBeInTheDocument();
     expect(within(dialog).getByText(/de-DE/)).toHaveTextContent('source-42');

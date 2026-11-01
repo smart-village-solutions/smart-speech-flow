@@ -1,5 +1,5 @@
 import { HttpResponse } from 'msw';
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { onlineManager, useQuery } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
@@ -97,8 +97,8 @@ describe('ConsentScreen', () => {
     await settled();
 
     expect(
-      screen.getByText(/KasselDIALOG is an automatic real-time/).parentElement?.parentElement
-        ?.parentElement
+      screen.getByText(en.consent.intro.replace('$t(app.name)', en.app.name)).parentElement
+        ?.parentElement?.parentElement
     ).toHaveClass('pt-content-top');
   });
 
@@ -172,15 +172,40 @@ describe('ConsentScreen', () => {
   });
 
   describe('Studio content', () => {
-    it("shows Studio's explanation for a language Studio provides", async () => {
+    it('always shows the UI introduction instead of an optional Studio explanation', async () => {
       server.use(studioEnglish());
       renderWithProviders(tree(), { route });
       await settled();
 
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
-      expect(screen.queryByText(en.consent.howTo)).not.toBeInTheDocument();
+      expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
+      expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
+
+    it.each([
+      '<p>Conversation data is retained for 180 days.</p>',
+      `<p>${en.consent.intro.replace('$t(app.name)', en.app.name)}</p><p>${en.consent.howTo}</p>`,
+    ])(
+      'uses exactly one UI introduction with legacy or already-updated Studio markup %s',
+      async (explanationHtml) => {
+        server.use(
+          guestContentHandler((language) =>
+            HttpResponse.json({ ...guestContentBody(language), explanationHtml })
+          )
+        );
+        renderWithProviders(tree(), { route });
+        await settled();
+        expect(
+          screen.getAllByText(en.consent.intro.replace('$t(app.name)', en.app.name))
+        ).toHaveLength(1);
+        expect(screen.getAllByText(en.consent.howTo)).toHaveLength(1);
+        expect(
+          screen.queryByText('Conversation data is retained for 180 days.')
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Get started' })).toBeEnabled();
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      }
+    );
 
     it('keeps the bundled texts, right to left, for a language Studio does not provide', async () => {
       renderWithProviders(tree(undefined, 'ar'), { route: '/s/A1B2C3D4/info/ar' });
@@ -188,8 +213,7 @@ describe('ConsentScreen', () => {
 
       expect(document.documentElement).toHaveAttribute('dir', 'rtl');
       const block = prose(ar.consent.howTo);
-      expect(within(block).getByText(ar.consent.retention)).toBeInTheDocument();
-      expect(block.children).toHaveLength(3);
+      expect(block.children).toHaveLength(2);
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: ar.consent.getStarted })).toBeInTheDocument();
     });
@@ -265,7 +289,7 @@ describe('ConsentScreen', () => {
       });
       await settled();
 
-      expect(prose(howTo).children).toHaveLength(3);
+      expect(prose(howTo).children).toHaveLength(2);
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
 
@@ -300,7 +324,7 @@ describe('ConsentScreen', () => {
         { route }
       );
       await settled();
-      expect(prose(en.consent.howTo).children).toHaveLength(3);
+      expect(prose(en.consent.howTo).children).toHaveLength(2);
 
       server.use(studioEnglish());
       try {
@@ -311,7 +335,7 @@ describe('ConsentScreen', () => {
         onlineManager.setOnline(true);
       }
 
-      expect(prose(en.consent.howTo).children).toHaveLength(3);
+      expect(prose(en.consent.howTo).children).toHaveLength(2);
       expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument();
@@ -327,7 +351,7 @@ describe('ConsentScreen', () => {
 
       try {
         expect(await screen.findByRole('button', { name: 'Get started' })).toBeInTheDocument();
-        expect(prose(en.consent.howTo).children).toHaveLength(3);
+        expect(prose(en.consent.howTo).children).toHaveLength(2);
         expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       } finally {
         release();
@@ -335,8 +359,19 @@ describe('ConsentScreen', () => {
       await settled();
 
       // The late answer brings Studio's text; the screen must not swap to it.
-      expect(prose(en.consent.howTo).children).toHaveLength(3);
+      expect(prose(en.consent.howTo).children).toHaveLength(2);
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('entry content fallback', () => {
+  it('keeps service instructions without the retired bundled retention claim', async () => {
+    server.use(guestContentHandler(() => HttpResponse.json({}, { status: 503 })));
+    renderWithProviders(tree(), { route });
+    await settled();
+    expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
+    expect(screen.queryByText(/By default, audio and transcription data/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 });

@@ -14,7 +14,7 @@ export function useConsentScreen() {
   const { session } = useServices();
   const queryClient = useQueryClient();
   const languages = useGuestLanguages(sessionId);
-  const { ready, copy } = useConsentContent(sessionId, languageCode);
+  const { ready, legalInformation } = useConsentContent(sessionId, languageCode);
 
   useScreenLocale(languageCode ?? '');
 
@@ -38,7 +38,7 @@ export function useConsentScreen() {
     sessionId,
     language: entry && languageChoice(entry),
     ready,
-    copy,
+    legalInformation,
     start,
     goBack: () => void navigate(`/s/${sessionId}/language`),
     goHome: () => void navigate('/'),

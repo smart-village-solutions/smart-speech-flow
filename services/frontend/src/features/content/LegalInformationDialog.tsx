@@ -1,9 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTranslation } from 'react-i18next';
+import { wordingDirectionFor } from '@/i18n/wordingDirection';
 import type { LegalInformation } from '@/domain/content/content.types';
 import { cn } from '@/lib/cn';
 import type { LegalLinksTone } from '@/ui/patterns/LegalLinks';
-import { RichText } from '@/ui/patterns/RichText';
+import { LegalInformationSections } from './LegalInformationSections';
 import { Button } from '@/ui/primitives/Button';
 
 /** Reading source wording never submits a consent or recording decision. */
@@ -50,17 +51,10 @@ export function LegalInformationDialog({
             aria-label={t('legal.informationTitle')}
             tabIndex={0}
             lang={information.locale}
-            dir="auto"
+            dir={wordingDirectionFor(information.locale)}
             className="mt-4 min-h-0 space-y-5 overflow-y-auto text-note leading-chat text-fg-body"
           >
-            {information.sections.map((section) => (
-              <section key={section.id}>
-                <h2 className="mb-2 font-semibold text-fg-strong">{section.headline}</h2>
-                <div className="space-y-3">
-                  <RichText html={section.bodyHtml} />
-                </div>
-              </section>
-            ))}
+            <LegalInformationSections information={information} />
           </div>
           <Dialog.Close asChild>
             <Button

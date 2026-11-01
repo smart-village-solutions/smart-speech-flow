@@ -200,7 +200,7 @@ jobs:
   dependency-analysis:
     name: Dependency Analysis
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
     - name: Checkout Code

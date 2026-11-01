@@ -21,3 +21,15 @@ describe('directionFor', () => {
     expect(directionFor('xx')).toBe('ltr');
   });
 });
+
+it.each([
+  ['ar-SA', 'rtl'],
+  ['AR-eg', 'rtl'],
+  ['fa-IR', 'rtl'],
+  ['Fa-Arab-IR', 'rtl'],
+  ['de-DE', 'ltr'],
+  ['en-US', 'ltr'],
+  ['xx-YY', 'ltr'],
+])('derives %s direction from its primary language', (locale, direction) => {
+  expect(directionFor(locale)).toBe(direction);
+});
