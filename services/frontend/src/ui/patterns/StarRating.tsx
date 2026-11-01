@@ -28,7 +28,7 @@ export function StarRating({ min, max, value, onChange }: Readonly<StarRatingPro
           onMouseEnter={() => setHovered(score)}
           onMouseLeave={() => setHovered(null)}
           onClick={() => onChange(score)}
-          className="flex size-tap-target items-center justify-center rounded-row transition-transform duration-75 active:scale-90"
+          className="focus-ring flex size-tap-target items-center justify-center rounded-row transition-transform duration-75 active:scale-90"
         >
           <Star
             size={22}

@@ -173,6 +173,28 @@ for (const theme of ['light', 'dark'])
         await expect(dialog).toHaveCSS('font-family', /Inter/);
         await page.keyboard.press('Escape');
         await expect(dialog).not.toBeVisible();
+        await page.getByRole('button', { name: 'Open rating dialog', exact: true }).click();
+        const ratingDialog = page.getByRole('dialog', { name: 'Rating feedback' });
+        await page.keyboard.press('Tab');
+        expect(
+          await ratingDialog.evaluate((node) => node.closest('[data-screen-shell]'))
+        ).toBeNull();
+        for (const group of ['Portal rating', 'Portal recommendation']) {
+          const option = ratingDialog
+            .getByRole('group', { name: group, exact: true })
+            .getByRole('button')
+            .nth(1);
+          await option.focus();
+          await expect(option).toHaveCSS('outline-width', '2px');
+          await expect(option).toHaveCSS(
+            'outline-color',
+            theme === 'light' ? 'rgb(29, 83, 139)' : 'rgb(121, 184, 246)'
+          );
+          await page.keyboard.press('Space');
+          await expect(option).toHaveAttribute('aria-pressed', 'true');
+        }
+        await page.keyboard.press('Escape');
+        await expect(ratingDialog).not.toBeVisible();
         await expect
           .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
           .toBe(true);
