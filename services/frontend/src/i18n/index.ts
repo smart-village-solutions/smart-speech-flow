@@ -64,7 +64,7 @@ export type TextDirection = 'ltr' | 'rtl';
 const RTL_LOCALES = new Set(['ar', 'fa']);
 
 export function directionFor(locale: string): TextDirection {
-  return RTL_LOCALES.has(locale) ? 'rtl' : 'ltr';
+  return RTL_LOCALES.has(locale.split('-')[0].toLowerCase()) ? 'rtl' : 'ltr';
 }
 
 export function createI18n(initialLocale: string = 'de'): i18n {

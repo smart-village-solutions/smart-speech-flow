@@ -118,7 +118,7 @@ it('opens safe source wording as information with only a close action and restor
   const wording = within(dialog).getByRole('region', { name: 'Consent and recording terms' });
   expect(wording).toHaveAttribute('tabindex', '0');
   expect(wording).toHaveAttribute('lang', 'de-DE');
-  expect(wording).toHaveAttribute('dir', 'auto');
+  expect(wording).toHaveAttribute('dir', 'ltr');
   expect(dialog.querySelector('strong')).toHaveTextContent('wording');
   expect(dialog.querySelector('script')).toBeNull();
   expect(within(dialog).queryByRole('link')).not.toBeInTheDocument();
