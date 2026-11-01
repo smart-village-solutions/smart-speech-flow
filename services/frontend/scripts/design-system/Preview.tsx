@@ -50,7 +50,9 @@ export function Preview() {
               onHome={noop}
               onFeedback={noop}
               onSignOut={noop}
-              accountUrl="https://example.invalid/account"
+              accountUrl={
+                params.get('menu') === 'single' ? undefined : 'https://example.invalid/account'
+              }
             />
             <h1 className="text-title font-bold">KasselDIALOG component gallery</h1>
             <p data-testid="default-copy">

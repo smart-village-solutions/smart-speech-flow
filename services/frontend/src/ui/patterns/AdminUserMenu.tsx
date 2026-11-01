@@ -17,7 +17,7 @@ import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
 
 const ROW =
-  'flex h-menu-row w-full items-center justify-between px-4 text-note transition-colors duration-150';
+  'focus-ring [--focus-ring-offset:-4px] flex h-menu-row w-full items-center justify-between px-4 text-note transition-colors duration-150';
 
 interface MenuRowProps {
   label: string;

@@ -19,7 +19,7 @@ The library contains 64 canonical families: 40 public UI families, 16 public ico
 - IconButton supports 32/36/64 px visual sizes, selection and disabled opacity. Shared icon controls and shorter buttons have at least 44 px hit areas. Rating buttons are 44 px and wrap on narrow screens.
 - CodeInput exposes an invalid state, used for rejected access codes. Figma State=Error maps to this prop; Filled remains content-derived.
 - Muted, placeholder and link colors are strengthened in both themes. Field/checkbox/code borders share a clearer semantic border. Four-tone notices share foreground, surface and border roles.
-- Focus uses a 2 px outline with a 2 px offset. Fixed-white header controls retain the Light outline; the themed dropdown inherits the active theme. StarRating and ScaleInput carry the shared focus utility directly, so ratings also retain themed focus when rendered in a Radix portal outside ScreenShell. Browser cases explicitly cover this portal context.
+- Focus uses a 2 px outline with a 2 px outside offset by default. Clipped account-menu rows override the offset to -4 px so the outline remains visible inside the menu. Fixed-white header controls retain the Light color; the dropdown inherits the active theme. StarRating and ScaleInput carry the shared focus utility directly, so ratings also retain themed focus in Radix portals outside ScreenShell. Browser cases cover portal focus and painted pixels in a single-row account menu.
 - ScreenShell and the four Radix dialog surfaces explicitly use Inter and the 16 px body role, including portalled content.
 
 Figma masters, dependent patterns and documentation were updated, including shared feedback examples in both themes. The original Alt-Stand references remain separate.
@@ -106,9 +106,9 @@ npm run fallow:audit -- --changed-since origin/main
 bash scripts/check-tokens.sh
 ```
 
-The gallery uses real components/providers and the Kassel brand DOM attribute. It is a development HTML entry, not a production route. Twelve browser cases cover Light/Dark at 320/390/800 px in LTR/RTL: keyboard behavior, focus/invalid/disabled states, field geometry, hit areas, ratings, dialog dismissal and horizontal overflow. Two cases compare every mapped token against the Figma contract. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an installed browser.
+The gallery uses real components/providers and the Kassel brand DOM attribute. It is a development HTML entry, not a production route. Twelve browser cases cover Light/Dark at 320/390/800 px in LTR/RTL: keyboard behavior, focus/invalid/disabled states, field geometry, hit areas, ratings, dialog dismissal and horizontal overflow. Two cases compare every mapped token against the Figma contract; two verify visible focus pixels in a single-row account menu. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an installed browser.
 
-Current checks: 1,554 unit/component tests across 175 files, 14 browser cases, build, lint and compiled-CSS checks. Browser checks include alpha-composited contrast for muted/placeholder and notice text, field borders, and fixed-white header versus themed dropdown focus. The Figma integrity audit reports zero alias, binding, instance, matrix, prototype, font, placeholder, duplicate-family, documentation-overflow or token-parity issues. Independent code review has no open findings. The existing large-chunk warning and baseline asynchronous/MSW test warnings remain.
+Current checks after incorporating main: 1,610 unit/component tests across 177 files, 16 browser cases, build, lint, Fallow's CI gate and compiled-CSS checks. Browser checks include alpha-composited contrast for muted/placeholder and notice text, field borders, fixed-white header versus themed dropdown focus, visible menu focus pixels and portalled ratings. The Figma integrity audit reports zero alias, binding, instance, matrix, prototype, font, placeholder, duplicate-family, documentation-overflow or token-parity issues. The existing large-chunk warning and baseline asynchronous/MSW test warnings remain.
 
 ## Publication and limits
 

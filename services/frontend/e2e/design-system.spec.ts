@@ -1,6 +1,28 @@
 import { expect, test } from '@playwright/test';
 import contract from '../design-system.contract.json' with { type: 'json' };
 
+for (const theme of ['light', 'dark']) {
+  test(`${theme}: single-row account menu paints keyboard focus`, async ({ page }) => {
+    await page.goto(`/design-system.html?theme=${theme}&menu=single`);
+    await page.getByRole('button', { name: 'User account', exact: true }).click();
+    await page.mouse.move(0, 900);
+    await page.keyboard.press('Tab');
+    const signOut = page.getByRole('button', { name: 'Sign out', exact: true });
+    await expect(signOut).toBeFocused();
+    await page.evaluate(() => document.fonts.ready);
+    const bounds = await signOut.boundingBox();
+    if (!bounds) throw new Error('Sign-out row has no bounds');
+    const clip = { x: bounds.x + 2, y: bounds.y + 16, width: 2, height: bounds.height - 32 };
+    const focused = await page.screenshot({ clip, animations: 'disabled' });
+    await signOut.evaluate((node) => node.blur());
+    const unfocused = await page.screenshot({ clip, animations: 'disabled' });
+    // Inspect painted pixels: a computed outline can be entirely clipped by the menu.
+    expect(focused.equals(unfocused)).toBe(false);
+    await signOut.focus();
+    await expect(signOut).toHaveCSS('outline-offset', '-4px');
+  });
+}
+
 for (const theme of ['light', 'dark'] as const) {
   test(`${theme}: runtime tokens match the Figma contract`, async ({ page }) => {
     await page.goto(`/design-system.html?theme=${theme}`);
