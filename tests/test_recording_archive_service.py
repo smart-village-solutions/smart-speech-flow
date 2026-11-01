@@ -613,8 +613,8 @@ async def test_an_ambiguous_commit_does_not_wedge_the_conversation(h):
 
 
 async def test_a_hung_database_cannot_hold_a_message_for_long(h, monkeypatch):
-    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
     await h.on()
+    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
     hang = asyncio.Event()
 
     async def hung(entry, key):
@@ -628,8 +628,8 @@ async def test_a_hung_database_cannot_hold_a_message_for_long(h, monkeypatch):
 
 
 async def test_a_deadline_after_the_commit_still_spools_every_object(h, monkeypatch):
-    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
     await h.on()
+    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
     spool = h.rig.spools.spool(KEY.tenant_id)
     submit = spool.submit
 
@@ -648,8 +648,8 @@ async def test_a_deadline_after_the_commit_still_spools_every_object(h, monkeypa
 
 
 async def test_a_failed_message_marks_its_gap_even_past_the_deadline(h, monkeypatch):
-    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
     await h.on()
+    monkeypatch.setattr(session_service, "ARCHIVE_SECONDS", 0.2)
     mark = h.rig.repository.mark_incomplete
 
     async def slow(tenant_id, conversation_id):
