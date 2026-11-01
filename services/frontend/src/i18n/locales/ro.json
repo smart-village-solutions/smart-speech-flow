@@ -74,7 +74,10 @@
       "cannotSign": "Nu pot semna și confirm prin atingere.",
       "nameRequired": "Vă rugăm să introduceți numele.",
       "signatureRequired": "Vă rugăm să semnați sau să confirmați că nu puteți semna.",
-      "textChanged": "Textul s-a schimbat. Vă rugăm să-l citiți din nou înainte de a răspunde."
+      "textChanged": "Textul s-a schimbat. Vă rugăm să-l citiți din nou înainte de a răspunde.",
+      "originalLanguage": "Limba originală: {{language}}",
+      "documentationRequired": "Confirmați separat consimțământul pentru documentare.",
+      "staffReleaseChanged": "Textul aprobării angajatului s-a schimbat. Rugați angajatul să retragă această cerere și să trimită una nouă."
     }
   },
   "feedback": {

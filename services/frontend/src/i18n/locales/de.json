@@ -74,7 +74,10 @@
       "cannotSign": "Ich kann nicht unterschreiben und bestätige durch Antippen.",
       "nameRequired": "Bitte geben Sie Ihren Namen ein.",
       "signatureRequired": "Bitte unterschreiben Sie oder bestätigen Sie, dass Sie nicht unterschreiben können.",
-      "textChanged": "Der Text hat sich geändert. Bitte lesen Sie ihn erneut, bevor Sie antworten."
+      "textChanged": "Der Text hat sich geändert. Bitte lesen Sie ihn erneut, bevor Sie antworten.",
+      "originalLanguage": "Originalsprache: {{language}}",
+      "documentationRequired": "Bitte bestätigen Sie die Einwilligung zur Dokumentation gesondert.",
+      "staffReleaseChanged": "Der Freigabetext für Mitarbeitende hat sich geändert. Bitten Sie die Mitarbeiterin oder den Mitarbeiter, diese Anfrage zurückzuziehen und eine neue zu senden."
     }
   },
   "feedback": {
@@ -414,7 +417,8 @@
         "ARCHIVE_UNAVAILABLE": "Für diese Installation ist kein Aufnahmearchiv eingerichtet.",
         "ARCHIVE_WRITE_FAILED": "Die Zustimmung des Gastes konnte nicht gespeichert werden. Der Gast kann es erneut versuchen.",
         "generic": "Die Aufnahme konnte nicht geändert werden.",
-        "ID_CHECK_REQUIRED": "Bitte prüfen Sie zuerst das Ausweisdokument des Gastes."
+        "ID_CHECK_REQUIRED": "Bitte prüfen Sie zuerst das Ausweisdokument des Gastes.",
+        "STAFF_RELEASE_TEXT_MISMATCH": "Der Freigabetext hat sich geändert. Ziehen Sie eine offene Anfrage zurück, lesen Sie den Text erneut und fragen Sie die Aufnahme erneut an."
       },
       "ask": {
         "title": "Aufnahme anfragen",

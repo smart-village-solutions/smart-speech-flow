@@ -202,7 +202,7 @@ def test_invalid_content_withdraws_only_that_language(client, conversations, stu
 
     assert by_code["en"]["provided"] is False
     assert all(by_code[code]["provided"] for code in ("ar", "tr"))
-    assert english == {"provided": False}
+    assert english == {"provided": False, "recordingStatus": None}
     assert turkish["provided"] is True
 
 
@@ -215,7 +215,7 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     content = client.get(content_path(session_id, "en")).json()
 
     assert [language["provided"] for language in languages] == [False] * 19
-    assert content == {"provided": False}
+    assert content == {"provided": False, "recordingStatus": None}
 
 
 # Guest content
@@ -230,6 +230,7 @@ def test_guest_content_for_a_provided_language(client, conversations):
     assert response.status_code == 200
     assert response.json() == {
         "provided": True,
+        "recordingStatus": None,
         "revision": runtime_body()["configurationRevision"],
         "explanationHtml": english["guest"]["explanationHtml"],
         "feedback": english["feedback"],
@@ -242,7 +243,7 @@ def test_guest_content_for_a_language_studio_does_not_provide(client, conversati
 
     response = client.get(content_path(session_id, "fa"))
 
-    assert response.json() == {"provided": False}
+    assert response.json() == {"provided": False, "recordingStatus": None}
 
 
 @pytest.mark.parametrize("language", ["de", "hr", "xx"])
@@ -265,6 +266,7 @@ def test_a_tenant_whose_studio_storage_is_disabled_gets_the_same_guest_content(
 
     assert body == {
         "provided": True,
+        "recordingStatus": None,
         "revision": runtime_body(FULDA)["configurationRevision"],
         "explanationHtml": guest_language(FULDA, "en")["guest"]["explanationHtml"],
         "feedback": guest_language(FULDA, "en").get("feedback"),
@@ -282,7 +284,7 @@ def test_guest_content_is_answered_from_the_cache_until_it_ages(client, conversa
 
     assert cached["provided"] is True
     assert cached["revision"] == runtime_body()["configurationRevision"]
-    assert refreshed == {"provided": False}
+    assert refreshed == {"provided": False, "recordingStatus": None}
 
 
 def test_a_failed_live_read_serves_the_last_content(client, conversations, studio_mock):
@@ -362,6 +364,7 @@ def test_staff_content_for_the_tokens_tenant(client, identity):
     assert response.json() == {
         "revision": body["configurationRevision"],
         "timeZone": "Europe/Berlin",
+        "recordingStatus": None,
         "branding": body["branding"],
         "staff": body["staff"],
         "guestLanguageNames": {

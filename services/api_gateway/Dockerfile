@@ -78,4 +78,7 @@ COPY services/__init__.py /app/services/__init__.py
 ENV PYTHONPATH=/app
 USER app
 
-CMD ["uvicorn", "services.api_gateway.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+# The explicit backend applies websockets' fragment limit. Uvicorn's auto
+# backend currently uses a SansIO assembler without that limit. The selected
+# backend logs ticket-bearing URLs at INFO even when access logs are off.
+CMD ["uvicorn", "services.api_gateway.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--ws", "websockets", "--log-level", "warning"]

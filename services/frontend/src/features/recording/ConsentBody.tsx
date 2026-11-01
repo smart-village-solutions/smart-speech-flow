@@ -16,7 +16,7 @@ interface ConsentBodyProps {
 
 /** The consent text as served, with its read-aloud control, or why it is not there yet. */
 export function ConsentBody({ text, failed, voice }: Readonly<ConsentBodyProps>) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   if (text === null) {
     return (
@@ -36,7 +36,15 @@ export function ConsentBody({ text, failed, voice }: Readonly<ConsentBodyProps>)
           {t(voice.reading ? 'recording.consent.stopReading' : 'recording.consent.readAloud')}
         </button>
       )}
-      <div className="mt-2 flex flex-col gap-3 text-note leading-chat text-fg-muted">
+      {text.language.split('-')[0] !== i18n.language.split('-')[0] && (
+        <p className="mt-2 text-note text-fg-muted">
+          {t('recording.consent.originalLanguage', { language: text.language })}
+        </p>
+      )}
+      <div
+        lang={text.language}
+        className="mt-2 flex flex-col gap-3 text-note leading-chat text-fg-muted"
+      >
         <RichText html={text.html} />
       </div>
     </>

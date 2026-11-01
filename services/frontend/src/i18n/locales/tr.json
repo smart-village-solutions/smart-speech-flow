@@ -74,7 +74,10 @@
       "cannotSign": "İmza atamıyorum, dokunarak onaylıyorum.",
       "nameRequired": "Lütfen adınızı girin.",
       "signatureRequired": "Lütfen imzalayın veya imza atamadığınızı onaylayın.",
-      "textChanged": "Metin değişti. Lütfen yanıt vermeden önce yeniden okuyun."
+      "textChanged": "Metin değişti. Lütfen yanıt vermeden önce yeniden okuyun.",
+      "originalLanguage": "Asıl dil: {{language}}",
+      "documentationRequired": "Lütfen belgeleme onayını ayrıca doğrulayın.",
+      "staffReleaseChanged": "Çalışanın izin metni değişti. Lütfen çalışandan bu isteği geri çekmesini ve yeni bir istek göndermesini isteyin."
     }
   },
   "feedback": {

@@ -111,7 +111,7 @@ def test_every_installation_html_field_is_sanitised() -> None:
 def test_cached_content_has_no_display_name_and_takes_no_new_field() -> None:
     names = {field.name for field in dataclasses.fields(TenantContent)}
 
-    assert names == {"revision", "time_zone", "branding", "staff", "guest_languages"}
+    assert names == {"revision", "time_zone", "branding", "staff", "guest_languages", "legal_texts"}
     content = StudioContentCache().record(kassel_read())
     with pytest.raises((AttributeError, TypeError)):
         content.display_name = "Kassel"  # type: ignore[misc, attr-defined]

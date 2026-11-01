@@ -74,7 +74,10 @@
       "cannotSign": "No puedo firmar y confirmo con un toque.",
       "nameRequired": "Introduzca su nombre, por favor.",
       "signatureRequired": "Firme o confirme que no puede firmar, por favor.",
-      "textChanged": "El texto ha cambiado. Léalo de nuevo antes de responder, por favor."
+      "textChanged": "El texto ha cambiado. Léalo de nuevo antes de responder, por favor.",
+      "originalLanguage": "Idioma original: {{language}}",
+      "documentationRequired": "Confirme por separado el consentimiento para la documentación.",
+      "staffReleaseChanged": "El texto de autorización del empleado ha cambiado. Pida al empleado que retire esta solicitud y envíe una nueva."
     }
   },
   "feedback": {

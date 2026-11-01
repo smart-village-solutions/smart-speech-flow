@@ -1477,6 +1477,49 @@
         "title": "InstallationContentResponse",
         "type": "object"
       },
+      "LocalizedRecordingStatus": {
+        "properties": {
+          "locale": {
+            "maxLength": 35,
+            "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "renewedReleaseRequired": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Renewedreleaserequired",
+            "type": "string"
+          },
+          "running": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Running",
+            "type": "string"
+          },
+          "stopped": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Stopped",
+            "type": "string"
+          },
+          "waiting": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Waiting",
+            "type": "string"
+          }
+        },
+        "required": [
+          "waiting",
+          "running",
+          "stopped",
+          "renewedReleaseRequired",
+          "locale"
+        ],
+        "title": "LocalizedRecordingStatus",
+        "type": "object"
+      },
       "LoginTenantDirectoryResponse": {
         "description": "The public tenant chooser response.",
         "properties": {
@@ -1657,12 +1700,23 @@
             "title": "Provided",
             "type": "boolean"
           },
+          "recordingStatus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedRecordingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "revision": {
             "title": "Revision",
             "type": "string"
           }
         },
         "required": [
+          "recordingStatus",
           "provided",
           "revision",
           "explanationHtml",
@@ -1780,6 +1834,11 @@
             "title": "Consent",
             "type": "boolean"
           },
+          "documentation_consent": {
+            "default": false,
+            "title": "Documentation Consent",
+            "type": "boolean"
+          },
           "name": {
             "anyOf": [
               {
@@ -1854,6 +1913,18 @@
             "format": "uuid",
             "title": "Request Id",
             "type": "string"
+          },
+          "staff_release_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staff Release Sha256"
           }
         },
         "required": [
@@ -2162,6 +2233,16 @@
             "title": "Guestlanguagenames",
             "type": "object"
           },
+          "recordingStatus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedRecordingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "revision": {
             "title": "Revision",
             "type": "string"
@@ -2189,6 +2270,7 @@
           }
         },
         "required": [
+          "recordingStatus",
           "revision",
           "timeZone",
           "branding",
@@ -2276,9 +2358,20 @@
             "default": false,
             "title": "Provided",
             "type": "boolean"
+          },
+          "recordingStatus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedRecordingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
+          "recordingStatus",
           "provided"
         ],
         "title": "UnprovidedGuestContent",

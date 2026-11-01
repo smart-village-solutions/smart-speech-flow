@@ -273,3 +273,29 @@ describe('toStaffContent', () => {
     ).toBeNull();
   });
 });
+
+describe('recording display content', () => {
+  const recordingStatus = {
+    locale: 'de',
+    waiting: 'Waiting',
+    running: 'Running',
+    stopped: 'Stopped',
+    renewedReleaseRequired: 'Release again',
+  };
+  it('keeps independently resolved legal status for an unprovided guest language', () => {
+    expect(toGuestContent({ provided: false, recordingStatus })).toEqual({
+      provided: false,
+      recordingStatus,
+    });
+    expect(toStaffContent({ ...staffContentBody, recordingStatus })).toHaveProperty(
+      'recordingStatus',
+      recordingStatus
+    );
+  });
+  it('withdraws malformed optional status without withdrawing other content', () => {
+    expect(toGuestContent({ provided: false, recordingStatus: { locale: 7 } })).toEqual({
+      provided: false,
+      recordingStatus: null,
+    });
+  });
+});

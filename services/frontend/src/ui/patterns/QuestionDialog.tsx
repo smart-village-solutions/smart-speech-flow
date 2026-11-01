@@ -7,6 +7,7 @@ interface QuestionDialogProps {
   title: string;
   /** Everything between the title and the buttons: text, fields, a pad. */
   children: ReactNode;
+  choicesLanguage?: string;
   confirmLabel: string;
   cancelLabel: string;
   /** Shown above the buttons when the confirmed action failed or needs more. */
@@ -25,6 +26,7 @@ export function QuestionDialog({
   open,
   title,
   children,
+  choicesLanguage,
   confirmLabel,
   cancelLabel,
   error = null,
@@ -58,6 +60,7 @@ export function QuestionDialog({
 
           <div className="mt-5 flex gap-3">
             <Button
+              lang={choicesLanguage}
               variant="sheet"
               onClick={onCancel}
               className="border border-border-card text-fg-body"
@@ -65,6 +68,7 @@ export function QuestionDialog({
               {cancelLabel}
             </Button>
             <Button
+              lang={choicesLanguage}
               variant="sheet"
               onClick={onConfirm}
               disabled={confirmDisabled}

@@ -74,7 +74,10 @@
       "cannotSign": "መፈረም አልችልም፤ በመንካት አረጋግጣለሁ።",
       "nameRequired": "እባክዎ ስምዎን ያስገቡ።",
       "signatureRequired": "እባክዎ ይፈርሙ ወይም መፈረም እንደማይችሉ ያረጋግጡ።",
-      "textChanged": "ጽሑፉ ተቀይሯል። እባክዎ ከመመለስዎ በፊት እንደገና ያንብቡት።"
+      "textChanged": "ጽሑፉ ተቀይሯል። እባክዎ ከመመለስዎ በፊት እንደገና ያንብቡት።",
+      "originalLanguage": "የመጀመሪያ ቋንቋ፦ {{language}}",
+      "documentationRequired": "እባክዎ የሰነድ ማስቀመጥ ፈቃድዎን በተለየ ያረጋግጡ።",
+      "staffReleaseChanged": "የሰራተኛው ፈቃድ ጽሑፍ ተቀይሯል። እባክዎ ሰራተኛው ይህን ጥያቄ እንዲሰርዝና አዲስ እንዲልክ ይጠይቁ።"
     }
   },
   "feedback": {

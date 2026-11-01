@@ -197,6 +197,7 @@ def test_only_a_permitted_employee_may_ask(client, conversations, recording, ide
         "since": None,
         "can_request": False,
         "unavailable_reason": "PERMISSION_REQUIRED",
+        "staff_release": None,
         "next_consent_kind": "first",
         "id_check": None,
     }
@@ -486,6 +487,10 @@ def test_the_guest_answers_with_the_hash_of_the_text_it_was_served(
             "consent_kind": "first",
             "language": "ar",
             "html": consent_text(POLICY, "ar", "first").html,
+            "text_sha256": consent_text(POLICY, "ar", "first").answer_sha256,
+            "accept_label": None,
+            "decline_label": None,
+            "documentation_consent": None,
             "signature": "optional",
             "proposed_name": "Amira",
         }
@@ -663,3 +668,48 @@ def test_a_recorded_conversation_withholds_its_languages_from_the_pipelines_tele
         ("process_text_pipeline", True),
         ("process_wav", True),
     ]
+
+
+def test_studio_bilateral_release_is_enforced_by_real_routes(
+    client, conversations, recording, monkeypatch
+):
+    from tests.test_studio_recording_legal_texts import legal_block, runtime
+
+    monkeypatch.setattr(__name__ + ".POLICY", runtime(legal_block()).policy.recording)
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    admin_base = f"/api/admin/session/{session_id}/recording"
+    guest_base = f"/api/customer/session/{session_id}/recording"
+    with _admin_socket(client, conversations, session_id):
+        with open_guest_socket(client, session_id, ORIGIN):
+            view = client.get(admin_base).json()
+            release = view["staff_release"]
+            assert release["language"] == "de"
+            assert "Employee release body" in release["html"]
+            request_id = str(uuid.uuid4())
+            missing = client.post(admin_base + "/request", json={"request_id": request_id})
+            assert missing.status_code == 409
+            assert missing.json()["detail"]["error_code"] == "STAFF_RELEASE_TEXT_MISMATCH"
+            requested = client.post(
+                admin_base + "/request",
+                json={"request_id": request_id, "staff_release_sha256": release["sha256"]},
+            )
+            assert requested.status_code == 200
+            text = client.get(guest_base + "/consent").json()
+            assert text["accept_label"] == "Accept Guest release"
+            assert text["documentation_consent"]["accept_label"] == "Accept Documentation"
+            answer = {
+                "request_id": request_id,
+                "consent": True,
+                "text_sha256": text["text_sha256"],
+                "name": "Guest",
+            }
+            refused = client.post(guest_base + "/answer", json=answer)
+            assert refused.status_code == 422
+            assert refused.json()["detail"]["error_code"] == "DOCUMENTATION_CONSENT_REQUIRED"
+            accepted = client.post(
+                guest_base + "/answer", json=answer | {"documentation_consent": True}
+            )
+            assert accepted.status_code == 200
+            assert accepted.json()["state"] == "arming"
+            assert client.post(admin_base + "/stop").status_code == 200
