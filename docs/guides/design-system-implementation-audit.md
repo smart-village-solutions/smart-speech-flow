@@ -111,7 +111,7 @@ Current checks: 1,554 unit/component tests across 175 files, 14 browser cases, b
 
 ## Publication and limits
 
-The earlier baseline was published. This reconciliation changes the Figma working file; the connector cannot publish team-library updates. Publish from **Assets → Libraries → This file → Publish** before distributing the update to consuming files.
+The user published the reconciliation update. A subsequent read-only Figma check confirmed `CURRENT` publication status for all 56 public families (40 UI and 16 icon/asset families) and all three variable collections. Consuming files can now adopt the published update.
 
 Button and TextField Code Connect maps remain empty. Source references and this matrix exist; connected snippets are not configured. Older pinned source URLs describe the original baseline; this branch and the contract describe the reconciliation.
 
