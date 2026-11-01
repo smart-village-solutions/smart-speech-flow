@@ -333,3 +333,26 @@ describe('read-only legal information', () => {
     expect(toStaffContent({ ...staffContentBody, legalInformation }).legalInformation).toBeNull();
   });
 });
+
+describe('documentation information transport', () => {
+  it.each(['en', 'ar'])('preserves the independent optional pair for %s', (language) => {
+    const information = {
+      locale: 'de-DE',
+      version: 'pair-v1',
+      sections: ['mode2Consent', 'guestRecordingRelease'].map((id) => ({
+        id,
+        headline: id,
+        bodyHtml: '<p>Wording</p>',
+      })),
+    };
+    expect(
+      toGuestContent({ ...guestContentBody(language), documentationInformation: information })
+    ).toHaveProperty('documentationInformation', information);
+  });
+  it('distinguishes unavailable documentation from an older server', () => {
+    expect(
+      toGuestContent({ ...guestContentBody('ar'), documentationInformation: null })
+    ).toHaveProperty('documentationInformation', null);
+    expect(toGuestContent(guestContentBody('ar'))).not.toHaveProperty('documentationInformation');
+  });
+});

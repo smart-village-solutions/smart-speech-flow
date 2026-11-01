@@ -202,7 +202,12 @@ def test_invalid_content_withdraws_only_that_language(client, conversations, stu
 
     assert by_code["en"]["provided"] is False
     assert all(by_code[code]["provided"] for code in ("ar", "tr"))
-    assert english == {"provided": False, "recordingStatus": None, "legalInformation": None}
+    assert english == {
+        "provided": False,
+        "recordingStatus": None,
+        "documentationInformation": None,
+        "legalInformation": None,
+    }
     assert turkish["provided"] is True
 
 
@@ -215,7 +220,12 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     content = client.get(content_path(session_id, "en")).json()
 
     assert [language["provided"] for language in languages] == [False] * 19
-    assert content == {"provided": False, "recordingStatus": None, "legalInformation": None}
+    assert content == {
+        "provided": False,
+        "recordingStatus": None,
+        "documentationInformation": None,
+        "legalInformation": None,
+    }
 
 
 # Guest content
@@ -230,6 +240,7 @@ def test_guest_content_for_a_provided_language(client, conversations):
     assert response.status_code == 200
     assert response.json() == {
         "provided": True,
+        "documentationInformation": None,
         "legalInformation": None,
         "recordingStatus": None,
         "revision": runtime_body()["configurationRevision"],
@@ -244,7 +255,12 @@ def test_guest_content_for_a_language_studio_does_not_provide(client, conversati
 
     response = client.get(content_path(session_id, "fa"))
 
-    assert response.json() == {"provided": False, "recordingStatus": None, "legalInformation": None}
+    assert response.json() == {
+        "provided": False,
+        "recordingStatus": None,
+        "documentationInformation": None,
+        "legalInformation": None,
+    }
 
 
 @pytest.mark.parametrize("language", ["de", "hr", "xx"])
@@ -267,6 +283,7 @@ def test_a_tenant_whose_studio_storage_is_disabled_gets_the_same_guest_content(
 
     assert body == {
         "provided": True,
+        "documentationInformation": None,
         "legalInformation": None,
         "recordingStatus": None,
         "revision": runtime_body(FULDA)["configurationRevision"],
@@ -286,7 +303,12 @@ def test_guest_content_is_answered_from_the_cache_until_it_ages(client, conversa
 
     assert cached["provided"] is True
     assert cached["revision"] == runtime_body()["configurationRevision"]
-    assert refreshed == {"provided": False, "recordingStatus": None, "legalInformation": None}
+    assert refreshed == {
+        "provided": False,
+        "recordingStatus": None,
+        "documentationInformation": None,
+        "legalInformation": None,
+    }
 
 
 def test_a_failed_live_read_serves_the_last_content(client, conversations, studio_mock):
@@ -439,6 +461,12 @@ def test_reading_legal_information_does_not_activate_a_session_or_change_storage
     assert response.json()["provided"] is False
     assert response.json()["legalInformation"]["locale"] == "de-DE"
     assert len(response.json()["legalInformation"]["sections"]) == 4
+    documentation = response.json()["documentationInformation"]
+    assert documentation["locale"] == "de-DE"
+    assert [section["id"] for section in documentation["sections"]] == [
+        "mode2Consent",
+        "guestRecordingRelease",
+    ]
     after = client.get(f"/api/customer/session/{session_id}").json()
     assert after == before
     identity.act_as(KASSEL)

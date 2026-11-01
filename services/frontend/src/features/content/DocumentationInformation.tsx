@@ -25,13 +25,16 @@ export function DocumentationInformation({
   const sections = information.sections.filter(
     ({ id }) => id === 'mode2Consent' || id === 'guestRecordingRelease'
   );
-  if (!sections.length) return null;
+  if (
+    !['mode2Consent', 'guestRecordingRelease'].every((id) =>
+      sections.some((section) => section.id === id)
+    )
+  )
+    return null;
   return (
     <section
       role="region"
       aria-label={t('legal.informationTitle')}
-      lang={information.locale}
-      dir="auto"
       className="mt-8 space-y-5 text-note leading-chat text-fg-body"
     >
       <p>{t('legal.informationNotice')}</p>
@@ -41,7 +44,9 @@ export function DocumentationInformation({
           version: information.version,
         })}
       </p>
-      <LegalInformationSections information={{ ...information, sections }} />
+      <div lang={information.locale} dir="auto" className="space-y-5">
+        <LegalInformationSections information={{ ...information, sections }} />
+      </div>
     </section>
   );
 }

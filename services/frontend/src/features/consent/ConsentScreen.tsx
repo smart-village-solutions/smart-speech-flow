@@ -1,4 +1,3 @@
-import { useGuestContent } from '@/features/content/useGuestContent';
 import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useFeedback } from '@/app/providers/feedback';
@@ -17,8 +16,17 @@ import { useConsentScreen } from './useConsentScreen';
 export function ConsentScreen() {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
-  const { sessionId, language, ready, copy, start, goBack, goHome } = useConsentScreen();
-  const { content } = useGuestContent(sessionId, language?.code);
+  const {
+    sessionId,
+    language,
+    ready,
+    copy,
+    legalInformation,
+    documentationInformation,
+    start,
+    goBack,
+    goHome,
+  } = useConsentScreen();
 
   return (
     <ScreenShell>
@@ -40,7 +48,7 @@ export function ConsentScreen() {
             <>
               <ConsentProse explanationHtml={copy.explanationHtml} />
 
-              <DocumentationInformation information={content?.legalInformation} />
+              <DocumentationInformation information={documentationInformation} />
 
               <Button
                 className="mt-10 bg-accent text-accent-on"
@@ -64,7 +72,7 @@ export function ConsentScreen() {
           )}
         </div>
       </div>
-      <SiteLegalLinks information={content?.legalInformation} className="px-5 pt-4 pb-legal-end" />
+      <SiteLegalLinks information={legalInformation} className="px-5 pt-4 pb-legal-end" />
     </ScreenShell>
   );
 }

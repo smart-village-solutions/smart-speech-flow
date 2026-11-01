@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react';
+import type { GuestContent, LegalInformation } from '@/domain/content/content.types';
 import { useServices } from '@/app/providers/services';
 import { useGuestContent } from '@/features/content/useGuestContent';
 import { consentCopy, type ConsentCopy } from './consentCopy';
 
-interface Shown {
-  key: string;
+interface EntryContent {
   copy: ConsentCopy;
+  legalInformation: LegalInformation | null | undefined;
+  documentationInformation: LegalInformation | null | undefined;
+}
+
+interface Shown extends EntryContent {
+  key: string;
+}
+
+function entryContent(content: GuestContent | undefined): EntryContent {
+  return {
+    copy: consentCopy(content),
+    legalInformation: content?.legalInformation,
+    // Explicit null is authoritative; only older servers need the reference fallback.
+    documentationInformation:
+      content?.documentationInformation !== undefined
+        ? content.documentationInformation
+        : content?.legalInformation,
+  };
 }
 
 /**
@@ -17,21 +35,21 @@ interface Shown {
 export function useConsentContent(
   sessionId: string | undefined,
   language: string | undefined
-): { ready: boolean; copy: ConsentCopy } {
+): EntryContent & { ready: boolean } {
   const { config } = useServices();
   const { content, settled } = useGuestContent(sessionId, language);
   const key = `${sessionId ?? ''}/${language ?? ''}`;
   const [shown, setShown] = useState<Shown | null>(null);
-  const current = shown?.key === key ? shown.copy : undefined;
+  const current = shown?.key === key ? shown : undefined;
 
-  if (current === undefined && settled) setShown({ key, copy: consentCopy(content) });
+  if (current === undefined && settled) setShown({ key, ...entryContent(content) });
 
   useEffect(() => {
     if (current !== undefined) return undefined;
     const timer = setTimeout(
       () =>
         setShown((previous) =>
-          previous?.key === key ? previous : { key, copy: consentCopy(undefined) }
+          previous?.key === key ? previous : { key, ...entryContent(undefined) }
         ),
       config.requestTimeoutMs
     );
@@ -39,6 +57,6 @@ export function useConsentContent(
   }, [current, key, config.requestTimeoutMs]);
 
   return current === undefined
-    ? { ready: false, copy: consentCopy(undefined) }
-    : { ready: true, copy: current };
+    ? { ready: false, ...entryContent(undefined) }
+    : { ...current, ready: true };
 }

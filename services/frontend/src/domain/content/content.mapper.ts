@@ -123,10 +123,16 @@ const recordingStatus = z
   .catch(null);
 
 const guestContent = z.discriminatedUnion('provided', [
-  z.object({ provided: z.literal(false), recordingStatus, legalInformation }),
+  z.object({
+    provided: z.literal(false),
+    recordingStatus,
+    legalInformation,
+    documentationInformation: legalInformation,
+  }),
   z.object({
     provided: z.literal(true),
     legalInformation,
+    documentationInformation: legalInformation,
     recordingStatus,
     revision: z.string(),
     explanationHtml: z.string(),

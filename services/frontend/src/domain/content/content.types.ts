@@ -57,7 +57,10 @@ export interface LegalInformation {
   sections: { id: string; headline: string; bodyHtml: string }[];
 }
 
-export type GuestContent = { legalInformation?: LegalInformation | null } & (
+export type GuestContent = {
+  legalInformation?: LegalInformation | null;
+  documentationInformation?: LegalInformation | null;
+} & (
   | { provided: false; recordingStatus?: RecordingStatusCopy | null }
   | {
       provided: true;
