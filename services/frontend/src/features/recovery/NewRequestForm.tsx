@@ -1,3 +1,4 @@
+import { Textarea } from '@/ui/primitives/Textarea';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
@@ -5,7 +6,7 @@ import { Button } from '@/ui/primitives/Button';
 import { CandidatePicker, MAX_CONVERSATIONS } from './CandidatePicker';
 import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { dayRange, localDay } from './days';
-import { FIELD, type Filter, LABEL, RequestFilter } from './RequestFilter';
+import { type Filter, LABEL, RequestFilter } from './RequestFilter';
 import { faultKey } from './faults';
 import { RECOVERY_REQUESTS_VIEW, useCandidates, useEmployees, useFileRequest } from './useRecovery';
 
@@ -56,10 +57,9 @@ export function NewRequestForm({ keys, onFiled }: Readonly<NewRequestFormProps>)
       )}
       <label className={LABEL}>
         {t('admin.recovery.new.reason')}
-        <textarea
+        <Textarea variant="field"
           rows={4}
           maxLength={1000}
-          className={FIELD}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />

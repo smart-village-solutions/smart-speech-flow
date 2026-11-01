@@ -18,7 +18,7 @@ export function StarRating({ min, max, value, onChange }: Readonly<StarRatingPro
   const shown = hovered ?? value;
 
   return (
-    <div className="flex gap-1">
+    <div className="flex flex-wrap gap-1">
       {range(min, max).map((score) => (
         <button
           key={score}
@@ -28,13 +28,13 @@ export function StarRating({ min, max, value, onChange }: Readonly<StarRatingPro
           onMouseEnter={() => setHovered(score)}
           onMouseLeave={() => setHovered(null)}
           onClick={() => onChange(score)}
-          className="transition-transform duration-75 active:scale-90"
+          className="focus-ring flex size-tap-target items-center justify-center rounded-row transition-transform duration-75 active:scale-90"
         >
           <Star
             size={22}
             strokeWidth={1.5}
             className={cn(
-              shown !== null && shown >= score ? 'fill-accent text-accent' : 'text-fg-faint'
+              shown !== null && shown >= score ? 'fill-accent text-accent' : 'text-fg-icon'
             )}
           />
         </button>

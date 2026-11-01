@@ -84,7 +84,7 @@ export function TenantLoginScreen() {
                 <li key={tenant.id}>
                   <Link
                     to={`/login/${encodeURIComponent(tenant.id)}`}
-                    className="flex w-full rounded-row border border-border-card bg-surface-card px-4 py-3 text-item font-medium leading-tight tracking-item text-fg-strong transition-colors duration-150 hover:bg-surface-row-hover active:bg-surface-row-active focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    className="focus-ring flex w-full rounded-row border border-border-card bg-surface-card px-4 py-3 text-item font-medium leading-tight tracking-item text-fg-strong transition-colors duration-150 hover:bg-surface-row-hover active:bg-surface-row-active"
                   >
                     {tenant.displayName}
                   </Link>

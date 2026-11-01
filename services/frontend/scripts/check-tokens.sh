@@ -119,7 +119,39 @@ assert '--spacing-flag-row: 22px'
 assert '--container-invite: 500px'
 assert '--container-dialog: 400px'
 assert '--text-code-lg: 28px'
-assert '--text-overlay-title: 22px'
+assert '--text-overlay-title: 24px'
+
+# Semantic type roles share the consolidated scale without losing their names.
+assert '--text-caption: 12px'
+assert '--text-meta: 12px'
+assert '--text-label: 14px'
+assert '--text-note: 14px'
+assert '--text-body: 16px'
+assert '--text-item: 16px'
+assert '--text-thanks: 18px'
+assert '--text-code: 18px'
+assert '--text-title: 24px'
+# Typing dots are graphic geometry, not another text role.
+assert '--text-dots: 20px'
+
+# Keyboard focus must survive compilation, including controls that suppress
+# the browser outline and the visible box beside a screen-reader-only input.
+assert '--focus-visible-on-light: #1d538b'
+assert '--focus-visible: #79b8f6'
+assert '--fg-muted: #595959'
+assert '--fg-muted: #bdbdbd'
+assert '--border-field: #737373'
+assert '--border-field: #8e8e8e'
+assert '--spacing-field-gap: 6px'
+assert '--spacing-field-y: 10px'
+assert '--spacing-field-y-compact: 8px'
+assert '--spacing-tap-target: 44px'
+assert '.hit-target:before'
+assert '.focus-ring:focus-visible'
+assert 'outline: 2px solid var(--focus-visible)'
+assert 'outline-offset: var(--focus-ring-offset, 2px)'
+assert 'transition-property: color, background-color, border-color, box-shadow, opacity, transform'
+assert '.peer-focus-visible'
 
 # Phase 3 tokens.
 assert '--spacing-admin-content: 128px'

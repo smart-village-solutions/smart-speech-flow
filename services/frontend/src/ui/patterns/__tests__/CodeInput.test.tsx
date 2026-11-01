@@ -17,6 +17,13 @@ function Harness() {
 }
 
 describe('CodeInput', () => {
+  it('marks every cell invalid when the code is rejected', () => {
+    renderWithProviders(<CodeInput value="AB" onChange={() => undefined} invalid />);
+    for (const box of screen.getAllByRole('textbox')) {
+      expect(box).toHaveAttribute('aria-invalid', 'true');
+      expect(box).toHaveClass('border-fg-status-alert');
+    }
+  });
   it('renders one box per code character', () => {
     renderWithProviders(<Harness />);
     expect(screen.getAllByRole('textbox')).toHaveLength(CODE_LENGTH);

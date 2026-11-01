@@ -17,6 +17,24 @@
 }
 
 @layer utilities {
+  .hit-target::before {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((100% - var(--spacing-tap-target)) / 2));
+  }
+
+  /* The utility also reaches controls rendered in Radix portals. The scoped
+     selector covers feature-specific controls inside ScreenShell without
+     changing the legacy pages. Keep the outline outside error borders. */
+  .focus-ring:focus-visible,
+  [data-screen-shell] :is(button, a[href], input:not([type='checkbox']), select, textarea):focus-visible {
+    outline: 2px solid var(--focus-visible);
+    outline-offset: var(--focus-ring-offset, 2px);
+    /* transition-all/transition-colors otherwise fade the outline in from
+       zero or transparent. Keyboard focus must be visible immediately. */
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  }
+
   @keyframes slide-in {
     from {
       transform: translateX(100%);
