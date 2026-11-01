@@ -32,4 +32,4 @@ All 40 public UI roles are source-backed or explicitly composed. The final Figma
 
 Verification passed: 1,554 unit/component tests in 175 files, 14 browser cases, build, lint, compiled-CSS checks and independent review. Browser checks include alpha-composited text/control contrast and the fixed-white header versus themed dropdown focus. Core Figma controls and the responsive browser gallery were visually inspected.
 
-The updated Figma working file still requires manual library publication. Code Connect snippets remain unconfigured; neither limitation blocks use of the local source components or local library masters.
+The user published the updated library. A subsequent read-only check confirmed `CURRENT` publication status for all 56 public families and all three variable collections. Code Connect snippets remain unconfigured; this does not block using the library or source components.
