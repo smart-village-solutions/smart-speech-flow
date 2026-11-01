@@ -311,6 +311,9 @@ describe('entry legal snapshot', () => {
 });
 
 it.each([
+  ['he-IL', 'rtl'],
+  ['ar-Latn', 'ltr'],
+  ['zz-ZZ', 'auto'],
   ['AR-eg', 'rtl'],
   ['fa-IR', 'rtl'],
   ['de-DE', 'ltr'],
