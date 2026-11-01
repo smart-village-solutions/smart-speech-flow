@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) lehtëson bisedat mes njerëzve që flasin gjuhë të ndryshme. Mund të flisni ose të shkruani tekst. Ajo që thoni ose shkruani përkthehet automatikisht. Mund të ketë gabime. Kërkoni sqarim nëse diçka nuk është e qartë.",
-    "howTo": "Kur nisni bisedën, fillon përkthimi. Me këtë nuk jepni pëlqimin për një regjistrim për qëllime dokumentimi. Nëse parashikohet një regjistrim, do të informoheni veçmas paraprakisht dhe do t’ju kërkohet pëlqimi, si dhe miratimi për secilën pjesë të regjistrimit.",
+    "howTo": "Kur nisni bisedën, fillon përkthimi. Me këtë nuk jepni pëlqimin për një regjistrim për qëllime dokumentimi. Nëse parashikohet një regjistrim, do të informoheni veçmas paraprakisht. Çdo pëlqim i nevojshëm sipas politikës së zbatueshme të regjistrimit dhe miratimi për secilën pjesë të regjistrimit do të kërkohen veçmas.",
     "getStarted": "Fillo",
     "loading": "Po ngarkohen informacionet"
   },

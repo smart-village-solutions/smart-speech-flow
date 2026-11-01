@@ -8,6 +8,14 @@ This is an informational, close-only view. Opening, reading, scrolling, closing 
 
 Legal information is served through the existing tenant/session-scoped content routes, independently of whether Studio provides that guest language's other copy. Missing or malformed optional legal information hides the additional action while retaining the existing page and legal links.
 
+## Ordinary conversation introduction
+
+Before Get Started, the entry always shows two translated UI paragraphs explaining automatic translation, possible errors, and the separation between starting a conversation and recording. Studio explanations are omitted from this entry, including already-updated copies and legacy storage promises. Other Studio content and the existing content API remain unchanged. Reference legal information retains its route-keyed snapshot, even when requests time out or reconnect later.
+
+The introduction promises only consent required by the applicable recording policy; statutory-basis policies do not acquire a new documentation-consent choice. Per-section recording release remains a separate step. Full counsel declarations stay in the close-only information dialog and the existing recording workflows.
+
+Reference direction follows explicit source scripts, including Yezidi and Latin overrides. An undetermined language without an explicit script keeps automatic direction. These source-wording rules do not change the UI language-direction policy.
+
 ## Kassel compatibility release
 
 The initial Kassel release is a narrow backport on source `2acde0bd2b2da93d4f6c757c57246817be5c2a29`, separately published for source review. It retains the existing storage/activation contract and does not import the later recording-mode infrastructure cutover. The same informational feature is forward-ported to main so later upgrades retain it.

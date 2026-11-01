@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) ułatwia rozmowy między osobami mówiącymi różnymi językami. Mogą Państwo mówić lub wpisywać tekst. Państwa wypowiedzi są tłumaczone automatycznie. Mogą przy tym wystąpić błędy. Jeśli coś jest niejasne, prosimy poprosić o wyjaśnienie.",
-    "howTo": "Po rozpoczęciu rozmowy rozpoczyna się tłumaczenie. Nie oznacza to wyrażenia przez Państwa zgody na nagranie w celu dokumentacji. Jeśli nagranie jest planowane, otrzymają Państwo wcześniej osobną informację i zostaną poproszeni o wyrażenie zgody, a także o zatwierdzenie każdego fragmentu nagrania.",
+    "howTo": "Po rozpoczęciu rozmowy rozpoczyna się tłumaczenie. Nie oznacza to wyrażenia przez Państwa zgody na nagranie w celu dokumentacji. Jeśli nagranie jest planowane, otrzymają Państwo wcześniej osobną informację. Ewentualna zgoda wymagana przez obowiązujące zasady nagrywania oraz zatwierdzenie każdego fragmentu nagrania będą uzyskiwane osobno.",
     "getStarted": "Rozpocznij",
     "loading": "Wczytywanie informacji"
   },

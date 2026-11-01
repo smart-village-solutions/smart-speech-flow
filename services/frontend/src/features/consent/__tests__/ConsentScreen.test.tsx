@@ -97,8 +97,8 @@ describe('ConsentScreen', () => {
     await settled();
 
     expect(
-      screen.getByText(/KasselDIALOG is an automatic real-time/).parentElement?.parentElement
-        ?.parentElement
+      screen.getByText(en.consent.intro.replace('$t(app.name)', en.app.name)).parentElement
+        ?.parentElement?.parentElement
     ).toHaveClass('pt-content-top');
   });
 
@@ -172,15 +172,40 @@ describe('ConsentScreen', () => {
   });
 
   describe('Studio content', () => {
-    it("shows Studio's explanation for a language Studio provides", async () => {
+    it('always shows the UI introduction instead of an optional Studio explanation', async () => {
       server.use(studioEnglish());
       renderWithProviders(tree(), { route });
       await settled();
 
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
-      expect(screen.queryByText(en.consent.howTo)).not.toBeInTheDocument();
+      expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
+      expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
+
+    it.each([
+      '<p>Conversation data is retained for 180 days.</p>',
+      `<p>${en.consent.intro.replace('$t(app.name)', en.app.name)}</p><p>${en.consent.howTo}</p>`,
+    ])(
+      'uses exactly one UI introduction with legacy or already-updated Studio markup %s',
+      async (explanationHtml) => {
+        server.use(
+          guestContentHandler((language) =>
+            HttpResponse.json({ ...guestContentBody(language), explanationHtml })
+          )
+        );
+        renderWithProviders(tree(), { route });
+        await settled();
+        expect(
+          screen.getAllByText(en.consent.intro.replace('$t(app.name)', en.app.name))
+        ).toHaveLength(1);
+        expect(screen.getAllByText(en.consent.howTo)).toHaveLength(1);
+        expect(
+          screen.queryByText('Conversation data is retained for 180 days.')
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Get started' })).toBeEnabled();
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      }
+    );
 
     it('keeps the bundled texts, right to left, for a language Studio does not provide', async () => {
       renderWithProviders(tree(undefined, 'ar'), { route: '/s/A1B2C3D4/info/ar' });

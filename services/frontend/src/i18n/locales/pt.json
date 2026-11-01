@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "O $t(app.name) facilita conversas entre pessoas que falam línguas diferentes. Pode falar ou escrever texto. As suas intervenções são traduzidas automaticamente. Podem ocorrer erros. Peça esclarecimentos se algo não estiver claro.",
-    "howTo": "Ao iniciar a conversa, começa a tradução. Isso não significa que dê o seu consentimento para uma gravação para fins de documentação. Se estiver prevista uma gravação, receberá previamente informações em separado e ser-lhe-á pedido o seu consentimento, bem como a sua autorização para cada parte da gravação.",
+    "howTo": "Ao iniciar a conversa, começa a tradução. Isso não significa que dê o seu consentimento para uma gravação para fins de documentação. Se estiver prevista uma gravação, receberá previamente informações em separado. Qualquer consentimento exigido pela política de gravação aplicável e a sua autorização para cada parte da gravação serão solicitados separadamente.",
     "getStarted": "Começar",
     "loading": "Carregando as informações"
   },

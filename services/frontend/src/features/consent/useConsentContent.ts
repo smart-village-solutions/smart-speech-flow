@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import type { GuestContent, LegalInformation } from '@/domain/content/content.types';
 import { useServices } from '@/app/providers/services';
 import { useGuestContent } from '@/features/content/useGuestContent';
-import { consentCopy, type ConsentCopy } from './consentCopy';
 
 interface EntryContent {
-  copy: ConsentCopy;
   legalInformation: LegalInformation | null | undefined;
 }
 
@@ -15,16 +13,14 @@ interface Shown extends EntryContent {
 
 function entryContent(content: GuestContent | undefined): EntryContent {
   return {
-    copy: consentCopy(content),
     legalInformation: content?.legalInformation,
   };
 }
 
 /**
- * Guest content for the consent screen, which waits for it rather than swap one
- * legal text for another. The first copy shown is kept for the session and
- * language: the content once it settles, or the bundled text after the request
- * timeout. A late answer, a reconnect refetch or a new revision changes nothing.
+ * Keep reference wording stable for the session and route language once content
+ * settles or times out. Late content and reconnects cannot replace that snapshot.
+ * The ordinary introduction itself comes exclusively from the UI catalogues.
  */
 export function useConsentContent(
   sessionId: string | undefined,

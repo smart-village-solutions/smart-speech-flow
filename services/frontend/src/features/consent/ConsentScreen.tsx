@@ -15,7 +15,7 @@ import { useConsentScreen } from './useConsentScreen';
 export function ConsentScreen() {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
-  const { sessionId, language, ready, copy, legalInformation, start, goBack, goHome } =
+  const { sessionId, language, ready, legalInformation, start, goBack, goHome } =
     useConsentScreen();
 
   return (
@@ -36,7 +36,7 @@ export function ConsentScreen() {
 
           {ready ? (
             <>
-              <ConsentProse explanationHtml={copy.explanationHtml} />
+              <ConsentProse />
 
               <Button
                 className="mt-10 bg-accent text-accent-on"

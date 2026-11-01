@@ -334,25 +334,32 @@ describe('read-only legal information', () => {
   });
 });
 
-describe('documentation information transport', () => {
-  it.each(['en', 'ar'])('preserves the independent optional pair for %s', (language) => {
-    const information = {
-      locale: 'de-DE',
-      version: 'pair-v1',
-      sections: ['mode2Consent', 'guestRecordingRelease'].map((id) => ({
-        id,
-        headline: id,
-        bodyHtml: '<p>Wording</p>',
-      })),
-    };
-    expect(
-      toGuestContent({ ...guestContentBody(language), documentationInformation: information })
-    ).toHaveProperty('documentationInformation', information);
-  });
-  it('distinguishes unavailable documentation from an older server', () => {
+describe('obsolete inline documentation transport', () => {
+  it.each(['en', 'ar'])(
+    'ignores an obsolete inline pair while preserving reference wording for %s',
+    (language) => {
+      const information = {
+        locale: 'de-DE',
+        version: 'pair-v1',
+        sections: ['mode2Consent', 'guestRecordingRelease'].map((id) => ({
+          id,
+          headline: id,
+          bodyHtml: '<p>Wording</p>',
+        })),
+      };
+      const content = toGuestContent({
+        ...guestContentBody(language),
+        legalInformation: information,
+        documentationInformation: information,
+      });
+      expect(content).not.toHaveProperty('documentationInformation');
+      expect(content).toHaveProperty('legalInformation', information);
+    }
+  );
+  it('does not expose a legacy inline field from null or unsupported-language responses', () => {
     expect(
       toGuestContent({ ...guestContentBody('ar'), documentationInformation: null })
-    ).toHaveProperty('documentationInformation', null);
+    ).not.toHaveProperty('documentationInformation');
     expect(toGuestContent(guestContentBody('ar'))).not.toHaveProperty('documentationInformation');
   });
 });
