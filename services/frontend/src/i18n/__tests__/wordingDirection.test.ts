@@ -7,6 +7,12 @@ afterEach(() => vi.unstubAllGlobals());
 const cases = [
   ['he-IL', 'rtl'],
   ['ar-Latn', 'ltr'],
+  ['ku-Yezi', 'rtl'],
+  ['und', 'auto'],
+  ['und-US', 'auto'],
+  ['und-Hebr', 'rtl'],
+  ['und-Latn', 'ltr'],
+  ['und-Zzzz', 'auto'],
   ['ar-EG', 'rtl'],
   ['fa-IR', 'rtl'],
   ['de-DE', 'ltr'],

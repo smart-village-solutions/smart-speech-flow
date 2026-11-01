@@ -9,6 +9,7 @@ const RTL_SCRIPTS = new Set([
   'Samr',
   'Syrc',
   'Thaa',
+  'Yezi',
 ]);
 const LTR_SCRIPTS = new Set([
   'Armn',
@@ -49,6 +50,8 @@ const LTR_SCRIPTS = new Set([
 export function wordingDirectionFor(tag: string): 'ltr' | 'rtl' | 'auto' {
   try {
     const locale = new Intl.Locale(tag);
+    // `und` has no known language; likely-subtag expansion must not guess English.
+    if (!locale.script && (!locale.language || locale.language === 'und')) return 'auto';
     // Explicit script wins over the language's likely script (for example ar-Latn).
     const script = locale.script ?? locale.maximize?.().script;
     if (script && RTL_SCRIPTS.has(script)) return 'rtl';
