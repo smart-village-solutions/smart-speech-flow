@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { LegalInformation } from '@/domain/content/content.types';
 import { cn } from '@/lib/cn';
 import type { LegalLinksTone } from '@/ui/patterns/LegalLinks';
-import { RichText } from '@/ui/patterns/RichText';
+import { LegalInformationSections } from './DocumentationInformation';
 import { Button } from '@/ui/primitives/Button';
 
 /** Reading source wording never submits a consent or recording decision. */
@@ -53,14 +53,7 @@ export function LegalInformationDialog({
             dir="auto"
             className="mt-4 min-h-0 space-y-5 overflow-y-auto text-note leading-chat text-fg-body"
           >
-            {information.sections.map((section) => (
-              <section key={section.id}>
-                <h2 className="mb-2 font-semibold text-fg-strong">{section.headline}</h2>
-                <div className="space-y-3">
-                  <RichText html={section.bodyHtml} />
-                </div>
-              </section>
-            ))}
+            <LegalInformationSections information={information} />
           </div>
           <Dialog.Close asChild>
             <Button

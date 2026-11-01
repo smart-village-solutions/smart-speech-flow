@@ -127,3 +127,40 @@ describe.each(['guest consent', 'guest conversation', 'staff conversation'])(
     );
   }
 );
+
+// The ordinary conversation entry must expose documentation wording without
+// treating the page visit or Get Started as a recording release.
+describe('ordinary conversation entry', () => {
+  it('shows documentation and guest release wording inline, retaining the separate reference dialog', async () => {
+    server.use(
+      guestContentHandler((language) =>
+        HttpResponse.json({
+          ...guestContentBody(language),
+          storage: { mode: 'disabled' },
+          storageQuestionHtml: null,
+          legalInformation: information,
+        })
+      )
+    );
+    renderScreen('guest consent');
+    const region = await screen.findByRole('region', {
+      name: CATALOGUES.ar.legal.informationTitle,
+    });
+    expect(region).toHaveAttribute('lang', 'de-DE');
+    expect(region).toHaveAttribute('dir', 'auto');
+    for (const id of ['mode2Consent', 'guestRecordingRelease']) {
+      expect(within(region).getByText(`Source wording ${id}`)).toBeInTheDocument();
+    }
+    for (const id of ['mode3Consent', 'staffRecordingRelease']) {
+      expect(within(region).queryByText(`Source wording ${id}`)).not.toBeInTheDocument();
+    }
+    expect(within(region).getByText(/de-DE/)).toHaveTextContent('source-2026-42');
+    expect(within(region).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+    ).toBeInTheDocument();
+  });
+});
