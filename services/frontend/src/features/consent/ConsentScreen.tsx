@@ -1,3 +1,4 @@
+import { useGuestContent } from '@/features/content/useGuestContent';
 import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useFeedback } from '@/app/providers/feedback';
@@ -19,6 +20,7 @@ export function ConsentScreen() {
   const { openFeedback } = useFeedback();
   const { sessionId, language, ready, copy, agreed, setAgreed, start, goBack, goHome } =
     useConsentScreen();
+  const { content } = useGuestContent(sessionId, language?.code);
 
   return (
     <ScreenShell>
@@ -72,7 +74,7 @@ export function ConsentScreen() {
           )}
         </div>
       </div>
-      <SiteLegalLinks className="px-5 pt-4 pb-legal-end" />
+      <SiteLegalLinks information={content?.legalInformation} className="px-5 pt-4 pb-legal-end" />
     </ScreenShell>
   );
 }

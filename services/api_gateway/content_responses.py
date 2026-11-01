@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from .legal_information import LegalInformation, legal_information
 from .message_models import SUPPORTED_LANGUAGES
 from .studio_content import TenantContent
 from .studio_content_service import GuestContent
@@ -131,6 +132,7 @@ class ContentStorage(_Body):
 
 
 class ProvidedGuestContent(_Body):
+    legal_information: LegalInformation | None = None
     storage: ContentStorage
     provided: Literal[True] = True
     revision: str
@@ -140,6 +142,7 @@ class ProvidedGuestContent(_Body):
 
 
 class UnprovidedGuestContent(_Body):
+    legal_information: LegalInformation | None = None
     storage: ContentStorage
     provided: Literal[False] = False
 
@@ -176,6 +179,7 @@ class ContentStaff(_Body):
 
 
 class StaffContentResponse(_Body):
+    legal_information: LegalInformation | None = None
     revision: str
     time_zone: str | None
     branding: ContentBranding
@@ -239,10 +243,12 @@ def guest_content_response(
 ) -> ProvidedGuestContent | UnprovidedGuestContent:
     storage = ContentStorage(mode=guest.mode)
     content = guest.content
+    information = legal_information(content.legal_texts, language) if content is not None else None
     studio = content.guest_languages.get(language) if content is not None else None
     if content is None or studio is None:
-        return UnprovidedGuestContent(storage=storage)
+        return UnprovidedGuestContent(storage=storage, legal_information=information)
     return ProvidedGuestContent(
+        legal_information=information,
         storage=storage,
         revision=content.revision,
         explanation_html=studio.explanation_html,
@@ -254,6 +260,9 @@ def guest_content_response(
 def staff_content_response(content: TenantContent) -> StaffContentResponse:
     staff = content.staff
     return StaffContentResponse(
+        legal_information=legal_information(
+            content.legal_texts, staff.locale if staff is not None else "de-DE"
+        ),
         revision=content.revision,
         time_zone=content.time_zone,
         branding=ContentBranding.model_validate(content.branding.model_dump()),

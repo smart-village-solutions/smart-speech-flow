@@ -104,6 +104,10 @@
     "imprint": "Nota prawna",
     "privacyPolicy": "Prywatność",
     "accessibilityStatement": "Dostępność",
-    "opensInNewTab": "(otwiera się w nowej karcie)"
+    "opensInNewTab": "(otwiera się w nowej karcie)",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   }
 }

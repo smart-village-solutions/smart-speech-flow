@@ -1,3 +1,4 @@
+import type { LegalInformation } from '@/domain/content/content.types';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
@@ -10,6 +11,7 @@ import type { ConversationScreenState } from './useConversationScreen';
 
 interface ConversationSurfaceProps {
   screen: ConversationScreenState;
+  information?: LegalInformation | null;
   header: ReactNode;
   /** A CSS length: where the chat stack starts below the shared fixed header. */
   contentTop: string;
@@ -31,6 +33,7 @@ interface ConversationSurfaceProps {
  */
 export function ConversationSurface({
   screen,
+  information,
   header,
   contentTop,
   overlay,
@@ -118,7 +121,7 @@ export function ConversationSurface({
         className="pointer-events-none absolute inset-x-0 px-5 transition-[bottom] duration-300 [&_a]:pointer-events-auto"
         style={{ bottom: legalBottom }}
       >
-        <SiteLegalLinks />
+        <SiteLegalLinks information={information} />
       </div>
 
       <ConversationStatus

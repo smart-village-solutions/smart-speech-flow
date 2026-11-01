@@ -1,3 +1,4 @@
+import { useStaffContent } from '@/features/content/useStaffContent';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
@@ -35,6 +36,7 @@ export function AdminSessionScreen({
   const navigate = useNavigate();
   const screen = useConversationScreen(sessionId, 'admin');
   const { languageOf } = useStaffLocalisation();
+  const { content } = useStaffContent();
 
   // A code SSF does not list would read as "Sprache offen", i.e. not yet chosen.
   const chosen = languageOf(screen.customerLanguage);
@@ -55,6 +57,7 @@ export function AdminSessionScreen({
   return (
     <ConversationSurface
       screen={screen}
+      information={content?.legalInformation}
       contentTop="var(--spacing-content-top)"
       header={
         <AdminHeader

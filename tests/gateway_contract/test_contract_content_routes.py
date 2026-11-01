@@ -202,7 +202,7 @@ def test_invalid_content_withdraws_only_that_language(client, conversations, stu
 
     assert by_code["en"]["provided"] is False
     assert all(by_code[code]["provided"] for code in ("ar", "tr"))
-    assert english == {"storage": {"mode": "ask"}, "provided": False}
+    assert english == {"storage": {"mode": "ask"}, "provided": False, "legalInformation": None}
     assert turkish["provided"] is True
 
 
@@ -215,7 +215,7 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     content = client.get(content_path(session_id, "en")).json()
 
     assert [language["provided"] for language in languages] == [False] * 19
-    assert content == {"storage": {"mode": "unknown"}, "provided": False}
+    assert content == {"storage": {"mode": "unknown"}, "provided": False, "legalInformation": None}
 
 
 # Guest content
@@ -231,6 +231,7 @@ def test_guest_content_for_a_provided_language(client, conversations):
     assert response.json() == {
         "storage": {"mode": "ask"},
         "provided": True,
+        "legalInformation": None,
         "revision": runtime_body()["configurationRevision"],
         "explanationHtml": english["guest"]["explanationHtml"],
         "storageQuestionHtml": english["guest"]["storageQuestionHtml"],
@@ -244,7 +245,11 @@ def test_guest_content_for_a_language_studio_does_not_provide(client, conversati
 
     response = client.get(content_path(session_id, "fa"))
 
-    assert response.json() == {"storage": {"mode": "ask"}, "provided": False}
+    assert response.json() == {
+        "storage": {"mode": "ask"},
+        "provided": False,
+        "legalInformation": None,
+    }
 
 
 @pytest.mark.parametrize("language", ["de", "hr", "xx"])
@@ -356,6 +361,7 @@ def test_staff_content_for_the_tokens_tenant(client, identity):
     assert response.json() == {
         "revision": body["configurationRevision"],
         "timeZone": "Europe/Berlin",
+        "legalInformation": None,
         "branding": body["branding"],
         "staff": body["staff"],
         "guestLanguageNames": {
@@ -401,3 +407,33 @@ def test_every_live_read_refreshes_the_content(client, conversations, studio_moc
 
     assert response.status_code == 200
     assert response.json()["revision"] == runtime_body()["configurationRevision"]
+
+
+def test_reading_legal_information_does_not_activate_a_session_or_change_storage(
+    client, conversations, identity, monkeypatch
+):
+    from tests.test_legal_information import legal_block
+
+    original = contract_fixtures.runtime_configuration_v2
+
+    def with_legal(tenant_id, scenario=None):
+        body = original(tenant_id, scenario)
+        if tenant_id == KASSEL:
+            body["legalTexts"] = legal_block()
+        return body
+
+    monkeypatch.setattr(contract_fixtures, "runtime_configuration_v2", with_legal)
+    session_id = conversations.create(KASSEL)
+    before_response = client.get(f"/api/customer/session/{session_id}")
+    assert before_response.status_code == 200
+    before = before_response.json()
+    response = client.get(content_path(session_id, "fa"))
+    assert response.status_code == 200
+    assert response.json()["storage"] == {"mode": "ask"}
+    assert response.json()["provided"] is False
+    assert response.json()["legalInformation"]["locale"] == "de-DE"
+    assert len(response.json()["legalInformation"]["sections"]) == 4
+    after = client.get(f"/api/customer/session/{session_id}").json()
+    assert after == before
+    identity.act_as(KASSEL)
+    assert client.get(STAFF).json()["legalInformation"]["version"] == "synthetic-draft"

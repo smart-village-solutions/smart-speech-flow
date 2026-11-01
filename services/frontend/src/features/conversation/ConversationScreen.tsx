@@ -1,3 +1,4 @@
+import { useGuestContent } from '@/features/content/useGuestContent';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
 import { guestOrigin } from '@/domain/feedback/feedbackOrigin';
@@ -10,10 +11,12 @@ export function ConversationScreen() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const screen = useConversationScreen(sessionId as string, 'customer');
+  const { content } = useGuestContent(sessionId, screen.customerLanguage ?? undefined);
 
   return (
     <ConversationSurface
       screen={screen}
+      information={content?.legalInformation}
       contentTop="var(--spacing-content-top)"
       header={
         <AppHeader

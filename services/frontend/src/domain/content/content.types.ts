@@ -54,7 +54,13 @@ export type GuestLanguage =
 /** `unknown` when the gateway could not read the mode live. */
 export type StorageMode = 'ask' | 'disabled' | 'unknown';
 
-export type GuestContent =
+export interface LegalInformation {
+  locale: string;
+  version: string;
+  sections: { id: string; headline: string; bodyHtml: string }[];
+}
+
+export type GuestContent = { legalInformation?: LegalInformation | null } & (
   | { storage: { mode: StorageMode }; provided: false }
   | {
       storage: { mode: StorageMode };
@@ -64,7 +70,8 @@ export type GuestContent =
       /** Null when the tenant's mode is `disabled`. */
       storageQuestionHtml: string | null;
       feedback: StudioFeedbackForm | null;
-    };
+    }
+);
 
 export interface StaffTexts {
   locale: string;
@@ -79,6 +86,7 @@ export interface StaffTexts {
 }
 
 export interface StaffContent {
+  legalInformation?: LegalInformation | null;
   revision: string;
   /** IANA zone; null when Studio sends none or this browser does not know it. */
   timeZone: string | null;

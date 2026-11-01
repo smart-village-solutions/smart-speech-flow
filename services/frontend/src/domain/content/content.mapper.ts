@@ -92,11 +92,30 @@ const guestLanguages = z.object({
   ),
 });
 
+const legalInformation = z
+  .object({
+    locale: z.string().trim().min(1),
+    version: z.string().trim().min(1),
+    sections: z
+      .array(
+        z.object({
+          id: z.string().trim().min(1),
+          headline: z.string().trim().min(1),
+          bodyHtml: z.string().trim().min(1),
+        })
+      )
+      .min(1),
+  })
+  .nullable()
+  .optional()
+  .catch(null);
+
 const storage = z.object({ mode: z.enum(['ask', 'disabled', 'unknown']).catch('unknown') });
 const guestContent = z.discriminatedUnion('provided', [
-  z.object({ storage, provided: z.literal(false) }),
+  z.object({ storage, legalInformation, provided: z.literal(false) }),
   z.object({
     storage,
+    legalInformation,
     provided: z.literal(true),
     revision: z.string(),
     explanationHtml: z.string(),
@@ -123,6 +142,7 @@ const staffTexts = z.object({
 });
 
 const staffContent = z.object({
+  legalInformation,
   revision: z.string(),
   timeZone: z.string().refine(isKnownTimeZone).nullable().catch(null),
   branding,

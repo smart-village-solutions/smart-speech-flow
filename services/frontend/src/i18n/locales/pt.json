@@ -104,6 +104,10 @@
     "imprint": "Aviso legal",
     "privacyPolicy": "Privacidade",
     "accessibilityStatement": "Acessibilidade",
-    "opensInNewTab": "(abre em uma nova aba)"
+    "opensInNewTab": "(abre em uma nova aba)",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   }
 }

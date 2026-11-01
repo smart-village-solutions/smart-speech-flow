@@ -104,7 +104,11 @@
     "imprint": "Impressum",
     "privacyPolicy": "Datenschutz",
     "accessibilityStatement": "Barrierefreiheit",
-    "opensInNewTab": "(öffnet in neuem Tab)"
+    "opensInNewTab": "(öffnet in neuem Tab)",
+    "informationTitle": "Einwilligung und Aufnahmebedingungen",
+    "informationNotice": "Diese Ansicht dient nur der Information. Hier erteilen Sie keine Einwilligung und geben keine Aufnahme frei.",
+    "informationSource": "Sprache der Texte: {{locale}} · Quellversion: {{version}}",
+    "informationClose": "Schließen"
   },
   "admin": {
     "tenantLogin": {
