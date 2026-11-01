@@ -140,9 +140,9 @@
     "privacyPolicy": "隐私政策",
     "accessibilityStatement": "无障碍",
     "opensInNewTab": "（在新标签页中打开）",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "同意与录音条款",
+    "informationNotice": "此页面仅供参考。查看此页面不表示您同意或授权录音。",
+    "informationSource": "文本语言：{{locale}} · 来源版本：{{version}}",
+    "informationClose": "关闭"
   }
 }

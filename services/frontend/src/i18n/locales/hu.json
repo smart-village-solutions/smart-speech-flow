@@ -140,9 +140,9 @@
     "privacyPolicy": "Adatvédelem",
     "accessibilityStatement": "Akadálymentesség",
     "opensInNewTab": "(új lapon nyílik meg)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Hozzájárulás és felvételi feltételek",
+    "informationNotice": "Ez a nézet kizárólag tájékoztatásra szolgál. Itt nem ad hozzájárulást, és nem engedélyez felvételt.",
+    "informationSource": "A szöveg nyelve: {{locale}} · Forrásverzió: {{version}}",
+    "informationClose": "Bezárás"
   }
 }

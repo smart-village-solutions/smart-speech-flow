@@ -140,9 +140,9 @@
     "privacyPolicy": "Prywatność",
     "accessibilityStatement": "Dostępność",
     "opensInNewTab": "(otwiera się w nowej karcie)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Zgoda i warunki nagrywania",
+    "informationNotice": "Ten widok ma wyłącznie charakter informacyjny. Nie wyrażasz tutaj zgody ani nie zezwalasz na nagrywanie.",
+    "informationSource": "Język tekstu: {{locale}} · Wersja źródłowa: {{version}}",
+    "informationClose": "Zamknij"
   }
 }

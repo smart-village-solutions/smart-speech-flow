@@ -1,3 +1,4 @@
+import { CATALOGUES } from '@/i18n';
 import { GuestContentSettled, StaffContentSettled } from '@/test/ContentSettled';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -64,6 +65,8 @@ function renderScreen(kind: string) {
 describe.each(['guest consent', 'guest conversation', 'staff conversation'])(
   '%s legal information',
   (kind) => {
+    const locale = kind === 'guest consent' ? 'ar' : kind === 'staff conversation' ? 'de' : 'en';
+    const title = CATALOGUES[locale].legal.informationTitle;
     it('reads all source sections without any mutation and closes with Escape', async () => {
       server.use(
         guestContentHandler((language) =>
@@ -80,7 +83,7 @@ describe.each(['guest consent', 'guest conversation', 'staff conversation'])(
         const user = userEvent.setup();
         renderScreen(kind);
         const trigger = await screen.findByRole('button', {
-          name: /Consent and recording terms|Einwilligung und Aufnahmebedingungen/,
+          name: title,
         });
         await user.click(trigger);
         const dialog = screen.getByRole('dialog');
@@ -117,7 +120,7 @@ describe.each(['guest consent', 'guest conversation', 'staff conversation'])(
         );
         expect(
           screen.queryByRole('button', {
-            name: /Consent and recording terms|Einwilligung und Aufnahmebedingungen/,
+            name: title,
           })
         ).not.toBeInTheDocument();
       }

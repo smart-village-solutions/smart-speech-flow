@@ -140,9 +140,9 @@
     "privacyPolicy": "Конфиденциальность",
     "accessibilityStatement": "Доступность",
     "opensInNewTab": "(откроется в новой вкладке)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Согласие и условия записи",
+    "informationNotice": "Этот экран предназначен только для ознакомления. Здесь вы не даёте согласия и не разрешаете запись.",
+    "informationSource": "Язык текста: {{locale}} · Версия источника: {{version}}",
+    "informationClose": "Закрыть"
   }
 }

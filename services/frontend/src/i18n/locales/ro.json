@@ -140,9 +140,9 @@
     "privacyPolicy": "Date personale",
     "accessibilityStatement": "Accesibilitate",
     "opensInNewTab": "(se deschide într-o filă nouă)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Consimțământ și condiții de înregistrare",
+    "informationNotice": "Această vizualizare are doar scop informativ. Aici nu vă exprimați consimțământul și nu autorizați nicio înregistrare.",
+    "informationSource": "Limba textului: {{locale}} · Versiunea sursei: {{version}}",
+    "informationClose": "Închide"
   }
 }

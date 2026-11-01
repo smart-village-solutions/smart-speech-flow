@@ -140,9 +140,9 @@
     "privacyPolicy": "Απόρρητο",
     "accessibilityStatement": "Προσβασιμότητα",
     "opensInNewTab": "(ανοίγει σε νέα καρτέλα)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Συγκατάθεση και όροι ηχογράφησης",
+    "informationNotice": "Αυτή η προβολή παρέχεται μόνο για ενημέρωση. Εδώ δεν δίνετε συγκατάθεση ούτε επιτρέπετε την ηχογράφηση.",
+    "informationSource": "Γλώσσα κειμένου: {{locale}} · Έκδοση πηγής: {{version}}",
+    "informationClose": "Κλείσιμο"
   }
 }
