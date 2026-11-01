@@ -102,6 +102,7 @@ npm run test:design-system
 npm test
 npm run build
 npm run lint
+npm run fallow:audit -- --changed-since origin/main
 bash scripts/check-tokens.sh
 ```
 

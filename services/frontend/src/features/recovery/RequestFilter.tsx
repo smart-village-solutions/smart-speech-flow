@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { RecoveryEmployee } from '@/domain/recovery/requests.types';
 
-export const FIELD =
+const FIELD =
   'w-full rounded-xl border border-border-field bg-surface-field px-3 py-2.5 text-body leading-snug text-fg-body';
 export const LABEL = 'flex flex-col gap-1.5 text-meta font-medium text-fg-muted';
 
