@@ -59,7 +59,7 @@ export function AmendmentDialog({
           maxLength={AMENDMENT_MAX}
           readOnly={amend.unconfirmed}
           onChange={(event) => setText(event.target.value)}
-          className="min-h-archive-signature w-full rounded-row border border-border-card bg-surface-field px-3 py-2.5 text-note text-fg-strong outline-none focus:border-accent"
+          className="min-h-archive-signature w-full rounded-row border border-border-card bg-surface-field px-3 py-2.5 text-body text-fg-strong outline-none focus:border-accent"
         />
         <span className="self-end text-meta text-fg-muted">
           {t('admin.archive.amendment.count', { count: text.length })}

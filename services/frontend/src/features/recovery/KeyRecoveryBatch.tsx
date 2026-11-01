@@ -53,7 +53,7 @@ export function KeyRecoveryBatch({ keys, again }: Readonly<KeyRecoveryBatchProps
           maxLength={MAX_REASON}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          className="rounded-xl border border-border-card px-3 py-2.5 text-note text-fg-body"
+          className="rounded-xl border border-border-card px-3 py-2.5 text-body text-fg-body"
         />
       </label>
       <Button

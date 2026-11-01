@@ -85,7 +85,7 @@ function QuestionInput({ question, value, onChange }: Readonly<FeedbackQuestionP
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
           placeholder={question.placeholder}
-          className="w-full resize-none rounded-xl border border-border-header bg-surface-field px-4 py-3 text-note leading-chat text-fg-body outline-none transition-colors duration-150 placeholder:text-fg-placeholder focus:border-accent-60"
+          className="w-full resize-none rounded-xl border border-border-header bg-surface-field px-4 py-3 text-body leading-chat text-fg-body outline-none transition-colors duration-150 placeholder:text-fg-placeholder focus:border-accent-60"
         />
       );
   }

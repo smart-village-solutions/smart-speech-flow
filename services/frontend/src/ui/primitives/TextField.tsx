@@ -13,8 +13,8 @@ interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'cl
 }
 
 const DENSITY = {
-  default: 'rounded-row px-3 py-2.5 text-note',
-  compact: 'rounded-xl px-3 py-2 text-label',
+  default: 'rounded-row px-3 py-2.5 text-body',
+  compact: 'rounded-xl px-3 py-2 text-body',
 } as const;
 
 export function TextField({

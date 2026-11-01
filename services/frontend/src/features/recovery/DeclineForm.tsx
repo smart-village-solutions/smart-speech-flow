@@ -25,7 +25,7 @@ export function DeclineForm({ pending, onDecline }: Readonly<DeclineFormProps>) 
       <textarea
         rows={3}
         maxLength={1000}
-        className="w-full rounded-xl border border-border-card bg-surface-card px-3 py-2.5 text-note text-fg-body"
+        className="w-full rounded-xl border border-border-card bg-surface-card px-3 py-2.5 text-body text-fg-body"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />

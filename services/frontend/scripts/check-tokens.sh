@@ -119,7 +119,20 @@ assert '--spacing-flag-row: 22px'
 assert '--container-invite: 500px'
 assert '--container-dialog: 400px'
 assert '--text-code-lg: 28px'
-assert '--text-overlay-title: 22px'
+assert '--text-overlay-title: 24px'
+
+# Semantic type roles share the consolidated scale without losing their names.
+assert '--text-caption: 12px'
+assert '--text-meta: 12px'
+assert '--text-label: 14px'
+assert '--text-note: 14px'
+assert '--text-body: 16px'
+assert '--text-item: 16px'
+assert '--text-thanks: 18px'
+assert '--text-code: 18px'
+assert '--text-title: 24px'
+# Typing dots are graphic geometry, not another text role.
+assert '--text-dots: 20px'
 
 # Phase 3 tokens.
 assert '--spacing-admin-content: 128px'
