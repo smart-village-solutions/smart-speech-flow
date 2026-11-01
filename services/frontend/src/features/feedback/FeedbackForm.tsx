@@ -72,7 +72,7 @@ export function FeedbackForm({
         disabled={!ready}
         aria-busy={busy}
         onClick={onSubmit}
-        className={cn(ready ? 'bg-accent text-accent-on' : 'bg-surface-disabled text-fg-disabled')}
+        className={cn(ready ? 'bg-accent text-accent-on' : 'bg-surface-disabled text-fg-disabled disabled:opacity-100')}
       >
         {submitLabel()}
         {ready && <ChevronRight size={16} strokeWidth={2.5} />}

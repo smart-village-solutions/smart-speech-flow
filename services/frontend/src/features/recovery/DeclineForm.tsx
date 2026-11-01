@@ -1,3 +1,4 @@
+import { Textarea } from '@/ui/primitives/Textarea';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/primitives/Button';
@@ -22,10 +23,9 @@ export function DeclineForm({ pending, onDecline }: Readonly<DeclineFormProps>) 
   return (
     <label className="flex flex-col gap-1.5 text-meta font-medium text-fg-muted">
       {t('admin.recovery.decline.reason')}
-      <textarea
+      <Textarea variant="field"
         rows={3}
         maxLength={1000}
-        className="w-full rounded-xl border border-border-card bg-surface-card px-3 py-2.5 text-body text-fg-body"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />

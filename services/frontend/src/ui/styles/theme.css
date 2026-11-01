@@ -30,13 +30,14 @@
   --fg-body: rgb(0 0 0 / 0.7); /* text-black/70 */
   --fg-consent: rgb(0 0 0 / 0.6);
   --fg-consent-hover: rgb(0 0 0 / 0.8);
-  --fg-muted: rgb(0 0 0 / 0.4); /* text-black/40 */
-  --fg-subtle: rgb(0 0 0 / 0.4); /* distinct pair, same light value */
+  --fg-muted: #595959;
+  --fg-essential-muted: var(--fg-muted);
+  --fg-subtle: var(--fg-muted);
   --fg-icon: rgb(0 0 0 / 0.5);
-  --fg-icon-close: rgb(0 0 0 / 0.35);
-  --fg-link: rgb(0 0 0 / 0.3);
-  --fg-link-hover: rgb(0 0 0 / 0.6);
-  --fg-placeholder: rgb(0 0 0 / 0.25);
+  --fg-icon-close: var(--fg-muted);
+  --fg-link: var(--fg-muted);
+  --fg-link-hover: var(--fg-strong);
+  --fg-placeholder: var(--fg-muted);
   --fg-faint: rgb(0 0 0 / 0.2);
   --fg-disabled: rgb(0 0 0 / 0.2);
 
@@ -50,9 +51,10 @@
   --border-card: rgb(0 0 0 / 0.1);
   --border-divider: rgb(0 0 0 / 0.06);
   --border-play: rgb(0 0 0 / 0.15);
-  --border-checkbox: rgb(0 0 0 / 0.3);
+  --border-field: #737373;
+  --border-checkbox: var(--border-field);
   --border-checkbox-hover: rgb(0 0 0 / 0.6);
-  --border-code-empty: #e5e7eb; /* border-gray-200 */
+  --border-code-empty: var(--border-field);
 
   /* Status. Not in the export — it has no error or connection states.
      Added 2026-08-24 for the conversation status pill. */
@@ -78,6 +80,13 @@
   --status-idle: rgb(0 0 0 / 0.25);
   --fg-danger: #dc2626;
   --surface-danger-hover: rgb(220 38 38 / 0.1);
+  --fg-success: #166534;
+  --fg-warning: #854d0e;
+  --surface-success: #f0fdf4;
+  --surface-warning: #fefce8;
+  --surface-alert: #fef3f2;
+  --border-success: rgb(22 101 52 / 0.35);
+  --border-warning: rgb(133 77 14 / 0.35);
 
   /* The QR plate is theme-independent for the same reason the lamps are: a
      dark-on-dark code does not scan. No .dark override, deliberately. */
@@ -105,13 +114,13 @@
   --fg-body: rgb(255 255 255 / 0.8);
   --fg-consent: rgb(255 255 255 / 0.7);
   --fg-consent-hover: rgb(255 255 255 / 0.9);
-  --fg-muted: rgb(255 255 255 / 0.5);
-  --fg-subtle: rgb(255 255 255 / 0.4);
+  --fg-muted: #bdbdbd;
+  --fg-subtle: var(--fg-muted);
   --fg-icon: rgb(255 255 255 / 0.6);
-  --fg-icon-close: rgb(255 255 255 / 0.4);
-  --fg-link: rgb(255 255 255 / 0.4);
-  --fg-link-hover: rgb(255 255 255 / 0.7);
-  --fg-placeholder: rgb(255 255 255 / 0.25);
+  --fg-icon-close: var(--fg-muted);
+  --fg-link: var(--fg-muted);
+  --fg-link-hover: var(--fg-strong);
+  --fg-placeholder: var(--fg-muted);
   --fg-faint: rgb(255 255 255 / 0.2);
   --fg-disabled: rgb(255 255 255 / 0.25);
   --focus-visible: #79b8f6;
@@ -120,9 +129,10 @@
   --border-card: rgb(255 255 255 / 0.1);
   --border-divider: rgb(255 255 255 / 0.06);
   --border-play: rgb(255 255 255 / 0.2);
-  --border-checkbox: rgb(255 255 255 / 0.3);
+  --border-field: #8e8e8e;
+  --border-checkbox: var(--border-field);
   --border-checkbox-hover: rgb(255 255 255 / 0.6);
-  --border-code-empty: transparent;
+  --border-code-empty: var(--border-field);
 
   --fg-status: rgb(255 255 255 / 0.75);
   --fg-status-alert: #fda29b;
@@ -134,4 +144,11 @@
   /* Only the two that must follow the theme; the lamps deliberately do not. */
   --status-idle: rgb(255 255 255 / 0.25);
   --fg-danger: #f87171;
+  --fg-success: #86efac;
+  --fg-warning: #fde047;
+  --surface-success: #12321f;
+  --surface-warning: #332b12;
+  --surface-alert: #3b1a17;
+  --border-success: rgb(134 239 172 / 0.35);
+  --border-warning: rgb(253 224 71 / 0.35);
 }

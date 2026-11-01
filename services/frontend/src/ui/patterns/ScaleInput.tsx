@@ -37,7 +37,7 @@ export function ScaleInput({
             aria-pressed={value === score}
             onClick={() => onChange(score)}
             className={cn(
-              'size-8 rounded-lg text-meta font-semibold transition-all duration-100 active:scale-95',
+              'size-tap-target rounded-lg text-meta font-semibold transition-all duration-100 active:scale-95',
               value === score
                 ? 'bg-accent text-accent-on'
                 : 'bg-surface-nps text-fg-icon hover:bg-surface-nps-hover'
