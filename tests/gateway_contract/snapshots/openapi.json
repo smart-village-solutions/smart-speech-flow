@@ -1477,6 +1477,55 @@
         "title": "InstallationContentResponse",
         "type": "object"
       },
+      "LegalInformation": {
+        "properties": {
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/LegalInformationSection"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locale",
+          "version",
+          "sections"
+        ],
+        "title": "LegalInformation",
+        "type": "object"
+      },
+      "LegalInformationSection": {
+        "properties": {
+          "bodyHtml": {
+            "title": "Bodyhtml",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "bodyHtml"
+        ],
+        "title": "LegalInformationSection",
+        "type": "object"
+      },
       "LocalizedRecordingStatus": {
         "properties": {
           "locale": {
@@ -1694,6 +1743,16 @@
               }
             ]
           },
+          "legalInformation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LegalInformation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "provided": {
             "const": true,
             "default": true,
@@ -1716,6 +1775,7 @@
           }
         },
         "required": [
+          "legalInformation",
           "recordingStatus",
           "provided",
           "revision",
@@ -2233,6 +2293,16 @@
             "title": "Guestlanguagenames",
             "type": "object"
           },
+          "legalInformation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LegalInformation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "recordingStatus": {
             "anyOf": [
               {
@@ -2270,6 +2340,7 @@
           }
         },
         "required": [
+          "legalInformation",
           "recordingStatus",
           "revision",
           "timeZone",
@@ -2353,6 +2424,16 @@
       },
       "UnprovidedGuestContent": {
         "properties": {
+          "legalInformation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LegalInformation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "provided": {
             "const": false,
             "default": false,
@@ -2371,6 +2452,7 @@
           }
         },
         "required": [
+          "legalInformation",
           "recordingStatus",
           "provided"
         ],

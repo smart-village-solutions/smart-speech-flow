@@ -20,6 +20,7 @@ export function ConversationScreen() {
   return (
     <ConversationSurface
       screen={screen}
+      information={content?.legalInformation}
       contentTop="var(--spacing-content-top)"
       recording={
         <GuestRecording

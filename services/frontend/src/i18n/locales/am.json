@@ -139,6 +139,10 @@
     "imprint": "የአሳታሚ መረጃ",
     "privacyPolicy": "ግላዊነት",
     "accessibilityStatement": "ተደራሽነት",
-    "opensInNewTab": "(በአዲስ ትር ይከፈታል)"
+    "opensInNewTab": "(በአዲስ ትር ይከፈታል)",
+    "informationTitle": "ፈቃድ እና የቀረጻ ውሎች",
+    "informationNotice": "ይህ እይታ ለመረጃ ብቻ ነው። እዚህ ፈቃድ አይሰጡም፣ ቀረጻም አይፈቅዱም።",
+    "informationSource": "የጽሑፉ ቋንቋ: {{locale}} · የምንጭ ስሪት: {{version}}",
+    "informationClose": "ዝጋ"
   }
 }

@@ -139,6 +139,10 @@
     "imprint": "Выходные данные",
     "privacyPolicy": "Конфиденциальность",
     "accessibilityStatement": "Доступность",
-    "opensInNewTab": "(откроется в новой вкладке)"
+    "opensInNewTab": "(откроется в новой вкладке)",
+    "informationTitle": "Согласие и условия записи",
+    "informationNotice": "Этот экран предназначен только для ознакомления. Здесь вы не даёте согласия и не разрешаете запись.",
+    "informationSource": "Язык текста: {{locale}} · Версия источника: {{version}}",
+    "informationClose": "Закрыть"
   }
 }

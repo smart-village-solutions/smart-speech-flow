@@ -139,7 +139,11 @@
     "imprint": "Imprint",
     "privacyPolicy": "Privacy policy",
     "accessibilityStatement": "Accessibility",
-    "opensInNewTab": "(opens in a new tab)"
+    "opensInNewTab": "(opens in a new tab)",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   },
   "admin": {
     "tenantLogin": {

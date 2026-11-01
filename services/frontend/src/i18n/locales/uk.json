@@ -139,6 +139,10 @@
     "imprint": "Вихідні дані",
     "privacyPolicy": "Конфіденційність",
     "accessibilityStatement": "Доступність",
-    "opensInNewTab": "(відкриється в новій вкладці)"
+    "opensInNewTab": "(відкриється в новій вкладці)",
+    "informationTitle": "Згода та умови запису",
+    "informationNotice": "Цей екран призначений лише для ознайомлення. Тут ви не надаєте згоди й не дозволяєте запис.",
+    "informationSource": "Мова тексту: {{locale}} · Версія джерела: {{version}}",
+    "informationClose": "Закрити"
   }
 }

@@ -139,6 +139,10 @@
     "imprint": "Note legali",
     "privacyPolicy": "Privacy",
     "accessibilityStatement": "Accessibilità",
-    "opensInNewTab": "(si apre in una nuova scheda)"
+    "opensInNewTab": "(si apre in una nuova scheda)",
+    "informationTitle": "Consenso e condizioni di registrazione",
+    "informationNotice": "Questa schermata ha solo scopo informativo. Qui non si presta il consenso né si autorizza alcuna registrazione.",
+    "informationSource": "Lingua del testo: {{locale}} · Versione della fonte: {{version}}",
+    "informationClose": "Chiudi"
   }
 }

@@ -72,6 +72,7 @@ export function AdminSessionScreen({
   return (
     <ConversationSurface
       screen={screen}
+      information={content?.legalInformation}
       contentTop="var(--spacing-content-top)"
       recording={
         <>

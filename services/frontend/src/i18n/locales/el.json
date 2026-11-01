@@ -139,6 +139,10 @@
     "imprint": "Στοιχεία εκδότη",
     "privacyPolicy": "Απόρρητο",
     "accessibilityStatement": "Προσβασιμότητα",
-    "opensInNewTab": "(ανοίγει σε νέα καρτέλα)"
+    "opensInNewTab": "(ανοίγει σε νέα καρτέλα)",
+    "informationTitle": "Συγκατάθεση και όροι ηχογράφησης",
+    "informationNotice": "Αυτή η προβολή παρέχεται μόνο για ενημέρωση. Εδώ δεν δίνετε συγκατάθεση ούτε επιτρέπετε την ηχογράφηση.",
+    "informationSource": "Γλώσσα κειμένου: {{locale}} · Έκδοση πηγής: {{version}}",
+    "informationClose": "Κλείσιμο"
   }
 }

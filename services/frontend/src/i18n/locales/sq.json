@@ -139,6 +139,10 @@
     "imprint": "Botuesi",
     "privacyPolicy": "Privatësia",
     "accessibilityStatement": "Aksesueshmëria",
-    "opensInNewTab": "(hapet në një skedë të re)"
+    "opensInNewTab": "(hapet në një skedë të re)",
+    "informationTitle": "Pëlqimi dhe kushtet e regjistrimit",
+    "informationNotice": "Kjo pamje shërben vetëm për informim. Këtu nuk jepni pëlqimin dhe nuk autorizoni regjistrimin.",
+    "informationSource": "Gjuha e tekstit: {{locale}} · Versioni i burimit: {{version}}",
+    "informationClose": "Mbyll"
   }
 }

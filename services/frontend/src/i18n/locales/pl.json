@@ -139,6 +139,10 @@
     "imprint": "Nota prawna",
     "privacyPolicy": "Prywatność",
     "accessibilityStatement": "Dostępność",
-    "opensInNewTab": "(otwiera się w nowej karcie)"
+    "opensInNewTab": "(otwiera się w nowej karcie)",
+    "informationTitle": "Zgoda i warunki nagrywania",
+    "informationNotice": "Ten widok ma wyłącznie charakter informacyjny. Nie wyrażasz tutaj zgody ani nie zezwalasz na nagrywanie.",
+    "informationSource": "Język tekstu: {{locale}} · Wersja źródłowa: {{version}}",
+    "informationClose": "Zamknij"
   }
 }
