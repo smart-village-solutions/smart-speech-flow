@@ -18,19 +18,14 @@ SSF SHALL make configured Studio legal wording readable from the guest consent a
 - **AND** existing policy, storage, sessions and infrastructure remain unchanged
 
 #### Scenario: Ordinary conversation entry
-- **WHEN** a guest opens the ordinary conversation entry with valid documentation wording
-- **THEN** the full documentation consent and guest recording release are also readable inline before Get Started
-- **AND** the inline information identifies its actual wording locale and source version
-- **AND** quality-session consent and employee recording release remain separate reference documents in the informational dialog
-- **AND** starting the ordinary conversation grants no documentation recording consent or release
-
-#### Scenario: Partial documentation translation
-- **WHEN** the requested localization lacks either the documentation consent or guest release and the source contains both
-- **THEN** the guest response supplies the complete source pair as documentation information with its actual source locale
-- **AND** the separate reference information retains the requested localization where available
+- **WHEN** a guest opens the ordinary conversation entry
+- **THEN** a short localized introduction explains automatic translation, possible errors, and that starting does not grant documentation recording consent
+- **AND** it explains that a planned recording requires separate information, consent and release of each recording section
+- **AND** full counsel declarations are available through the separate informational dialog rather than displayed inline
+- **AND** recording consent and participant releases remain in their respective recording steps
 
 #### Scenario: Stable entry wording
-- **WHEN** the entry content settles or reaches its timeout
-- **THEN** its inline and reference legal information are captured alongside the explanation for that session and route language
-- **AND** delayed language-list responses, late content and reconnects do not replace the displayed wording
-- **AND** localized notices retain the UI language while only the source wording wrapper receives its actual language and automatic direction
+- **WHEN** entry content settles or reaches its timeout
+- **THEN** its reference legal information is captured alongside the explanation for that session and route language
+- **AND** delayed language lists, late content and reconnects do not replace the displayed wording
+- **AND** source wording retains its actual language and locale-derived direction

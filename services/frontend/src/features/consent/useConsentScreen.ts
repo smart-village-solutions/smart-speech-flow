@@ -15,10 +15,7 @@ export function useConsentScreen() {
   const { session } = useServices();
   const queryClient = useQueryClient();
   const languages = useGuestLanguages(sessionId);
-  const { ready, copy, legalInformation, documentationInformation } = useConsentContent(
-    sessionId,
-    languageCode
-  );
+  const { ready, copy, legalInformation } = useConsentContent(sessionId, languageCode);
   const [agreed, setAgreed] = useState(false);
 
   useScreenLocale(languageCode ?? '');
@@ -50,7 +47,6 @@ export function useConsentScreen() {
     ready,
     copy,
     legalInformation,
-    documentationInformation,
     agreed,
     setAgreed,
     start,
