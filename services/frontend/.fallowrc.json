@@ -1,7 +1,8 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "entry": [
-    "src/main.{ts,tsx,js,jsx}"
+    "src/main.{ts,tsx,js,jsx}",
+    "scripts/design-system/main.tsx"
   ],
   "ignoreDependencies": [
     "tailwindcss",
