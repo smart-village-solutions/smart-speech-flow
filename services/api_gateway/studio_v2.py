@@ -26,6 +26,7 @@ from pydantic import (
     model_validator,
 )
 
+from .studio_legal import LegalTexts
 from .studio_v1 import is_safe_https_url
 
 logger = logging.getLogger(__name__)
@@ -269,6 +270,7 @@ class RuntimeContent(_StudioModel):
     branding: Branding
     staff: StaffContent | None
     guest_languages: tuple[GuestLanguageContent, ...]
+    legal_texts: LegalTexts | None = None
 
 
 class RuntimeRead(_StudioModel):
@@ -382,6 +384,11 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
             branding=branding,
             staff=_validate_or_none(StaffContent, body.get("staff"), "staff"),
             guest_languages=_guest_languages(body.get("guestLanguages"), storage.mode),
+            legal_texts=(
+                _validate_or_none(LegalTexts, body.get("legalTexts"), "legalTexts")
+                if body.get("legalTexts") is not None
+                else None
+            ),
         ),
     )
 
