@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from services.api_gateway.content_responses import guest_content_response, staff_content_response
 from services.api_gateway.studio_content import StudioContentCache
 from services.api_gateway.studio_content_service import GuestContent
@@ -103,9 +105,109 @@ def test_a_matching_translation_wins_and_invalid_legal_data_only_drops_informati
 
 def test_status_only_localization_falls_back_to_source_information():
     block = legal_block()
-    block["localizations"].append({"locale": "en-GB", "recordingStatus": {"waiting": "Waiting", "running": "Running", "stopped": "Stopped", "renewedReleaseRequired": "Release again"}})
+    block["localizations"].append(
+        {
+            "locale": "en-GB",
+            "recordingStatus": {
+                "waiting": "Waiting",
+                "running": "Running",
+                "stopped": "Stopped",
+                "renewedReleaseRequired": "Release again",
+            },
+        }
+    )
     content = StudioContentCache().record(read(block))
-    information = guest_content_response(GuestContent("ask", content), "en").model_dump(by_alias=True)["legalInformation"]
+    information = guest_content_response(GuestContent("ask", content), "en").model_dump(
+        by_alias=True
+    )["legalInformation"]
     assert information is not None
     assert information["locale"] == "de-DE"
     assert information["sections"][0]["headline"] == "Documentation"
+
+
+@pytest.mark.parametrize(
+    "translated_field", ["mode3Consent", "mode2Consent", "guestRecordingRelease"]
+)
+def test_partial_translation_uses_complete_source_documentation_without_changing_reference(
+    translated_field,
+):
+    block = legal_block()
+    translated_choice = deepcopy(block["localizations"][0][translated_field])
+    translated_choice["headline"] = "Translated partial wording"
+    block["localizations"].append({"locale": "en-GB", translated_field: translated_choice})
+    content = StudioContentCache().record(read(block))
+    body = guest_content_response(GuestContent("ask", content), "en").model_dump(by_alias=True)
+
+    assert body["legalInformation"]["locale"] == "en-GB"
+    assert [part["id"] for part in body["legalInformation"]["sections"]] == [translated_field]
+    assert body["documentationInformation"] == {
+        "locale": "de-DE",
+        "version": "synthetic-draft",
+        "sections": [
+            {
+                "id": "mode2Consent",
+                "headline": "Documentation",
+                "bodyHtml": "<p>Documentation body</p>",
+            },
+            {
+                "id": "guestRecordingRelease",
+                "headline": "Guest release",
+                "bodyHtml": "<p>Guest release body</p>",
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize("requested_locale", ["en", "EN-gb", "en-US"])
+def test_complete_translated_documentation_pair_keeps_its_actual_locale(requested_locale):
+    block = legal_block()
+    entry = deepcopy(block["localizations"][0])
+    entry["locale"] = "en-GB"
+    entry["mode2Consent"]["headline"] = "Translated documentation"
+    entry["guestRecordingRelease"]["headline"] = "Translated guest release"
+    block["localizations"].append(entry)
+    content = StudioContentCache().record(read(block))
+    body = guest_content_response(GuestContent("ask", content), requested_locale).model_dump(
+        by_alias=True
+    )
+
+    information = body["documentationInformation"]
+    assert (information["locale"], information["version"]) == ("en-GB", "synthetic-draft")
+    assert [(part["id"], part["headline"]) for part in information["sections"]] == [
+        ("mode2Consent", "Translated documentation"),
+        ("guestRecordingRelease", "Translated guest release"),
+    ]
+    assert all(set(part) == {"id", "headline", "bodyHtml"} for part in information["sections"])
+    assert "Never render" not in str(information)
+
+
+@pytest.mark.parametrize("source_missing", ["mode2Consent", "guestRecordingRelease"])
+def test_incomplete_source_never_combines_with_partial_translation(source_missing):
+    block = legal_block()
+    source = block["localizations"][0]
+    translated_choice = source.pop(source_missing)
+    block["localizations"].append({"locale": "en-GB", source_missing: translated_choice})
+    content = StudioContentCache().record(read(block))
+    body = guest_content_response(GuestContent("ask", content), "en").model_dump(by_alias=True)
+
+    assert body["documentationInformation"] is None
+    assert body["legalInformation"]["locale"] == "en-GB"
+    assert (
+        guest_content_response(GuestContent("ask", content), "de-DE").model_dump(by_alias=True)[
+            "documentationInformation"
+        ]
+        is None
+    )
+
+
+@pytest.mark.parametrize("language", ["en", "fa"])
+def test_absent_legal_texts_return_null_documentation_for_all_guest_content(language):
+    content = StudioContentCache().record(read())
+    body = guest_content_response(GuestContent("ask", content), language).model_dump(by_alias=True)
+    assert body["documentationInformation"] is None
+    assert (
+        guest_content_response(GuestContent("ask", None), language).model_dump(by_alias=True)[
+            "documentationInformation"
+        ]
+        is None
+    )

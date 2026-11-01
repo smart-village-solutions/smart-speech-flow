@@ -23,3 +23,14 @@ SSF SHALL make configured Studio legal wording readable from the guest consent a
 - **AND** the inline information identifies its actual wording locale and source version
 - **AND** quality-session consent and employee recording release remain separate reference documents in the informational dialog
 - **AND** starting the ordinary conversation grants no documentation recording consent or release
+
+#### Scenario: Partial documentation translation
+- **WHEN** the requested localization lacks either the documentation consent or guest release and the source contains both
+- **THEN** the guest response supplies the complete source pair as documentation information with its actual source locale
+- **AND** the separate reference information retains the requested localization where available
+
+#### Scenario: Stable entry wording
+- **WHEN** the entry content settles or reaches its timeout
+- **THEN** its inline and reference legal information are captured alongside the explanation for that session and route language
+- **AND** delayed language-list responses, late content and reconnects do not replace the displayed wording
+- **AND** localized notices retain the UI language while only the source wording wrapper receives its actual language and automatic direction

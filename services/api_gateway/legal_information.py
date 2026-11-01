@@ -51,3 +51,32 @@ def legal_information(legal: LegalTexts | None, locale: str) -> LegalInformation
     if not sections:
         return None
     return LegalInformation(locale=entry.locale, version=legal.version, sections=sections)
+
+
+_DOCUMENTATION_GROUPS = (
+    ("mode2Consent", "mode2_consent"),
+    ("guestRecordingRelease", "guest_recording_release"),
+)
+
+
+def documentation_information(legal: LegalTexts | None, locale: str) -> LegalInformation | None:
+    """Return the complete read-only documentation pair from one wording locale."""
+    if legal is None:
+        return None
+    entry = legal_localization(legal, locale)
+    if entry is None or entry.mode2_consent is None or entry.guest_recording_release is None:
+        entry = legal_localization(legal, legal.source_locale)
+    if entry is None or entry.mode2_consent is None or entry.guest_recording_release is None:
+        return None
+    return LegalInformation(
+        locale=entry.locale,
+        version=legal.version,
+        sections=[
+            LegalInformationSection(
+                id=identifier,
+                headline=getattr(entry, field).headline,
+                body_html=getattr(entry, field).body_html,
+            )
+            for identifier, field in _DOCUMENTATION_GROUPS
+        ],
+    )

@@ -112,10 +112,16 @@ const legalInformation = z
 
 const storage = z.object({ mode: z.enum(['ask', 'disabled', 'unknown']).catch('unknown') });
 const guestContent = z.discriminatedUnion('provided', [
-  z.object({ storage, legalInformation, provided: z.literal(false) }),
   z.object({
     storage,
     legalInformation,
+    documentationInformation: legalInformation,
+    provided: z.literal(false),
+  }),
+  z.object({
+    storage,
+    legalInformation,
+    documentationInformation: legalInformation,
     provided: z.literal(true),
     revision: z.string(),
     explanationHtml: z.string(),

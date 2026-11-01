@@ -202,7 +202,12 @@ def test_invalid_content_withdraws_only_that_language(client, conversations, stu
 
     assert by_code["en"]["provided"] is False
     assert all(by_code[code]["provided"] for code in ("ar", "tr"))
-    assert english == {"storage": {"mode": "ask"}, "provided": False, "legalInformation": None}
+    assert english == {
+        "storage": {"mode": "ask"},
+        "provided": False,
+        "documentationInformation": None,
+        "legalInformation": None,
+    }
     assert turkish["provided"] is True
 
 
@@ -215,7 +220,12 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     content = client.get(content_path(session_id, "en")).json()
 
     assert [language["provided"] for language in languages] == [False] * 19
-    assert content == {"storage": {"mode": "unknown"}, "provided": False, "legalInformation": None}
+    assert content == {
+        "storage": {"mode": "unknown"},
+        "provided": False,
+        "documentationInformation": None,
+        "legalInformation": None,
+    }
 
 
 # Guest content
@@ -231,6 +241,7 @@ def test_guest_content_for_a_provided_language(client, conversations):
     assert response.json() == {
         "storage": {"mode": "ask"},
         "provided": True,
+        "documentationInformation": None,
         "legalInformation": None,
         "revision": runtime_body()["configurationRevision"],
         "explanationHtml": english["guest"]["explanationHtml"],
@@ -248,6 +259,7 @@ def test_guest_content_for_a_language_studio_does_not_provide(client, conversati
     assert response.json() == {
         "storage": {"mode": "ask"},
         "provided": False,
+        "documentationInformation": None,
         "legalInformation": None,
     }
 
@@ -433,6 +445,12 @@ def test_reading_legal_information_does_not_activate_a_session_or_change_storage
     assert response.json()["provided"] is False
     assert response.json()["legalInformation"]["locale"] == "de-DE"
     assert len(response.json()["legalInformation"]["sections"]) == 4
+    documentation = response.json()["documentationInformation"]
+    assert documentation["locale"] == "de-DE"
+    assert [section["id"] for section in documentation["sections"]] == [
+        "mode2Consent",
+        "guestRecordingRelease",
+    ]
     after = client.get(f"/api/customer/session/{session_id}").json()
     assert after == before
     identity.act_as(KASSEL)
