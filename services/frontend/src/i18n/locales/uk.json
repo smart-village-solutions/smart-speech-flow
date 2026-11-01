@@ -105,9 +105,9 @@
     "privacyPolicy": "Конфіденційність",
     "accessibilityStatement": "Доступність",
     "opensInNewTab": "(відкриється в новій вкладці)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Згода та умови запису",
+    "informationNotice": "Цей екран призначений лише для ознайомлення. Тут ви не надаєте згоди й не дозволяєте запис.",
+    "informationSource": "Мова тексту: {{locale}} · Версія джерела: {{version}}",
+    "informationClose": "Закрити"
   }
 }

@@ -105,9 +105,9 @@
     "privacyPolicy": "حریم خصوصی",
     "accessibilityStatement": "دسترس‌پذیری",
     "opensInNewTab": "(در زبانه جدید باز می‌شود)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "رضایت و شرایط ضبط",
+    "informationNotice": "این نما فقط برای اطلاع‌رسانی است. در اینجا نه رضایت می‌دهید و نه اجازهٔ ضبط صادر می‌کنید.",
+    "informationSource": "زبان متن: {{locale}} · نسخهٔ منبع: {{version}}",
+    "informationClose": "بستن"
   }
 }

@@ -105,9 +105,9 @@
     "privacyPolicy": "गोपनीयता नीति",
     "accessibilityStatement": "सुलभता",
     "opensInNewTab": "(नए टैब में खुलता है)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "सहमति और रिकॉर्डिंग की शर्तें",
+    "informationNotice": "यह दृश्य केवल जानकारी देने के लिए है। यहाँ आप न तो सहमति देते हैं और न ही रिकॉर्डिंग की अनुमति देते हैं।",
+    "informationSource": "पाठ की भाषा: {{locale}} · स्रोत संस्करण: {{version}}",
+    "informationClose": "बंद करें"
   }
 }

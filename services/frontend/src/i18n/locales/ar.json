@@ -105,9 +105,9 @@
     "privacyPolicy": "الخصوصية",
     "accessibilityStatement": "إمكانية الوصول",
     "opensInNewTab": "(يفتح في علامة تبويب جديدة)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "الموافقة وشروط التسجيل",
+    "informationNotice": "هذا العرض للمعلومات فقط. لا تمنح هنا موافقتك ولا تأذن بالتسجيل.",
+    "informationSource": "لغة النص: {{locale}} · إصدار المصدر: {{version}}",
+    "informationClose": "إغلاق"
   }
 }

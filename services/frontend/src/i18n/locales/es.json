@@ -105,9 +105,9 @@
     "privacyPolicy": "Privacidad",
     "accessibilityStatement": "Accesibilidad",
     "opensInNewTab": "(se abre en una pestaña nueva)",
-    "informationTitle": "Consent and recording terms",
-    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
-    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
-    "informationClose": "Close"
+    "informationTitle": "Consentimiento y condiciones de grabación",
+    "informationNotice": "Esta vista es solo informativa. Aquí no presta su consentimiento ni autoriza ninguna grabación.",
+    "informationSource": "Idioma del texto: {{locale}} · Versión de la fuente: {{version}}",
+    "informationClose": "Cerrar"
   }
 }
