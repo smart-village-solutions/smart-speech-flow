@@ -78,9 +78,9 @@ describe('LegalLinks', () => {
   });
 
   // The conversation screens reserve a two-line band for this row
-  // (--spacing-legal-band). 44 characters at 13px still wrap to two lines at
-  // 320px; the long forms ("Политика конфиденциальности") needed three, and the
-  // third line covered the mic buttons.
+  // (--spacing-legal-band). Keep translations concise; the runtime measures
+  // their rendered height at the current font size and lifts the controls
+  // when the links need more than the minimum band.
   it.each(Object.entries(CATALOGUES))(
     'keeps the %s labels short enough for two lines',
     (_, catalogue) => {

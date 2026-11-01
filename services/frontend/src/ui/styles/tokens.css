@@ -25,15 +25,16 @@
     'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     sans-serif;
 
-  /* ── Type scale, exact px from the export ── */
-  --text-caption: 11px;
+  /* ── Consolidated type scale: 12 / 14 / 16 / 18 / 24 / 28 px ── */
+  --text-caption: 12px;
   --text-meta: 12px;
-  --text-label: 13px;
+  --text-label: 14px;
   --text-note: 14px;
-  --text-body: 15px;
+  --text-body: 16px;
   --text-item: 16px;
-  --text-thanks: 17px;
+  --text-thanks: 18px;
   --text-code: 18px;
+  /* Typing-dot geometry; deliberately outside the reading type scale. */
   --text-dots: 20px;
   --text-title: 24px;
 
@@ -77,10 +78,9 @@
   --spacing-mic-bottom: 40px;
   /* Legal links (SCREEN_SPECS "Legal links"). On the conversation screens the
      legal row sits at legal-bottom and the buttons row one legal band above it.
-     48px holds two lines of 13px links (12 + 2 x 19.5 + 4 = 55, under the
-     buttons at 60); the labels are kept short enough for two lines at 320px.
-     A row that still wraps taller (enlarged text) is measured, and the buttons
-     rise to its height plus legal-gap. */
+     48px is the minimum band for two lines of 14px links. The row is
+     measured at runtime, so longer translations and enlarged text raise the
+     buttons to the rendered link height plus legal-gap. */
   --spacing-legal-bottom: 12px;
   --spacing-legal-band: 48px;
   --spacing-legal-gap: 4px;
@@ -102,7 +102,7 @@
   --container-invite: 500px;
   --container-dialog: 400px;
   --text-code-lg: 28px;
-  --text-overlay-title: 22px;
+  --text-overlay-title: 24px;
   --spacing-admin-content: 128px;
   --spacing-status-top: 80px;
   --spacing-composer-lift: 40px;
