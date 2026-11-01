@@ -299,3 +299,37 @@ describe('recording display content', () => {
     });
   });
 });
+
+describe('read-only legal information', () => {
+  const information = {
+    locale: 'de-DE',
+    version: 'studio-source-42',
+    sections: [
+      { id: 'mode2Consent', headline: 'Source heading', bodyHtml: '<p>Source wording</p>' },
+    ],
+  };
+  it.each(['en', 'ar'])('keeps source wording independently of provided for %s', (language) => {
+    expect(
+      toGuestContent({ ...guestContentBody(language), legalInformation: information })
+        .legalInformation
+    ).toEqual(information);
+  });
+  it('keeps staff source wording', () => {
+    expect(
+      toStaffContent({ ...staffContentBody, legalInformation: information }).legalInformation
+    ).toEqual(information);
+  });
+  it.each([
+    null,
+    {},
+    { ...information, locale: '' },
+    { ...information, sections: [] },
+    { ...information, sections: [{ id: 'bad' }] },
+  ])('withdraws invalid optional information %j', (legalInformation) => {
+    expect(toGuestContent({ ...guestContentBody('ar'), legalInformation })).toMatchObject({
+      provided: false,
+      legalInformation: null,
+    });
+    expect(toStaffContent({ ...staffContentBody, legalInformation }).legalInformation).toBeNull();
+  });
+});

@@ -139,6 +139,10 @@
     "imprint": "网站信息",
     "privacyPolicy": "隐私政策",
     "accessibilityStatement": "无障碍",
-    "opensInNewTab": "（在新标签页中打开）"
+    "opensInNewTab": "（在新标签页中打开）",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   }
 }

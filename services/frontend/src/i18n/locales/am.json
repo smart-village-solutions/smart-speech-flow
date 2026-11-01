@@ -139,6 +139,10 @@
     "imprint": "የአሳታሚ መረጃ",
     "privacyPolicy": "ግላዊነት",
     "accessibilityStatement": "ተደራሽነት",
-    "opensInNewTab": "(በአዲስ ትር ይከፈታል)"
+    "opensInNewTab": "(በአዲስ ትር ይከፈታል)",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   }
 }

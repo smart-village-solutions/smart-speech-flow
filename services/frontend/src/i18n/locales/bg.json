@@ -139,6 +139,10 @@
     "imprint": "Издател",
     "privacyPolicy": "Поверителност",
     "accessibilityStatement": "Достъпност",
-    "opensInNewTab": "(отваря се в нов раздел)"
+    "opensInNewTab": "(отваря се в нов раздел)",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   }
 }

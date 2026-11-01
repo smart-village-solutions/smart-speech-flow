@@ -139,6 +139,10 @@
     "imprint": "شناسنامه ناشر",
     "privacyPolicy": "حریم خصوصی",
     "accessibilityStatement": "دسترس‌پذیری",
-    "opensInNewTab": "(در زبانه جدید باز می‌شود)"
+    "opensInNewTab": "(در زبانه جدید باز می‌شود)",
+    "informationTitle": "Consent and recording terms",
+    "informationNotice": "This view is for information only. You do not give consent or authorize recording here.",
+    "informationSource": "Text language: {{locale}} · Source version: {{version}}",
+    "informationClose": "Close"
   }
 }
