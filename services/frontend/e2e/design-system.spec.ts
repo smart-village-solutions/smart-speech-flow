@@ -44,6 +44,23 @@ for (const theme of ['light', 'dark'] as const) {
         const probe = document.createElement('span');
         document.body.append(probe);
         const failures: string[] = [];
+        function colorMatches(color: string, expected: unknown) {
+          const channels = color.match(/[\d.]+/g)?.map(Number) ?? [];
+          const rgba = expected as { r: number; g: number; b: number; a: number };
+          const want = [rgba.r * 255, rgba.g * 255, rgba.b * 255, rgba.a];
+          if (channels.length === 3) channels.push(1);
+          return (
+            channels.length === 4 &&
+            channels.every((n, i) => Math.abs(n - want[i]) <= (i === 3 ? 1 / 255 : 1))
+          );
+        }
+        function dimensionMatches(width: string, expected: unknown) {
+          const actual = parseFloat(width),
+            wanted = Number(expected);
+          return (
+            Number.isFinite(actual) && Number.isFinite(wanted) && Math.abs(actual - wanted) <= 0.02
+          );
+        }
         for (const token of tokens) {
           if (!getComputedStyle(probe).getPropertyValue(token.css).trim()) {
             failures.push(`${token.css}: missing variable`);
@@ -54,24 +71,10 @@ for (const theme of ['light', 'dark'] as const) {
           if (token.type === 'COLOR') {
             probe.style.color = `var(${token.css})`;
             const color = getComputedStyle(probe).color;
-            const channels = color.match(/[\d.]+/g)?.map(Number) ?? [];
-            const rgba = expected as { r: number; g: number; b: number; a: number };
-            const want = [rgba.r * 255, rgba.g * 255, rgba.b * 255, rgba.a];
-            if (channels.length === 3) channels.push(1);
-            if (
-              channels.length !== 4 ||
-              channels.some((n, i) => Math.abs(n - want[i]) > (i === 3 ? 1 / 255 : 1))
-            )
-              failures.push(`${token.css}: ${color}`);
+            if (!colorMatches(color, expected)) failures.push(`${token.css}: ${color}`);
           } else {
             probe.style.width = `var(${token.css})`;
-            const actual = parseFloat(getComputedStyle(probe).width);
-            const wanted = Number(expected);
-            if (
-              !Number.isFinite(actual) ||
-              !Number.isFinite(wanted) ||
-              Math.abs(actual - wanted) > 0.02
-            )
+            if (!dimensionMatches(getComputedStyle(probe).width, expected))
               failures.push(token.css);
           }
         }
