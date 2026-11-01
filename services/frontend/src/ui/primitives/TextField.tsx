@@ -13,8 +13,8 @@ interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'cl
 }
 
 const DENSITY = {
-  default: 'rounded-row px-3 py-2.5 text-note',
-  compact: 'rounded-xl px-3 py-2 text-label',
+  default: 'rounded-row px-3 py-field-y text-body',
+  compact: 'rounded-xl px-3 py-field-y-compact text-body',
 } as const;
 
 export function TextField({
@@ -24,26 +24,28 @@ export function TextField({
   error = null,
   className,
   type = 'text',
+  'aria-describedby': describedBy,
+  'aria-invalid': invalid,
   ...props
 }: Readonly<TextFieldProps>) {
   const id = useId();
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-field-gap">
       <label
         htmlFor={id}
-        className={labelHidden ? 'sr-only' : 'text-label font-medium text-fg-body'}
+        className={labelHidden ? 'sr-only' : 'text-label font-medium leading-snug text-fg-body'}
       >
         {label}
       </label>
       <input
         id={id}
         type={type}
-        aria-invalid={error === null ? undefined : true}
-        aria-describedby={error === null ? undefined : `${id}-error`}
+        aria-invalid={error === null ? invalid : true}
+        aria-describedby={[describedBy, error === null ? undefined : `${id}-error`].filter(Boolean).join(' ') || undefined}
         className={cn(
-          'w-full border border-border-card bg-surface-field text-fg-strong outline-none',
-          'placeholder:text-fg-placeholder focus:border-accent',
+          'focus-ring w-full border border-border-field bg-surface-field leading-snug text-fg-strong outline-none disabled:cursor-not-allowed disabled:opacity-50',
+          'placeholder:text-fg-placeholder focus:border-accent aria-invalid:border-fg-status-alert aria-invalid:focus:border-fg-status-alert',
           DENSITY[density],
           error === null ? undefined : 'border-fg-status-alert',
           className

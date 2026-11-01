@@ -24,15 +24,16 @@
   --font-sans:
     'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* ── Type scale, exact px from the export ── */
-  --text-caption: 11px;
+  /* ── Consolidated type scale: 12 / 14 / 16 / 18 / 24 / 28 px ── */
+  --text-caption: 12px;
   --text-meta: 12px;
-  --text-label: 13px;
+  --text-label: 14px;
   --text-note: 14px;
-  --text-body: 15px;
+  --text-body: 16px;
   --text-item: 16px;
-  --text-thanks: 17px;
+  --text-thanks: 18px;
   --text-code: 18px;
+  /* Typing-dot geometry; deliberately outside the reading type scale. */
   --text-dots: 20px;
   --text-title: 24px;
 
@@ -76,10 +77,9 @@
   --spacing-mic-bottom: 40px;
   /* Legal links (SCREEN_SPECS "Legal links"). On the conversation screens the
      legal row sits at legal-bottom and the buttons row one legal band above it.
-     48px holds two lines of 13px links (12 + 2 x 19.5 + 4 = 55, under the
-     buttons at 60); the labels are kept short enough for two lines at 320px.
-     A row that still wraps taller (enlarged text) is measured, and the buttons
-     rise to its height plus legal-gap. */
+     48px is the minimum band for two lines of 14px links. The row is
+     measured at runtime, so longer translations and enlarged text raise the
+     buttons to the rendered link height plus legal-gap. */
   --spacing-legal-bottom: 12px;
   --spacing-legal-band: 48px;
   --spacing-legal-gap: 4px;
@@ -92,6 +92,10 @@
   --container-bubble-span: calc(100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset));
   --container-menu: 288px;
   --spacing-menu-row: 44px;
+  --spacing-field-gap: 6px;
+  --spacing-field-y: 10px;
+  --spacing-field-y-compact: 8px;
+  --spacing-tap-target: 44px;
 
   /* Admin sessions, Phase 2. */
   --spacing-code-lg: 64px;
@@ -99,7 +103,7 @@
   --container-invite: 500px;
   --container-dialog: 400px;
   --text-code-lg: 28px;
-  --text-overlay-title: 22px;
+  --text-overlay-title: 24px;
   --spacing-admin-content: 128px;
   --spacing-status-top: 80px;
   --spacing-composer-lift: 40px;
@@ -143,6 +147,9 @@
   --color-surface-icon-hover: var(--surface-icon-hover);
   --color-surface-wave-idle: var(--surface-wave-idle);
   --color-surface-status: var(--surface-status);
+  --color-surface-success: var(--surface-success);
+  --color-surface-warning: var(--surface-warning);
+  --color-surface-alert: var(--surface-alert);
   --color-recording-live: var(--recording-live);
   --color-signature-paper: var(--signature-paper);
   --color-signature-ink: var(--signature-ink);
@@ -153,8 +160,11 @@
   --color-fg-consent: var(--fg-consent);
   --color-fg-consent-hover: var(--fg-consent-hover);
   --color-fg-muted: var(--fg-muted);
+  --color-fg-essential-muted: var(--fg-essential-muted);
   --color-fg-status: var(--fg-status);
   --color-fg-status-alert: var(--fg-status-alert);
+  --color-fg-success: var(--fg-success);
+  --color-fg-warning: var(--fg-warning);
   --color-fg-subtle: var(--fg-subtle);
   --color-fg-icon: var(--fg-icon);
   --color-fg-icon-close: var(--fg-icon-close);
@@ -163,6 +173,7 @@
   --color-fg-placeholder: var(--fg-placeholder);
   --color-fg-faint: var(--fg-faint);
   --color-fg-disabled: var(--fg-disabled);
+  --color-focus: var(--focus-visible);
 
   --color-border-header: var(--border-header);
   --color-border-card: var(--border-card);
@@ -173,6 +184,9 @@
   --color-border-checkbox: var(--border-checkbox);
   --color-border-checkbox-hover: var(--border-checkbox-hover);
   --color-border-code-empty: var(--border-code-empty);
+  --color-border-field: var(--border-field);
+  --color-border-success: var(--border-success);
+  --color-border-warning: var(--border-warning);
 
   --color-status-ok: var(--status-ok);
   --color-status-warn: var(--status-warn);

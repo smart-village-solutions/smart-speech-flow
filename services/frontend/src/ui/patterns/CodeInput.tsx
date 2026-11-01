@@ -8,9 +8,10 @@ interface CodeInputProps {
   value: string;
   onChange: (value: string) => void;
   length?: number;
+  invalid?: boolean;
 }
 
-export function CodeInput({ value, onChange, length = CODE_LENGTH }: Readonly<CodeInputProps>) {
+export function CodeInput({ value, onChange, length = CODE_LENGTH, invalid = false }: Readonly<CodeInputProps>) {
   const { t } = useTranslation();
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   // Each box is a fixed position in the code, so the position IS its identity.
@@ -84,6 +85,7 @@ export function CodeInput({ value, onChange, length = CODE_LENGTH }: Readonly<Co
             inputs.current[index] = element;
           }}
           type="text"
+          aria-invalid={invalid || undefined}
           inputMode="text"
           autoComplete="one-time-code"
           maxLength={1}
@@ -96,10 +98,10 @@ export function CodeInput({ value, onChange, length = CODE_LENGTH }: Readonly<Co
           className={cn(
             // Boxes flex down on phones: eight at the design 46px cannot fit a
             // 390px viewport. Capped at 46px so wider screens match exactly.
-            'h-code-h w-full min-w-0 max-w-code-w shrink rounded-box border-2 text-center',
+            'focus-ring h-code-h w-full min-w-0 max-w-code-w shrink rounded-box border-2 text-center',
             'text-code font-normal tracking-code caret-transparent outline-none',
             'bg-surface-code-box text-fg-strong transition-colors duration-150',
-            box.character ? 'border-accent' : 'border-border-code-empty'
+            invalid ? 'border-fg-status-alert' : box.character ? 'border-accent' : 'border-border-code-empty'
           )}
         />
       ))}

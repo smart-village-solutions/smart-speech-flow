@@ -3,6 +3,23 @@ import { render, screen } from '@testing-library/react';
 import { TextField } from '@/ui/primitives/TextField';
 
 describe('TextField', () => {
+  it('keeps external help text together with its generated error description', () => {
+    render(
+      <>
+        <p id="help">Use your work address.</p>
+        <TextField label="Work email" aria-describedby="help" error="Bad address" />
+      </>
+    );
+    expect(screen.getByLabelText('Work email')).toHaveAccessibleDescription(
+      'Use your work address. Bad address'
+    );
+  });
+
+  it('accepts a native invalid state without requiring a generated error message', () => {
+    render(<TextField label="Email" aria-invalid />);
+    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
   it('associates its label with the input', () => {
     render(<TextField label="Email address" />);
     expect(screen.getByLabelText('Email address')).toBeInTheDocument();

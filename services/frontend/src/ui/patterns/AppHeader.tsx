@@ -41,7 +41,7 @@ export function AppHeader({
                 type="button"
                 onClick={onBack}
                 aria-label={t('header.back')}
-                className="flex items-center gap-1.5 text-black/60 transition-colors duration-150 hover:text-black"
+                className="hit-target relative flex items-center gap-1.5 text-black/60 transition-colors duration-150 hover:text-black [--focus-visible:var(--focus-visible-on-light)]"
               >
                 <ArrowLeft size={17} strokeWidth={2.5} className="rtl:-scale-x-100" />
                 <span className="text-note font-medium tracking-back">{t('header.back')}</span>
@@ -50,7 +50,7 @@ export function AppHeader({
               <IconButton
                 label={t('header.home')}
                 onClick={onHome}
-                className="text-black/50 hover:bg-black/8 hover:text-black"
+                className="text-black/50 hover:bg-black/8 hover:text-black [--focus-visible:var(--focus-visible-on-light)]"
               >
                 <Home size={17} strokeWidth={2} />
               </IconButton>
@@ -76,7 +76,7 @@ export function AppHeader({
           <IconButton
             label={t('header.feedback')}
             onClick={onFeedback}
-            className="text-black/50 hover:bg-black/8 hover:text-black"
+            className="text-black/50 hover:bg-black/8 hover:text-black [--focus-visible:var(--focus-visible-on-light)]"
           >
             <Lightbulb size={18} strokeWidth={2} />
           </IconButton>
@@ -84,7 +84,7 @@ export function AppHeader({
           <IconButton
             label={t('header.theme')}
             onClick={toggleTheme}
-            className="text-black/50 hover:bg-black/8 hover:text-black"
+            className="text-black/50 hover:bg-black/8 hover:text-black [--focus-visible:var(--focus-visible-on-light)]"
           >
             {theme === 'dark' ? (
               <Sun size={18} strokeWidth={2} />

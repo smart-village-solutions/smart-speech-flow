@@ -1,17 +1,15 @@
 import { useTranslation } from 'react-i18next';
 import type { RequestStatus } from '@/domain/recovery/requests.types';
+import { StatusChip as SharedStatusChip } from '@/ui/primitives/StatusChip';
 
 export function Chip({
   label,
   tone = 'status',
 }: Readonly<{ label: string; tone?: 'status' | 'muted' | 'alert' }>) {
-  const color = { status: 'text-fg-status', muted: 'text-fg-muted', alert: 'text-fg-status-alert' }[
-    tone
-  ];
   return (
-    <span className={`rounded-full bg-surface-status px-2 py-0.5 text-meta font-medium ${color}`}>
+    <SharedStatusChip tone={tone === 'alert' ? 'danger' : 'neutral'} showIndicator={false} className={`h-auto border-0 px-2 py-0.5 text-meta ${tone === 'muted' ? 'text-fg-muted' : ''}`}>
       {label}
-    </span>
+    </SharedStatusChip>
   );
 }
 

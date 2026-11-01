@@ -52,7 +52,7 @@ export function AdminInviteOverlay({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-surface-page" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6 font-sans text-body"
         >
           <div className="flex w-full max-w-invite flex-col gap-6">
             <div className="flex flex-col items-center gap-1.5 text-center">

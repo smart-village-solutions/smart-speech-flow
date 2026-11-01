@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next';
 import type { AdminSession } from '@/domain/admin/admin.types';
 import { AdminSessionRow } from './AdminSessionRow';
 import { useStaffLocalisation } from './useStaffLocalisation';
+import { EmptyState } from '@/ui/patterns/EmptyState';
+import { InlineAlert } from '@/ui/patterns/InlineAlert';
 
 interface AdminSessionListProps {
   sessions: readonly AdminSession[];
@@ -18,9 +20,9 @@ export function AdminSessionList({ sessions, isError, onEnter }: Readonly<AdminS
 
   let body;
   if (isError) {
-    body = <p className="px-5 py-4 text-label text-fg-muted">{t('admin.sessions.loadFailed')}</p>;
+    body = <InlineAlert tone="danger" title={t('admin.sessions.loadFailed')} className="rounded-none border-0 px-5" />;
   } else if (sessions.length === 0) {
-    body = <p className="px-5 py-4 text-label text-fg-muted">{t('admin.sessions.empty')}</p>;
+    body = <EmptyState title={t('admin.sessions.empty')} className="rounded-none border-0" />;
   } else {
     body = sessions.map((session) => (
       <AdminSessionRow

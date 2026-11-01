@@ -57,7 +57,7 @@ export function PaperDealerPanel({ ceremony, facts }: Readonly<PaperDealerPanelP
           <select
             value={sheet.dealerIndex}
             onChange={(event) => setChosen(Number(event.target.value))}
-            className="rounded-lg border border-border-card bg-surface-card p-2 text-note text-fg-strong"
+            className="rounded-lg border border-border-card bg-surface-card p-2 text-body text-fg-strong"
           >
             {waiting.map((d) => (
               <option key={d.dealerIndex} value={d.dealerIndex}>

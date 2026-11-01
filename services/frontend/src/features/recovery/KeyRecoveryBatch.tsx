@@ -1,3 +1,4 @@
+import { Textarea } from '@/ui/primitives/Textarea';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
@@ -48,12 +49,11 @@ export function KeyRecoveryBatch({ keys, again }: Readonly<KeyRecoveryBatchProps
       <OwnFingerprint keys={keys} />
       <label className="flex flex-col gap-1.5 text-meta font-medium text-fg-muted">
         {t('admin.keyRecovery.reason')}
-        <textarea
+        <Textarea variant="field"
           rows={4}
           maxLength={MAX_REASON}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          className="rounded-xl border border-border-card px-3 py-2.5 text-note text-fg-body"
         />
       </label>
       <Button

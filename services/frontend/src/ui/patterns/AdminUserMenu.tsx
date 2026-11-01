@@ -12,11 +12,12 @@ import {
   User,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/cn';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
 
 const ROW =
-  'flex h-menu-row w-full items-center justify-between px-4 text-note transition-colors duration-150';
+  'focus-ring [--focus-ring-offset:-4px] flex h-menu-row w-full items-center justify-between px-4 text-note transition-colors duration-150';
 
 interface MenuRowProps {
   label: string;
@@ -110,9 +111,10 @@ export function AdminUserMenu({
       <IconButton
         label={t('admin.menu.open')}
         onClick={() => (open ? close() : setOpen(true))}
-        className={
+        className={cn(
+          '[--focus-visible:var(--focus-visible-on-light)]',
           open ? 'bg-black/8 !text-black' : 'text-black/50 hover:bg-black/8 hover:text-black'
-        }
+        )}
       >
         <User size={16} strokeWidth={2} />
       </IconButton>

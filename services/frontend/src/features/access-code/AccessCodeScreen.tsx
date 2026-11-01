@@ -80,6 +80,7 @@ export function AccessCodeScreen() {
 
         <CodeInput
           value={code}
+          invalid={error === 'accessCode.notFound'}
           onChange={(next) => {
             setCode(next);
             setError(null);

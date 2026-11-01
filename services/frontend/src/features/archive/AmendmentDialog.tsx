@@ -1,3 +1,4 @@
+import { Textarea } from '@/ui/primitives/Textarea';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { OpenedConversation } from '@/domain/archive/archive.types';
@@ -53,13 +54,13 @@ export function AmendmentDialog({
         <label htmlFor={id} className="text-label font-medium text-fg-body">
           {t('admin.archive.amendment.text')}
         </label>
-        <textarea
+        <Textarea variant="field"
           id={id}
           value={text}
           maxLength={AMENDMENT_MAX}
           readOnly={amend.unconfirmed}
           onChange={(event) => setText(event.target.value)}
-          className="min-h-archive-signature w-full rounded-row border border-border-card bg-surface-field px-3 py-2.5 text-note text-fg-strong outline-none focus:border-accent"
+          className="min-h-archive-signature"
         />
         <span className="self-end text-meta text-fg-muted">
           {t('admin.archive.amendment.count', { count: text.length })}

@@ -1,3 +1,9 @@
+# Updated on 2026-11-01: frontend built from release source a1280891
+# for the PR #652 design system, preserving production base 7878f07e.
+# Previous live frontend: sha256:eb2485c4cd2cd36e5e7e00caef862fca5d949ce6a2e01841aa08d7423e060ffa.
+# Previous canonical frontend: ssf-backend-frontend:prod-2acde0bd-clean,
+# sha256:0b9df3d1164711c34c3f35483e0fb38a9b4dac1a621fb82c21d2ca9fca944e99.
+# Both previous images remain local for rollback; no backend image changes.
 # Updated on 2026-10-30: api_gateway, asr, translation, tts and frontend
 # built from production-compatible source 2acde0bd to remove Tigrinya and
 # Kurdish. Verified full platform health, language rejection, real ASR,
@@ -28,7 +34,7 @@ api_gateway	sha256:e1a58683af17bbd45baf13ce049c6332f38e1306a6438c850df20cabbdab8
 asr	sha256:1765aa6bbbbf1c4d94f95d354a1e25788e385652401585543e56d38092b6f07c	ssf-backend-asr:prod-2acde0bd
 translation	sha256:928bfcde85dd612fd32cdf620ba63604346e1eef27ae630a46045e22c0e36a91	ssf-backend-translation:prod-2acde0bd
 tts	sha256:7411dc37013ea329d5da82299cd149ecc30fd10a0017a09bf4abaec69e2f65e1	ssf-backend-tts:prod-2acde0bd
-frontend	sha256:0b9df3d1164711c34c3f35483e0fb38a9b4dac1a621fb82c21d2ca9fca944e99	ssf-backend-frontend:prod-2acde0bd-clean
+frontend	sha256:0be9b895445e399dd323a71af2002e6e3e1c6b1421890a86ae9fe70e718a22be	ssf-backend-frontend:prod-a1280891-design-system
 keycloak	sha256:fee0a19bf7c023f77a9d1e6e191d9f7fd7aaa508e081afb9bc8f73075eb56513	ssf-keycloak:prod-e2a4e45
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a

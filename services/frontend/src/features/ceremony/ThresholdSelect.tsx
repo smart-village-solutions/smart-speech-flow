@@ -14,7 +14,7 @@ export function ThresholdSelect({
       <select
         value={k}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="rounded-lg border border-border-card bg-surface-card p-2 text-fg-strong"
+        className="rounded-lg border border-border-card bg-surface-card p-2 text-body text-fg-strong"
       >
         {THRESHOLDS.map((value) => (
           <option key={value} value={value}>
