@@ -139,6 +139,10 @@
     "imprint": "شناسنامه ناشر",
     "privacyPolicy": "حریم خصوصی",
     "accessibilityStatement": "دسترس‌پذیری",
-    "opensInNewTab": "(در زبانه جدید باز می‌شود)"
+    "opensInNewTab": "(در زبانه جدید باز می‌شود)",
+    "informationTitle": "رضایت و شرایط ضبط",
+    "informationNotice": "این نما فقط برای اطلاع‌رسانی است. در اینجا نه رضایت می‌دهید و نه اجازهٔ ضبط صادر می‌کنید.",
+    "informationSource": "زبان متن: {{locale}} · نسخهٔ منبع: {{version}}",
+    "informationClose": "بستن"
   }
 }

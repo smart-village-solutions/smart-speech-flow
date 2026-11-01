@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from .legal_information import LegalInformation, legal_information
 from .message_models import SUPPORTED_LANGUAGES
 from .studio_content import TenantContent
 from .studio_legal import LocalizedRecordingStatus, recording_status
@@ -127,6 +128,7 @@ class GuestLanguagesResponse(_Body):
 
 
 class ProvidedGuestContent(_Body):
+    legal_information: LegalInformation | None = None
     recording_status: LocalizedRecordingStatus | None = None
     provided: Literal[True] = True
     revision: str
@@ -135,6 +137,7 @@ class ProvidedGuestContent(_Body):
 
 
 class UnprovidedGuestContent(_Body):
+    legal_information: LegalInformation | None = None
     recording_status: LocalizedRecordingStatus | None = None
     provided: Literal[False] = False
 
@@ -171,6 +174,7 @@ class ContentStaff(_Body):
 
 
 class StaffContentResponse(_Body):
+    legal_information: LegalInformation | None = None
     recording_status: LocalizedRecordingStatus | None = None
     revision: str
     time_zone: str | None
@@ -233,11 +237,13 @@ def guest_languages_response(content: TenantContent | None) -> GuestLanguagesRes
 def guest_content_response(
     content: TenantContent | None, language: str
 ) -> ProvidedGuestContent | UnprovidedGuestContent:
+    information = legal_information(content.legal_texts, language) if content is not None else None
     studio = content.guest_languages.get(language) if content is not None else None
     status = recording_status(content.legal_texts, language) if content is not None else None
     if content is None or studio is None:
-        return UnprovidedGuestContent(recording_status=status)
+        return UnprovidedGuestContent(recording_status=status, legal_information=information)
     return ProvidedGuestContent(
+        legal_information=information,
         recording_status=status,
         revision=content.revision,
         explanation_html=studio.explanation_html,
@@ -248,6 +254,9 @@ def guest_content_response(
 def staff_content_response(content: TenantContent) -> StaffContentResponse:
     staff = content.staff
     return StaffContentResponse(
+        legal_information=legal_information(
+            content.legal_texts, staff.locale if staff is not None else "de-DE"
+        ),
         recording_status=recording_status(
             content.legal_texts, staff.locale if staff is not None else "de-DE"
         ),

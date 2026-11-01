@@ -51,7 +51,13 @@ export type GuestLanguage =
   | (GuestLanguageNames & { provided: false })
   | (GuestLanguageNames & { provided: true; nativeName: string; icon: ContentMedia | null });
 
-export type GuestContent =
+export interface LegalInformation {
+  locale: string;
+  version: string;
+  sections: { id: string; headline: string; bodyHtml: string }[];
+}
+
+export type GuestContent = { legalInformation?: LegalInformation | null } & (
   | { provided: false; recordingStatus?: RecordingStatusCopy | null }
   | {
       provided: true;
@@ -59,7 +65,8 @@ export type GuestContent =
       revision: string;
       explanationHtml: string;
       feedback: StudioFeedbackForm | null;
-    };
+    }
+);
 
 export interface StaffTexts {
   locale: string;
@@ -74,6 +81,7 @@ export interface StaffTexts {
 }
 
 export interface StaffContent {
+  legalInformation?: LegalInformation | null;
   recordingStatus?: RecordingStatusCopy | null;
   revision: string;
   /** IANA zone; null when Studio sends none or this browser does not know it. */

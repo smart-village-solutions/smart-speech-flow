@@ -139,6 +139,10 @@
     "imprint": "Künye",
     "privacyPolicy": "Gizlilik",
     "accessibilityStatement": "Erişilebilirlik",
-    "opensInNewTab": "(yeni sekmede açılır)"
+    "opensInNewTab": "(yeni sekmede açılır)",
+    "informationTitle": "Onay ve kayıt koşulları",
+    "informationNotice": "Bu ekran yalnızca bilgilendirme amaçlıdır. Burada onay vermiş veya kayıt yapılmasına izin vermiş olmazsınız.",
+    "informationSource": "Metnin dili: {{locale}} · Kaynak sürümü: {{version}}",
+    "informationClose": "Kapat"
   }
 }

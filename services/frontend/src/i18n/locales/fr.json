@@ -139,6 +139,10 @@
     "imprint": "Mentions légales",
     "privacyPolicy": "Confidentialité",
     "accessibilityStatement": "Accessibilité",
-    "opensInNewTab": "(s'ouvre dans un nouvel onglet)"
+    "opensInNewTab": "(s'ouvre dans un nouvel onglet)",
+    "informationTitle": "Consentement et conditions d’enregistrement",
+    "informationNotice": "Cette vue est uniquement informative. Vous ne donnez pas votre consentement et n’autorisez aucun enregistrement ici.",
+    "informationSource": "Langue du texte : {{locale}} · Version de la source : {{version}}",
+    "informationClose": "Fermer"
   }
 }

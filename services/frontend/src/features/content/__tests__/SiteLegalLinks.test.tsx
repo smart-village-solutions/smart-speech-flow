@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -82,4 +83,48 @@ describe('SiteLegalLinks', () => {
       'https://studio.example/barrierefreiheit',
     ]);
   });
+});
+
+it('opens safe source wording as information with only a close action and restores focus', async () => {
+  const user = userEvent.setup();
+  renderWithProviders(
+    <SiteLegalLinks
+      information={{
+        locale: 'de-DE',
+        version: 'studio-source-42',
+        sections: [
+          {
+            id: 'mode2Consent',
+            headline: 'Source heading',
+            bodyHtml:
+              '<p>Source <strong>wording</strong></p><script>unsafeScript()</script><a href="javascript:bad()">unsafe link</a>',
+          },
+        ],
+      }}
+    />
+  );
+  const trigger = screen.getByRole('button', { name: 'Consent and recording terms' });
+  expect(trigger).toHaveClass('pointer-events-auto');
+  await user.click(trigger);
+  const dialog = screen.getByRole('dialog', { name: 'Consent and recording terms' });
+  expect(
+    within(dialog).getByText(
+      'This view is for information only. You do not give consent or authorize recording here.'
+    )
+  ).toBeInTheDocument();
+  expect(within(dialog).getByText(/de-DE/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/studio-source-42/)).toBeInTheDocument();
+  expect(within(dialog).getByRole('heading', { name: 'Source heading' })).toBeInTheDocument();
+  const wording = within(dialog).getByRole('region', { name: 'Consent and recording terms' });
+  expect(wording).toHaveAttribute('tabindex', '0');
+  expect(wording).toHaveAttribute('lang', 'de-DE');
+  expect(wording).toHaveAttribute('dir', 'auto');
+  expect(dialog.querySelector('strong')).toHaveTextContent('wording');
+  expect(dialog.querySelector('script')).toBeNull();
+  expect(within(dialog).queryByRole('link')).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+  expect(within(dialog).getAllByRole('button')).toHaveLength(1);
+  await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
 });

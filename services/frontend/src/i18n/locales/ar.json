@@ -139,6 +139,10 @@
     "imprint": "بيانات الناشر",
     "privacyPolicy": "الخصوصية",
     "accessibilityStatement": "إمكانية الوصول",
-    "opensInNewTab": "(يفتح في علامة تبويب جديدة)"
+    "opensInNewTab": "(يفتح في علامة تبويب جديدة)",
+    "informationTitle": "الموافقة وشروط التسجيل",
+    "informationNotice": "هذا العرض للمعلومات فقط. لا تمنح هنا موافقتك ولا تأذن بالتسجيل.",
+    "informationSource": "لغة النص: {{locale}} · إصدار المصدر: {{version}}",
+    "informationClose": "إغلاق"
   }
 }
