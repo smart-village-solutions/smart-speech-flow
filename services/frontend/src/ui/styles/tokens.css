@@ -156,6 +156,7 @@
   --color-fg-placeholder: var(--fg-placeholder);
   --color-fg-faint: var(--fg-faint);
   --color-fg-disabled: var(--fg-disabled);
+  --color-focus: var(--focus-visible);
 
   --color-border-header: var(--border-header);
   --color-border-card: var(--border-card);

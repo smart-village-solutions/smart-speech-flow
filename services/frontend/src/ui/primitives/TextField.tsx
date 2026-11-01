@@ -42,7 +42,7 @@ export function TextField({
         aria-invalid={error === null ? undefined : true}
         aria-describedby={error === null ? undefined : `${id}-error`}
         className={cn(
-          'w-full border border-border-card bg-surface-field text-fg-strong outline-none',
+          'focus-ring w-full border border-border-card bg-surface-field text-fg-strong outline-none',
           'placeholder:text-fg-placeholder focus:border-accent',
           DENSITY[density],
           error === null ? undefined : 'border-fg-status-alert',

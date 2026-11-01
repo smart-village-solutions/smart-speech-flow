@@ -96,7 +96,7 @@ export function CodeInput({ value, onChange, length = CODE_LENGTH }: Readonly<Co
           className={cn(
             // Boxes flex down on phones: eight at the design 46px cannot fit a
             // 390px viewport. Capped at 46px so wider screens match exactly.
-            'h-code-h w-full min-w-0 max-w-code-w shrink rounded-box border-2 text-center',
+            'focus-ring h-code-h w-full min-w-0 max-w-code-w shrink rounded-box border-2 text-center',
             'text-code font-normal tracking-code caret-transparent outline-none',
             'bg-surface-code-box text-fg-strong transition-colors duration-150',
             box.character ? 'border-accent' : 'border-border-code-empty'

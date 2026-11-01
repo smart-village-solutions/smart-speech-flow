@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ExternalLink, LogOut, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/cn';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
 
@@ -70,9 +71,10 @@ export function AdminUserMenu({ onSignOut, accountUrl, studioUrl }: Readonly<Adm
       <IconButton
         label={t('admin.menu.open')}
         onClick={() => (open ? close() : setOpen(true))}
-        className={
+        className={cn(
+          '[--focus-visible:var(--focus-visible-on-light)]',
           open ? 'bg-black/8 !text-black' : 'text-black/50 hover:bg-black/8 hover:text-black'
-        }
+        )}
       >
         <User size={16} strokeWidth={2} />
       </IconButton>

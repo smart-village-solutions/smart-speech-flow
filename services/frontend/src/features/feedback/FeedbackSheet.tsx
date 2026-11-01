@@ -42,7 +42,7 @@ export function FeedbackSheet({
         <Dialog.Content
           aria-describedby={undefined}
           className={cn(
-            'fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto',
+            'fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto font-sans text-body',
             'rounded-t-sheet border-x border-t border-border-header bg-surface-panel',
             'data-[state=closed]:animate-sheet-out data-[state=open]:animate-sheet-in'
           )}

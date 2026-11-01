@@ -40,6 +40,11 @@
   --fg-faint: rgb(0 0 0 / 0.2);
   --fg-disabled: rgb(0 0 0 / 0.2);
 
+  /* Published Figma proposal/focus/visible, adopted for keyboard navigation.
+     The fixed-white header and footer retain the Light focus treatment. */
+  --focus-visible-on-light: #1d538b;
+  --focus-visible: var(--focus-visible-on-light);
+
   /* Borders */
   --border-header: rgb(0 0 0 / 0.08);
   --border-card: rgb(0 0 0 / 0.1);
@@ -102,6 +107,7 @@
   --fg-placeholder: rgb(255 255 255 / 0.25);
   --fg-faint: rgb(255 255 255 / 0.2);
   --fg-disabled: rgb(255 255 255 / 0.25);
+  --focus-visible: #79b8f6;
 
   --border-header: rgb(255 255 255 / 0.08);
   --border-card: rgb(255 255 255 / 0.1);

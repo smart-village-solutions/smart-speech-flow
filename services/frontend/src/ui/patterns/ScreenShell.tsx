@@ -37,7 +37,7 @@ export function ScreenShell({
       data-screen-shell=""
       data-keyboard={keyboardOpen ? 'open' : undefined}
       style={keyboardOpen ? COMPACT_HEADER : undefined}
-      className="group/shell min-h-dvh w-full overflow-x-clip bg-surface-page font-sans text-fg-strong transition-colors duration-300"
+      className="group/shell min-h-dvh w-full overflow-x-clip bg-surface-page font-sans text-body text-fg-strong transition-colors duration-300"
     >
       <div
         className={cn('relative mx-auto flex min-h-dvh w-full max-w-app flex-col', className)}
