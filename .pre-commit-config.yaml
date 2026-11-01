@@ -65,6 +65,9 @@ repos:
       # Prevent large files from being committed
       - id: check-added-large-files
         args: [--maxkb=1000]
+        # These three curated guide/reference exports are intentional binary
+        # documentation assets; retain the size limit for all other files.
+        exclude: '^docs/(user-guide/kasseldialog-(grafikerpaket\.zip|nutzerdokumentation-entwurf\.pdf)|guides/Erklärfolien Kassel Dialog 001screen\.pdf)$'
 
       # Ensure files end with newline
       - id: end-of-file-fixer
