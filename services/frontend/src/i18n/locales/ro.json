@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) este un serviciu automat de traducere în timp real, conceput pentru a sprijini conversațiile dintre persoane care vorbesc limbi diferite. Serviciul funcționează exclusiv pe un server privat dedicat.",
     "howTo": "Pentru a începe înregistrarea, atingeți butonul microfonului. Veți avea apoi 20 de secunde pentru a vorbi. Puteți încheia înregistrarea și mai devreme, cu o nouă atingere. Ca alternativă, puteți folosi introducerea de text.",
-    "retention": "În mod implicit, datele audio și de transcriere sunt prelucrate doar pe durata sesiunii active și nu sunt păstrate ulterior. După încheierea conversației, datele sunt șterse automat. Puteți raporta probleme sau împărtăși idei de îmbunătățire oricând, prin funcția de feedback din aplicație.",
     "getStarted": "Începeți",
     "loading": "Se încarcă informațiile"
   },

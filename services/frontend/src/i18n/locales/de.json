@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) ist ein automatischer Echtzeit-Übersetzungsdienst für Gespräche zwischen Menschen, die verschiedene Sprachen sprechen. Der Dienst läuft ausschließlich auf einem dedizierten, privaten Server.",
     "howTo": "Tippen Sie auf die Mikrofontaste, um die Aufnahme zu starten. Sie haben dann 20 Sekunden Zeit zu sprechen. Mit einem weiteren Tippen können Sie die Aufnahme früher beenden. Alternativ können Sie die Texteingabe verwenden.",
-    "retention": "Standardmäßig werden Audio- und Transkriptionsdaten nur während der aktiven Sitzung verarbeitet und danach nicht aufbewahrt. Nach Ende des Gesprächs werden die Daten automatisch verworfen. Über die Feedback-Funktion können Sie jederzeit Probleme melden oder Verbesserungsvorschläge einreichen.",
     "getStarted": "Loslegen",
     "loading": "Informationen werden geladen"
   },

@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) to automatyczna usługa tłumaczenia w czasie rzeczywistym, która wspiera rozmowy osób mówiących różnymi językami. Usługa działa wyłącznie na dedykowanym, prywatnym serwerze.",
     "howTo": "Aby rozpocząć nagrywanie, należy dotknąć przycisku mikrofonu. Na wypowiedź jest wtedy 20 sekund. Nagrywanie można też zakończyć wcześniej, dotykając przycisku ponownie. Zamiast tego można również skorzystać z pola tekstowego.",
-    "retention": "Domyślnie dane audio i transkrypcje są przetwarzane wyłącznie w trakcie aktywnej sesji i nie są później przechowywane. Po zakończeniu rozmowy dane są automatycznie usuwane. Problemy lub pomysły na ulepszenia można w każdej chwili zgłosić za pomocą funkcji opinii w aplikacji.",
     "getStarted": "Rozpocznij",
     "loading": "Wczytywanie informacji"
   },

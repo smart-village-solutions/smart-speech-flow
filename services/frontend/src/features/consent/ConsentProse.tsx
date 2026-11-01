@@ -16,7 +16,6 @@ export function ConsentProse({ explanationHtml }: Readonly<ConsentProseProps>) {
         <>
           <p>{t('consent.intro')}</p>
           <p>{t('consent.howTo')}</p>
-          <p>{t('consent.retention')}</p>
         </>
       ) : (
         <RichText html={explanationHtml} />

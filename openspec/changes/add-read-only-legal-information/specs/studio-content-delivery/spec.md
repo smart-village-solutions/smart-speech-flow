@@ -16,3 +16,10 @@ SSF SHALL make configured Studio legal wording readable from the guest consent a
 - **WHEN** the informational feature is rolled out before recording cutover
 - **THEN** only the narrowly reviewed gateway/frontend changes are deployed
 - **AND** existing policy, storage, sessions and infrastructure remain unchanged
+
+#### Scenario: Ordinary conversation entry
+- **WHEN** a guest opens the ordinary conversation entry with valid documentation wording
+- **THEN** the full documentation consent and guest recording release are also readable inline before Get Started
+- **AND** the inline information identifies its actual wording locale and source version
+- **AND** quality-session consent and employee recording release remain separate reference documents in the informational dialog
+- **AND** starting the ordinary conversation grants no documentation recording consent or release

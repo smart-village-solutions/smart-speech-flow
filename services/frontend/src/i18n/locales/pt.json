@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) é um serviço automático de tradução em tempo real, criado para apoiar conversas entre pessoas que falam idiomas diferentes. O serviço funciona exclusivamente em um servidor privado dedicado.",
     "howTo": "Para começar a gravar, toque no botão do microfone. Você terá então 20 segundos para falar. Também é possível encerrar a gravação antes, tocando novamente. Como alternativa, você pode digitar o texto.",
-    "retention": "Por padrão, os dados de áudio e de transcrição são processados somente durante a sessão ativa e não são guardados depois. Quando a conversa termina, os dados são descartados automaticamente. Você pode relatar problemas ou compartilhar ideias de melhoria a qualquer momento pela função de opinião do aplicativo.",
     "getStarted": "Começar",
     "loading": "Carregando as informações"
   },

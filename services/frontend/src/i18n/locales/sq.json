@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) është një shërbim automatik përkthimi në kohë reale, i krijuar për të mbështetur bisedat mes njerëzve që flasin gjuhë të ndryshme. Shërbimi funksionon vetëm në një server privat të dedikuar.",
     "howTo": "Për të filluar regjistrimin, prekni butonin e mikrofonit. Pastaj do të keni 20 sekonda për të folur. Mund ta përfundoni regjistrimin edhe më herët me një prekje tjetër. Si alternativë, mund ta shkruani tekstin.",
-    "retention": "Si parazgjedhje, të dhënat audio dhe të transkriptimit përpunohen vetëm gjatë seancës aktive dhe nuk ruhen më pas. Pasi mbaron biseda, të dhënat fshihen automatikisht. Në çdo kohë mund të raportoni probleme ose të ndani ide për përmirësim përmes funksionit të komenteve në aplikacion.",
     "getStarted": "Fillo",
     "loading": "Po ngarkohen informacionet"
   },
