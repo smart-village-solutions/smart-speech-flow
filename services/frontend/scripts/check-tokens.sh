@@ -149,7 +149,7 @@ assert '--spacing-tap-target: 44px'
 assert '.hit-target:before'
 assert '.focus-ring:focus-visible'
 assert 'outline: 2px solid var(--focus-visible)'
-assert 'outline-offset: 2px'
+assert 'outline-offset: var(--focus-ring-offset, 2px)'
 assert 'transition-property: color, background-color, border-color, box-shadow, opacity, transform'
 assert '.peer-focus-visible'
 

@@ -29,7 +29,7 @@
   .focus-ring:focus-visible,
   [data-screen-shell] :is(button, a[href], input:not([type='checkbox']), select, textarea):focus-visible {
     outline: 2px solid var(--focus-visible);
-    outline-offset: 2px;
+    outline-offset: var(--focus-ring-offset, 2px);
     /* transition-all/transition-colors otherwise fade the outline in from
        zero or transparent. Keyboard focus must be visible immediately. */
     transition-property: color, background-color, border-color, box-shadow, opacity, transform;
