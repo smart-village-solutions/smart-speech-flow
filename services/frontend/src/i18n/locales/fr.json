@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) facilite les conversations entre des personnes qui parlent des langues différentes. Vous pouvez parler ou saisir du texte. Vos interventions sont traduites automatiquement. Des erreurs peuvent se produire. Demandez des précisions si quelque chose n’est pas clair.",
-    "howTo": "Lorsque vous démarrez la conversation, la traduction commence. Cela ne signifie pas que vous consentez à un enregistrement à des fins de documentation. Si un enregistrement est prévu, vous recevrez au préalable des informations distinctes et votre consentement vous sera demandé, ainsi que votre autorisation pour chaque partie de l’enregistrement.",
+    "howTo": "Lorsque vous démarrez la conversation, la traduction commence. Cela ne signifie pas que vous consentez à un enregistrement à des fins de documentation. Si un enregistrement est prévu, vous recevrez au préalable des informations distinctes. Tout consentement requis par la politique d’enregistrement applicable et votre autorisation pour chaque partie de l’enregistrement seront demandés séparément.",
     "optIn": "Si vous souhaitez nous aider à améliorer $t(app.name), vous pouvez autoriser la conservation des données de votre conversation pendant 180 jours au maximum. Ces données ne peuvent être utilisées qu'à des fins d'analyse et d'amélioration de la qualité dans le cadre du projet $t(app.name).",
     "checkbox": "J'accepte que les données de ma conversation soient conservées pendant 180 jours au maximum afin d'améliorer $t(app.name).",
     "getStarted": "Commencer",

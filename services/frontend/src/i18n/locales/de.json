@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) unterstützt Gespräche zwischen Menschen, die unterschiedliche Sprachen sprechen. Sie können sprechen oder Text eingeben. Ihre Beiträge werden automatisch übersetzt. Dabei können Fehler entstehen. Fragen Sie nach, wenn etwas unklar ist.",
-    "howTo": "Wenn Sie das Gespräch starten, beginnt die Übersetzung. Damit erteilen Sie keine Einwilligung in eine Dokumentationsaufnahme. Falls eine Aufnahme vorgesehen ist, werden Sie vorher gesondert informiert und um Ihre Einwilligung sowie die Freigabe des jeweiligen Aufnahmeabschnitts gebeten.",
+    "howTo": "Wenn Sie das Gespräch starten, beginnt die Übersetzung. Damit erteilen Sie keine Einwilligung in eine Dokumentationsaufnahme. Falls eine Aufnahme vorgesehen ist, werden Sie vorher gesondert informiert. Eine gegebenenfalls erforderliche Einwilligung und die Freigabe jedes Aufnahmeabschnitts werden separat eingeholt.",
     "optIn": "Wenn Sie uns helfen möchten, $t(app.name) zu verbessern, können Sie der Speicherung Ihrer Gesprächsdaten für bis zu 180 Tage zustimmen. Diese Daten werden ausschließlich zur Analyse und Qualitätsverbesserung innerhalb des Projekts $t(app.name) verwendet.",
     "checkbox": "Ich stimme der Speicherung meiner Gesprächsdaten für bis zu 180 Tage zum Zweck der Verbesserung von $t(app.name) zu.",
     "getStarted": "Loslegen",

@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "A $t(app.name) segíti a különböző nyelveket beszélő emberek közötti beszélgetéseket. Beszélhet vagy szöveget írhat be. Az Ön által elmondott vagy beírt szöveget a rendszer automatikusan lefordítja. A fordításban hibák is előfordulhatnak. Kérjen pontosítást, ha valami nem világos.",
-    "howTo": "Amikor elindítja a beszélgetést, elkezdődik a fordítás. Ezzel nem adja hozzájárulását dokumentációs célú felvétel készítéséhez. Ha felvételt terveznek, erről előzetesen külön tájékoztatást kap, és kérni fogják a hozzájárulását, valamint a felvétel minden egyes szakaszának jóváhagyását.",
+    "howTo": "Amikor elindítja a beszélgetést, elkezdődik a fordítás. Ezzel nem adja hozzájárulását dokumentációs célú felvétel készítéséhez. Ha felvételt terveznek, erről előzetesen külön tájékoztatást kap. Az alkalmazandó felvételi szabályzat alapján esetlegesen szükséges hozzájárulást, valamint a felvétel minden egyes szakaszának jóváhagyását külön kérik.",
     "optIn": "Ha szeretne segíteni a $t(app.name) fejlesztésében, engedélyezheti, hogy beszélgetése adatait legfeljebb 180 napig tároljuk. Ezek az adatok kizárólag elemzésre és minőségjavításra használhatók a $t(app.name) projekt keretében.",
     "checkbox": "Hozzájárulok, hogy beszélgetésem adatait legfeljebb 180 napig tárolják a $t(app.name) fejlesztése céljából.",
     "getStarted": "Kezdés",

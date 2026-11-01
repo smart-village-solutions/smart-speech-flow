@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) facilita le conversazioni tra persone che parlano lingue diverse. Può parlare o scrivere. I Suoi interventi vengono tradotti automaticamente. Possono verificarsi errori. Chieda chiarimenti se qualcosa non è chiaro.",
-    "howTo": "Quando avvia la conversazione, inizia la traduzione. Questo non significa che Lei acconsenta a una registrazione a scopo di documentazione. Se è prevista una registrazione, riceverà prima informazioni separate e Le verranno richiesti il consenso e, separatamente, l’autorizzazione per ciascuna parte della registrazione.",
+    "howTo": "Quando avvia la conversazione, inizia la traduzione. Questo non significa che Lei acconsenta a una registrazione a scopo di documentazione. Se è prevista una registrazione, riceverà prima informazioni separate. L’eventuale consenso richiesto dalla politica di registrazione applicabile e la Sua autorizzazione per ciascuna parte della registrazione saranno richiesti separatamente.",
     "optIn": "Se desidera aiutarci a migliorare $t(app.name), può consentire che i dati della sua conversazione vengano conservati fino a 180 giorni. Questi dati possono essere utilizzati esclusivamente a fini di analisi e di miglioramento della qualità nell'ambito del progetto $t(app.name).",
     "checkbox": "Acconsento alla conservazione dei dati della mia conversazione fino a 180 giorni allo scopo di migliorare $t(app.name).",
     "getStarted": "Inizia",

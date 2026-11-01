@@ -102,8 +102,8 @@ describe('ConsentScreen', () => {
     await settled();
 
     expect(
-      screen.getByText(/KasselDIALOG is an automatic real-time/).parentElement?.parentElement
-        ?.parentElement
+      screen.getByText(en.consent.intro.replace('$t(app.name)', en.app.name)).parentElement
+        ?.parentElement?.parentElement
     ).toHaveClass('pt-content-top');
   });
 
@@ -192,13 +192,36 @@ describe('ConsentScreen', () => {
   });
 
   describe('Studio content', () => {
-    it("shows Studio's explanation and storage question for a language Studio provides", async () => {
+    it.each([
+      '<p>Conversation data is retained for 180 days.</p>',
+      `<p>${en.consent.intro.replace('$t(app.name)', en.app.name)}</p><p>${en.consent.howTo}</p>`,
+    ])(
+      'does not duplicate or replace the UI introduction with Studio markup %s',
+      async (explanationHtml) => {
+        server.use(
+          guestContentHandler((language) =>
+            HttpResponse.json({ ...guestContentBody(language, 'disabled'), explanationHtml })
+          )
+        );
+        renderWithProviders(tree(), { route });
+        await settled();
+        expect(
+          screen.getAllByText(en.consent.intro.replace('$t(app.name)', en.app.name))
+        ).toHaveLength(1);
+        expect(screen.getAllByText(en.consent.howTo)).toHaveLength(1);
+        expect(
+          screen.queryByText('Conversation data is retained for 180 days.')
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      }
+    );
+    it('shows the controlled introduction while preserving the configured storage question', async () => {
       server.use(studioEnglish());
       renderWithProviders(tree(), { route });
       await settled();
 
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
-      expect(screen.queryByText(en.consent.howTo)).not.toBeInTheDocument();
+      expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
+      expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
       const checkbox = screen.getByRole('checkbox', {
         name: 'Studio asks to keep the conversation.',
       });
@@ -271,7 +294,8 @@ describe('ConsentScreen', () => {
       });
       await settled();
 
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
+      expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
+      expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
 
       await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
@@ -291,12 +315,13 @@ describe('ConsentScreen', () => {
       }
     );
 
-    it("shows Studio's last known texts without the question when the mode is unknown", async () => {
+    it('shows the controlled introduction without a question when storage mode is unknown', async () => {
       server.use(studioEnglish('unknown'));
       renderWithProviders(tree(), { route });
       await settled();
 
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
+      expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
+      expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
   });

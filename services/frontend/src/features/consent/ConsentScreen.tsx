@@ -48,7 +48,7 @@ export function ConsentScreen() {
 
           {ready ? (
             <>
-              <ConsentProse explanationHtml={copy.explanationHtml} showsOptIn={copy.asksStorage} />
+              <ConsentProse showsOptIn={copy.asksStorage} />
 
               {copy.asksStorage && (
                 <Checkbox checked={agreed} onCheckedChange={setAgreed} className="mt-8 opacity-65">

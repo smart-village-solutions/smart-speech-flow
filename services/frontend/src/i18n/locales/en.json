@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) supports conversations between people who speak different languages. You can speak or type text. Your contributions are translated automatically. Errors may occur. Please ask if anything is unclear.",
-    "howTo": "When you start the conversation, translation begins. This does not mean you consent to a recording for documentation purposes. If a recording is planned, you will be informed separately beforehand and asked for your consent as well as your approval for each recording segment.",
+    "howTo": "When you start the conversation, translation begins. This does not mean you consent to a recording for documentation purposes. If a recording is planned, you will be informed separately beforehand. Any consent required by the applicable recording policy, and the release of each recording segment, are handled separately.",
     "optIn": "If you would like to help us improve $t(app.name), you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the $t(app.name) project.",
     "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving $t(app.name).",
     "getStarted": "Get started",

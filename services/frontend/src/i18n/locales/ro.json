@@ -22,7 +22,7 @@
   },
   "consent": {
     "intro": "$t(app.name) facilitează conversațiile între persoane care vorbesc limbi diferite. Puteți vorbi sau introduce text. Ceea ce spuneți sau scrieți este tradus automat. Pot apărea erori. Cereți lămuriri dacă ceva nu este clar.",
-    "howTo": "Când începeți conversația, începe traducerea. Prin aceasta nu vă dați consimțământul pentru o înregistrare în scop de documentare. Dacă este prevăzută o înregistrare, veți primi în prealabil informații separate și vi se vor solicita consimțământul, precum și aprobarea pentru fiecare segment al înregistrării.",
+    "howTo": "Când începeți conversația, începe traducerea. Prin aceasta nu vă dați consimțământul pentru o înregistrare în scop de documentare. Dacă este prevăzută o înregistrare, veți primi în prealabil informații separate. Orice consimțământ necesar conform politicii de înregistrare aplicabile și aprobarea pentru fiecare segment al înregistrării vor fi solicitate separat.",
     "optIn": "Dacă doriți să ne ajutați să îmbunătățim $t(app.name), puteți permite stocarea datelor conversației dumneavoastră timp de până la 180 de zile. Aceste date pot fi folosite exclusiv în scopuri de analiză și de îmbunătățire a calității în cadrul proiectului $t(app.name).",
     "checkbox": "Sunt de acord cu stocarea datelor conversației mele timp de până la 180 de zile, în scopul îmbunătățirii serviciului $t(app.name).",
     "getStarted": "Începeți",

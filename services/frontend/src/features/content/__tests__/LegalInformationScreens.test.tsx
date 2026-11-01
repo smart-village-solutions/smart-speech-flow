@@ -24,6 +24,35 @@ const information = {
   ),
 };
 
+it.each([
+  ['he-IL', 'rtl'],
+  ['ar-Latn', 'ltr'],
+  ['ku-Yezi', 'rtl'],
+  ['und', 'auto'],
+  ['und-Hebr', 'rtl'],
+])(
+  'preserves source locale and direction in the reference dialog for %s',
+  async (locale, direction) => {
+    server.use(
+      guestContentHandler((language) =>
+        HttpResponse.json({
+          ...guestContentBody(language),
+          legalInformation: { ...information, locale },
+        })
+      )
+    );
+    renderScreen('guest consent');
+    await userEvent.click(
+      await screen.findByRole('button', { name: CATALOGUES.ar.legal.informationTitle })
+    );
+    const wording = within(screen.getByRole('dialog'))
+      .getByText('Source wording mode2Consent')
+      .closest('[lang]');
+    expect(wording).toHaveAttribute('lang', locale);
+    expect(wording).toHaveAttribute('dir', direction);
+  }
+);
+
 function renderScreen(kind: string) {
   const admin = kind === 'staff conversation';
   const route = kind === 'guest consent' ? '/s/A1B2C3D4/info/ar' : '/s/A1B2C3D4/live';
