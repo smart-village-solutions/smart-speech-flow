@@ -51,9 +51,7 @@ async def _sweep_transcripts(session_manager: Any) -> bool:
     content: dict[str, int] = await session_manager.sweep_expired_content(utc_now())
     print(
         "🧹 Content-Sweep abgeschlossen: "
-        f"{content['refused_removed']} abgelehnt, "
-        f"{content['expired_removed']} abgelaufen, "
-        f"{content['failed']} fehlgeschlagen"
+        f"{content['removed']} entfernt, {content['failed']} fehlgeschlagen"
     )
     return content["failed"] == 0
 
@@ -75,7 +73,7 @@ async def _step(name: str, run: Callable[[], Awaitable[bool]]) -> bool:
 
 
 async def run_retention_pass(session_manager: Any, audio_store: "AudioStore") -> None:
-    """Delete expired audio and transcripts, then record what the audio volume holds.
+    """Delete expired audio and transcripts, then record what the audio store holds.
 
     Each step runs whatever the others did, so a broken session store cannot
     blind the disk gauges. The pass counts as completed only when all three

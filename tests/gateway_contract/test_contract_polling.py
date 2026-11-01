@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A, TENANT_B
+from tests.gateway_contract.contract_support import TENANT_A, TENANT_B
 from tests.guest_access import ensure_guest
 
 
@@ -79,7 +79,8 @@ def test_each_role_may_hold_at_most_ten_pollers_per_session(client, conversation
     _activate_admin(client, conversations, session_id)
 
 
-def test_a_sent_message_reaches_the_other_role_as_an_envelope(client, conversations):
+def test_a_poller_cannot_relay_anything_to_the_other_role(client, conversations):
+    """Content travels only by HTTP messages, the path recording archives (spec §5.2)."""
     session_id = conversations.create()
     admin = _activate_admin(client, conversations, session_id)
     customer = _activate_customer(client, session_id)
@@ -87,59 +88,9 @@ def test_a_sent_message_reaches_the_other_role_as_an_envelope(client, conversati
 
     sent = client.post(f"{base}/send", json={"type": "message", "content": {"text": "hi"}})
     received = client.get(f"/api/admin/session/{session_id}/polling/{admin['polling_id']}")
-    own = client.get(base)
 
-    assert sent.status_code == 200
-    assert sent.json() == {"status": "success"}
-    assert received.json() == {
-        "messages": [
-            {
-                "type": "message",
-                "content": {"text": "hi"},
-                "session_id": session_id,
-                "client_type": "customer",
-            }
-        ],
-        "message_count": 1,
-    }
-    assert own.json() == {"messages": [], "message_count": 0}
-
-
-@pytest.mark.parametrize(
-    "body", [{"type": "", "content": {}}, {"type": "message"}, {"type": "m", "content": "x"}]
-)
-def test_send_rejects_a_malformed_envelope(client, conversations, body):
-    session_id = conversations.create()
-    customer = _activate_customer(client, session_id)
-
-    response = client.post(
-        f"/api/customer/session/{session_id}/polling/{customer['polling_id']}/send", json=body
-    )
-
-    assert response.status_code == 422
-
-
-def test_a_polled_send_reaches_a_connected_websocket(client, conversations):
-    session_id = conversations.create()
-    customer = _activate_customer(client, session_id)
-    ticket = conversations.ticket(session_id)
-
-    with client.websocket_connect(
-        f"/ws/admin/{session_id}?ticket={ticket}", headers={"Origin": ALLOWED_ORIGIN}
-    ) as socket:
-        socket.receive_json()
-        client.post(
-            f"/api/customer/session/{session_id}/polling/{customer['polling_id']}/send",
-            json={"type": "message", "content": {"text": "via polling"}},
-        )
-        frame = socket.receive_json()
-
-    assert frame == {
-        "type": "message",
-        "content": {"text": "via polling"},
-        "session_id": session_id,
-        "client_type": "customer",
-    }
+    assert sent.status_code == 404
+    assert received.json() == {"messages": [], "message_count": 0}
 
 
 def test_another_tenant_cannot_use_an_admin_poller(client, conversations, identity):
@@ -150,7 +101,6 @@ def test_another_tenant_cannot_use_an_admin_poller(client, conversations, identi
     identity.act_as(TENANT_B)
     responses = [
         client.get(base),
-        client.post(f"{base}/send", json={"type": "message", "content": {}}),
         client.post(f"{base}/recover"),
         client.delete(base),
     ]
@@ -204,7 +154,6 @@ def test_admin_poller_receives_termination_then_is_removed(client, conversations
     for refused in (
         client.get(f"{base}/status"),
         client.post(f"{base}/recover"),
-        client.post(f"{base}/send", json={"type": "message", "content": {}}),
     ):
         assert refused.status_code == 404
         assert refused.json() == {"detail": "Polling client not found"}

@@ -14,7 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from .message_models import SUPPORTED_LANGUAGES
 from .studio_content import TenantContent
-from .studio_content_service import GuestContent
+from .studio_legal import LocalizedRecordingStatus, recording_status
 from .studio_locales import GUEST_LANGUAGES
 from .studio_v2 import FeedbackForm, InstallationContent, Media
 
@@ -126,21 +126,16 @@ class GuestLanguagesResponse(_Body):
     ]
 
 
-class ContentStorage(_Body):
-    mode: Literal["ask", "disabled", "unknown"]
-
-
 class ProvidedGuestContent(_Body):
-    storage: ContentStorage
+    recording_status: LocalizedRecordingStatus | None = None
     provided: Literal[True] = True
     revision: str
     explanation_html: str
-    storage_question_html: str | None
     feedback: ContentFeedbackForm | None
 
 
 class UnprovidedGuestContent(_Body):
-    storage: ContentStorage
+    recording_status: LocalizedRecordingStatus | None = None
     provided: Literal[False] = False
 
 
@@ -176,6 +171,7 @@ class ContentStaff(_Body):
 
 
 class StaffContentResponse(_Body):
+    recording_status: LocalizedRecordingStatus | None = None
     revision: str
     time_zone: str | None
     branding: ContentBranding
@@ -235,18 +231,16 @@ def guest_languages_response(content: TenantContent | None) -> GuestLanguagesRes
 
 
 def guest_content_response(
-    guest: GuestContent, language: str
+    content: TenantContent | None, language: str
 ) -> ProvidedGuestContent | UnprovidedGuestContent:
-    storage = ContentStorage(mode=guest.mode)
-    content = guest.content
     studio = content.guest_languages.get(language) if content is not None else None
+    status = recording_status(content.legal_texts, language) if content is not None else None
     if content is None or studio is None:
-        return UnprovidedGuestContent(storage=storage)
+        return UnprovidedGuestContent(recording_status=status)
     return ProvidedGuestContent(
-        storage=storage,
+        recording_status=status,
         revision=content.revision,
         explanation_html=studio.explanation_html,
-        storage_question_html=studio.storage_question_html,
         feedback=_form(studio.feedback),
     )
 
@@ -254,6 +248,9 @@ def guest_content_response(
 def staff_content_response(content: TenantContent) -> StaffContentResponse:
     staff = content.staff
     return StaffContentResponse(
+        recording_status=recording_status(
+            content.legal_texts, staff.locale if staff is not None else "de-DE"
+        ),
         revision=content.revision,
         time_zone=content.time_zone,
         branding=ContentBranding.model_validate(content.branding.model_dump()),

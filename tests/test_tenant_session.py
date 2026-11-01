@@ -48,20 +48,26 @@ def test_a_v1_record_loads_with_its_configuration_revision(name: str) -> None:
     assert session.configuration_revision == V1_REVISION
     assert session.key == TenantSessionKey("tenant-kassel", record["id"])
     assert session.status.value == record["status"]
-    assert session.consent_status.value == record["consent_status"]
     assert session.owner_ref == record["owner_ref"]
 
 
-def test_a_v1_active_record_keeps_its_messages_and_their_decisions() -> None:
+def test_a_v1_active_record_keeps_its_messages() -> None:
     session = Session.from_dict(_v1_record("v1-active"))
 
     [message] = session.messages
     assert message.original_text == "Hello"
-    assert (
-        message.record_authorized,
-        message.original_audio_authorized,
-        message.translated_audio_authorized,
-    ) == (True, True, True)
+
+
+@pytest.mark.parametrize("name", ["v1-active", "v1-terminated"])
+def test_a_record_written_with_consent_drops_it_when_rewritten(name: str) -> None:
+    record = _v1_record(name)
+    assert "consent_status" in record
+
+    payload = Session.from_dict(record).to_dict(include_messages=True)
+
+    assert not [field for field in payload if field.startswith("consent_")]
+    for message in payload.get("messages", []):
+        assert not [field for field in message if field.endswith("_authorized")]
 
 
 def test_a_v1_record_is_rewritten_with_its_revision() -> None:
@@ -164,69 +170,29 @@ def test_a_revision_from_a_valid_read_survives_the_session_record(fixture: str) 
     assert restored.configuration_revision == read.policy.configuration_revision
 
 
-OTHER_REVISION = f"sha256:{'b' * 64}"
+def test_the_ended_message_count_survives_the_session_record() -> None:
+    session = Session(id="session-1", tenant_id="tenant-a", configuration_revision=REVISION)
+    session.ended_message_count = 3
+
+    restored = Session.from_dict(session.to_dict())
+
+    assert restored.ended_message_count == 3
+    assert restored.message_count == 3
 
 
-def test_the_captured_retention_survives_the_session_record() -> None:
-    session = Session(
-        id="session-1",
-        tenant_id="tenant-a",
-        configuration_revision=REVISION,
-        consent_retention_hours=4320,
-        consent_configuration_revision=OTHER_REVISION,
-    )
-
-    restored = Session.from_dict(session.to_dict(include_messages=True))
-
-    assert restored.consent_retention_hours == 4320
-    assert restored.consent_configuration_revision == OTHER_REVISION
-
-
-def test_a_zero_retention_survives_the_session_record() -> None:
-    session = Session(
-        id="session-1",
-        tenant_id="tenant-a",
-        configuration_revision=REVISION,
-        consent_retention_hours=0,
-    )
-
-    assert Session.from_dict(session.to_dict()).consent_retention_hours == 0
-
-
-@pytest.mark.parametrize("name", ["v1-active", "v1-terminated"])
-def test_a_record_written_before_capture_reads_no_retention(name: str) -> None:
-    session = Session.from_dict(_v1_record(name))
-
-    assert session.consent_retention_hours is None
-    assert session.consent_configuration_revision is None
-
-
-@pytest.mark.parametrize("hours", ["4320", -1, True, 1.5, [], {}, 8761, 99999999])
-def test_malformed_stored_retention_reads_as_none(hours) -> None:
+@pytest.mark.parametrize("count", ["3", -1, True, 1.5, [], {}])
+def test_a_malformed_stored_ended_message_count_reads_as_none(count) -> None:
     payload = Session(id="session-1", tenant_id="tenant-a", configuration_revision=REVISION).to_dict()
-    payload["consent_retention_hours"] = hours
+    payload["ended_message_count"] = count
 
-    assert Session.from_dict(payload).consent_retention_hours is None
-
-
-@pytest.mark.parametrize("revision", ["sha256:short", 7, "", REVISION.upper()])
-def test_a_malformed_stored_consent_revision_reads_as_none(revision) -> None:
-    payload = Session(id="session-1", tenant_id="tenant-a", configuration_revision=REVISION).to_dict()
-    payload["consent_configuration_revision"] = revision
-
-    assert Session.from_dict(payload).consent_configuration_revision is None
+    assert Session.from_dict(payload).ended_message_count is None
 
 
-def test_the_public_dict_carries_no_captured_retention() -> None:
-    session = Session(
-        id="session-1",
-        tenant_id="tenant-a",
-        configuration_revision=REVISION,
-        consent_retention_hours=4320,
-        consent_configuration_revision=REVISION,
-    )
+def test_the_public_dict_carries_the_message_count_but_not_the_ended_count() -> None:
+    session = Session(id="session-1", tenant_id="tenant-a", configuration_revision=REVISION)
+    session.ended_message_count = 4
 
     public = session.to_public_dict()
 
-    assert "consent_retention_hours" not in public
-    assert "consent_configuration_revision" not in public
+    assert public["message_count"] == 4
+    assert "ended_message_count" not in public

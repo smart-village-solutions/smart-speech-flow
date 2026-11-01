@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Pracownik chciałby nagrać tę rozmowę. Od teraz każda wiadomość byłaby przechowywana w postaci zaszyfrowanej, dopóki Pan/Pani lub pracownik nie zatrzyma nagrywania. Można je zatrzymać w każdej chwili.</p><p>Nagranie mogą otworzyć wyłącznie upoważnione osoby. Zostaje ono usunięte po upływie okresu przechowywania.</p><p>Zgoda jest dobrowolna. W przypadku odmowy rozmowa będzie kontynuowana bez nagrywania. Wiadomości już zapisane pozostają zapisane także po zatrzymaniu.</p>",
+    "resume": "<p>Nagrywanie zostało zatrzymane. Czy może być kontynuowane od teraz? Można je ponownie zatrzymać w każdej chwili.</p>"
+  },
+  "statutory": {
+    "first": "<p>Pracownik chciałby nagrać tę rozmowę. Od teraz każda wiadomość byłaby przechowywana w postaci zaszyfrowanej, dopóki Pan/Pani lub pracownik nie zatrzyma nagrywania. Można je zatrzymać w każdej chwili.</p><p>Nagrywanie odbywa się na podstawie przepisów prawa. Nagranie mogą otworzyć wyłącznie upoważnione osoby. Zostaje ono usunięte po upływie okresu przechowywania.</p><p>Prosimy o potwierdzenie, że otrzymano te informacje i że nagrywanie może się rozpocząć.</p>",
+    "resume": "<p>Nagrywanie zostało zatrzymane. Od teraz ma być kontynuowane na tej samej podstawie prawnej. Można je ponownie zatrzymać w każdej chwili.</p>"
+  }
+}

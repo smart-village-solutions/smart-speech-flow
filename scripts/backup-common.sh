@@ -113,35 +113,6 @@ backup_loki_full() {
     fi
 }
 
-# Backup Redis data
-backup_redis() {
-    log_info "Backing up Redis..."
-    local backup_dir=$1
-
-    # Trigger Redis BGSAVE
-    docker compose -f "${PROJECT_ROOT}/docker-compose.yml" exec -T redis \
-        redis-cli BGSAVE > /dev/null 2>&1 || true
-
-    sleep 2  # Wait for BGSAVE to complete
-
-    # Copy dump.rdb if it exists
-    docker compose -f "${PROJECT_ROOT}/docker-compose.yml" exec -T redis \
-        cat /data/dump.rdb > "${backup_dir}/redis-dump.rdb" 2>/dev/null || \
-        log_warn "Redis dump not available"
-}
-
-# Backup audio files
-backup_audio_files() {
-    log_info "Backing up audio files..."
-    local backup_dir=$1
-
-    if [ -d "${PROJECT_ROOT}/data/audio" ]; then
-        tar czf "${backup_dir}/audio-files.tar.gz" \
-            -C "${PROJECT_ROOT}/data" audio/
-        log_info "Audio files backed up"
-    fi
-}
-
 # Backup configuration files
 backup_configs() {
     log_info "Backing up configuration files..."
@@ -231,8 +202,6 @@ backup_complete_system() {
     backup_grafana "$backup_dir"
     backup_prometheus_full "$backup_dir"
     backup_loki_full "$backup_dir"
-    backup_redis "$backup_dir"
-    backup_audio_files "$backup_dir"
     backup_configs "$backup_dir"
     backup_docker_volumes "$backup_dir"
     backup_git_state "$backup_dir"

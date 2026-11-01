@@ -1,3 +1,12 @@
+# Updated on 2026-10-30: api_gateway, asr, translation, tts and frontend
+# built from production-compatible source 2acde0bd to remove Tigrinya and
+# Kurdish. Verified full platform health, language rejection, real ASR,
+# translation, and German/Amharic TTS. Frontend uses a clean archive export.
+# Updated on 2026-10-18: frontend built from 59bf4f0 to hide Albanian
+# from the guest language picker. Backend language support is unchanged.
+# Updated on 2026-10-18: api_gateway, asr, tts and frontend built from
+# merged main e774c86 (#585: 22 languages and refinement fact guard).
+# Earlier image history follows.
 # Updated on 2026-10-15 for frontend, built on the host from merged main
 # 257fbb1 (#583 load light ignores resident GPU memory; with
 # api.dialog.kassel.de); on 2026-10-13 for frontend, built on the host from
@@ -15,11 +24,11 @@
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:b8a56fed9b7c2090db226ab15e1a1f3e93256b6b6682903915bb7d2bb38cd834	ssf-backend-api_gateway:prod-6b64b8d
-asr	sha256:a87eebfbbdba2328736002b2bf6d88783246545e270d5d572198cc2a302a7b08	ssf-backend-asr:prod-42b69b7
-translation	sha256:da56f999edd1d42dc65eb7bd73b7bee7c98c8060e9cdfca5ee4f542a640dbff1	ssf-backend-translation:prod-42b69b7
-tts	sha256:ff1d15b4f48a81ce6d1ae8f4ca7d1a76e46e214c80c406bafefe7ab1900be5e5	ssf-backend-tts:prod-e2a4e45
-frontend	sha256:868950c3050e78a271f222406ae8fac81c89a4456f79fe4fe9e64c7717ad1a23	ssf-backend-frontend:prod-257fbb1
+api_gateway	sha256:e1a58683af17bbd45baf13ce049c6332f38e1306a6438c850df20cabbdab8dec	ssf-backend-api_gateway:prod-2acde0bd
+asr	sha256:1765aa6bbbbf1c4d94f95d354a1e25788e385652401585543e56d38092b6f07c	ssf-backend-asr:prod-2acde0bd
+translation	sha256:928bfcde85dd612fd32cdf620ba63604346e1eef27ae630a46045e22c0e36a91	ssf-backend-translation:prod-2acde0bd
+tts	sha256:7411dc37013ea329d5da82299cd149ecc30fd10a0017a09bf4abaec69e2f65e1	ssf-backend-tts:prod-2acde0bd
+frontend	sha256:0b9df3d1164711c34c3f35483e0fb38a9b4dac1a621fb82c21d2ca9fca944e99	ssf-backend-frontend:prod-2acde0bd-clean
 keycloak	sha256:fee0a19bf7c023f77a9d1e6e191d9f7fd7aaa508e081afb9bc8f73075eb56513	ssf-keycloak:prod-e2a4e45
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a

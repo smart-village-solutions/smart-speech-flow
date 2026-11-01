@@ -46,6 +46,7 @@ from ..session_lifecycle import (
     SessionNotFoundError,
     SessionTerminatedError,
     TenantConflictError,
+    UnsupportedLanguageError,
 )
 from ..session_manager import TenantSessionManager
 from ..session_models import ClientType, SessionStatus
@@ -83,13 +84,6 @@ class ActivateSessionRequest(BaseModel):
     session_id: str = Field(..., description="Session ID to activate")
     customer_language: str = Field(
         ..., description="Customer's preferred language code (e.g. 'en', 'de', 'ar')"
-    )
-    data_retention_consent: Optional[bool] = Field(
-        None,
-        description=(
-            "The guest's answer to the conversation-content storage question. "
-            "Absent is not an answer and does not grant consent."
-        ),
     )
 
     class Config:
@@ -240,7 +234,6 @@ async def activate_session(
         activation = await lifecycle.activate(
             key,
             request.customer_language,
-            request.data_retention_consent,
             runtime_flow,
             lambda: correlation_id_from_request(http_request),
             guest_token=guest_token,
@@ -276,6 +269,8 @@ async def activate_session(
         raise HTTPException(status_code=409, detail=conflict.code) from None
     except GuestConflictError:
         raise guest_conflict() from None
+    except UnsupportedLanguageError:
+        raise HTTPException(status_code=400, detail="UNSUPPORTED_LANGUAGE") from None
 
 
 @router.get(

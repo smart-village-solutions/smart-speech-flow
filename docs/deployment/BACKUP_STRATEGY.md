@@ -24,13 +24,35 @@
 - Grafana database & dashboards
 - Prometheus data (metrics)
 - Loki logs
-- Redis data
 - Configuration files (.env, docker-compose.yml)
 
-### 2. Application State (Daily)
-- Audio files (original + translated)
-- Session metadata
-- Circuit breaker states
+Redis and delivery audio are deliberately not backed up: outside a recording a
+conversation leaves nothing behind, so Redis keeps nothing on disk and audio
+lives on a tmpfs (#615). Recorded conversations are archived, encrypted, in
+the recording archive, whose database dump and replica are separate.
+
+### 2. Recording Database (Daily, 14 days)
+
+`ssf_recording` holds the key wraps that make each recorded conversation
+readable. Expiry deletes them on the retention date, so no backup may keep
+them much longer: `scripts/backup-recording.sh` dumps the database daily into
+`backups/recording/`, and every run first deletes each dump there older than
+14 days, whether or not its own dump succeeds. It is never part of the daily,
+weekly or monthly tiers. Dumps taken before a migration and copies staged for a
+restore go into the same directory, so the same rule removes them.
+
+```cron
+15 2 * * * /root/projects/ssf-backend/scripts/backup-recording.sh >> /var/log/ssf-backup-recording.log 2>&1
+```
+
+- **Restore** with the procedure in
+  `docs/operations/runbooks/recording-retention-deployment.md`, "After
+  restoring `ssf_recording`": the retention workers hold destructive steps back
+  until the erasures and decisions made since the dump are repeated.
+- **Backups stay on the host.** Losing the host loses every key wrap, and with
+  it every recorded conversation; this risk was accepted on 2026-10-28.
+- The archive's ciphertext has its own copy, the off-site replica
+  (`archive-storage-deployment.md`).
 
 ### 3. ClickHouse Analytics Data (Before Upgrade and Schema Changes)
 - Logical, compressed exports of approved analytics tables only
@@ -69,8 +91,6 @@
 - Grafana database (SQLite)
 - Prometheus TSDB (last 24h)
 - Loki chunks (last 24h)
-- Redis dump
-- Audio files (if retention > 24h)
 - Configuration files
 
 ### Weekly Backups (Sunday 01:00 UTC)
@@ -152,8 +172,6 @@ RETENTION_DAYS=7
 backup_grafana
 backup_prometheus_recent
 backup_loki_recent
-backup_redis
-backup_audio_files
 backup_configs
 cleanup_old_backups "$BACKUP_TYPE" "$RETENTION_DAYS"
 ```

@@ -1,4 +1,5 @@
-"""Contract tests for the Studio mock: runtime configuration v2, installation content, login directory."""
+"""Contract tests for the Studio mock: runtime configuration v2, installation content, login
+directory and recording directory."""
 
 import hashlib
 import json
@@ -376,3 +377,43 @@ def test_openapi_documents_the_v2_endpoints() -> None:
         "malformed_request",
         "installation_content_unavailable",
     }
+
+
+RECORDING_DIRECTORY_PATH = "/internal/plugins/ssf/v2/recording-directory"
+
+
+def test_the_recording_directory_serves_its_fixture_with_a_revision() -> None:
+    response = CLIENT.get(RECORDING_DIRECTORY_PATH, headers=_headers())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == contract_fixtures.recording_directory("tenant-kassel")
+    revision = body.pop("directoryRevision")
+    expected = hashlib.sha256(
+        json.dumps(body, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    assert revision == f"sha256:{expected}"
+
+
+def test_the_recording_directory_requires_the_tenant_and_correlation_headers() -> None:
+    no_tenant = CLIENT.get(
+        RECORDING_DIRECTORY_PATH,
+        headers={"Authorization": AUTHORIZED_TOKEN, "X-Correlation-Id": "c"},
+    )
+    no_correlation = CLIENT.get(
+        RECORDING_DIRECTORY_PATH,
+        headers={"Authorization": AUTHORIZED_TOKEN, "X-Studio-Tenant-Id": "tenant-kassel"},
+    )
+
+    assert no_tenant.status_code == 404
+    assert no_correlation.status_code == 404
+
+
+def test_openapi_documents_the_recording_directory() -> None:
+    operation = CLIENT.get("/openapi.json").json()["paths"][RECORDING_DIRECTORY_PATH]["get"]
+    required = {
+        p["name"] for p in operation["parameters"] if p["in"] == "header" and p.get("required")
+    }
+
+    assert required == {"authorization", "x-studio-tenant-id", "x-correlation-id"}
+    assert "recording_directory_unavailable" in operation["x-error-codes"]

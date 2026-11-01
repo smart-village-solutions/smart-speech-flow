@@ -41,6 +41,67 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/feedback/wiring.py", "feedback_connect_task"): ["boundary"],
     # the maintenance loop survives any one pass
     ("services/api_gateway/feedback/wiring.py", "feedback_maintenance_task"): ["boundary"],
+    # recording stays off (503) and is retried: pool creation, then key registration
+    ("services/api_gateway/recording/wiring.py", "connect_recording"): ["fallback", "fallback"],
+    # the recording connect loop survives any one attempt
+    ("services/api_gateway/recording/wiring.py", "recording_connect_task"): ["boundary"],
+    # a failed recording greeting must not strand the socket it greets
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.greet"): ["boundary"],
+    # the recording tick loop survives any one pass
+    ("services/api_gateway/recording/wiring.py", "recording_tick_task"): ["boundary"],
+    # a policy read that fails refuses recording (fail closed)
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.check_available"): [
+        "fallback"
+    ],
+    # a session list that cannot be read ends no conversation
+    ("services/api_gateway/recording/archive_service.py", "ConversationArchive.end_orphaned"): [
+        "fallback"
+    ],
+    # a failed policy read or storage probe keeps its pause in place
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._recheck"): [
+        "fallback"
+    ],
+    # one conversation's failure must not stall the others' liveness checks
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._tick_guarded"): [
+        "boundary"
+    ],
+    # a failed audit write is logged; the transition it records already happened
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._record"): [
+        "fallback"
+    ],
+    # a failed policy read at a message's acceptance pauses recording (fail closed)
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._policy_allows"): [
+        "fallback"
+    ],
+    # an archive fault pauses recording; the message is delivered unstored
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.archive"): [
+        "fallback"
+    ],
+    # a voice that cannot read the consent text aloud costs the guest the button
+    ("services/api_gateway/recording/consent_voice.py", "ConsentVoice._synthesise"): ["fallback"],
+    # a playback report that cannot be archived pauses recording; the screen gets no error
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.playback"): [
+        "fallback"
+    ],
+    # a recording fault never costs a message: it goes unstored and is delivered
+    ("services/api_gateway/recording/message_archive.py", "accept_message"): ["fallback"],
+    ("services/api_gateway/recording/message_archive.py", "archive_message"): ["fallback"],
+    # a write that may have landed drops the cached chain head, then re-raises
+    ("services/api_gateway/recording/archive_service.py", "ConversationArchive._commit"): [
+        "bookkeeping-reraise"
+    ],
+    # one authority's malformed answer defers its stamp and never stops the others'
+    ("services/api_gateway/recording/archive_service.py", "ChainStamper._stamp"): ["fallback"],
+    # the stamping loop survives any one pass
+    ("services/api_gateway/recording/wiring.py", "recording_stamp_task"): ["boundary"],
+    # the retention status loop survives any one read; the gauges keep their last values
+    ("services/api_gateway/recording/wiring.py", "recording_retention_status_task"): ["boundary"],
+    # the retention worker's loop survives any one pass; the next one retries it
+    ("services/api_gateway/recording/retention/worker.py", "RetentionWorker.run_forever"): [
+        "boundary"
+    ],
+    # the recorder's callback failed: the item stays in the spool and is retried
+    ("services/api_gateway/recording/storage/spool.py", "ArchiveUploader.flush"): ["boundary"],
     # a daemon-thread target hands its failure back to the loop
     ("services/api_gateway/app.py", "_shutdown_quality_telemetry.run"): ["boundary"],
     # telemetry off rather than no gateway
@@ -88,11 +149,16 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/message_requests.py", "_store_audio_artifacts"): ["fallback"],
     # records the telemetry failure and session, then re-raises
     ("services/api_gateway/message_processing.py", "send_unified_message"): ["bookkeeping-reraise"],
-    # a stored message is not failed by its broadcast or its authorization write-back
-    ("services/api_gateway/message_delivery.py", "create_session_message"): [
-        "boundary",
-        "fallback",
+    # telemetry marking never decides whether a session ends
+    ("services/api_gateway/session_manager.py", "TenantSessionManager._note_recording"): [
+        "fallback"
     ],
+    # recording's end never undoes a committed termination
+    ("services/api_gateway/session_manager.py", "TenantSessionManager._end_recording"): [
+        "fallback"
+    ],
+    # a stored message is not failed by its broadcast
+    ("services/api_gateway/message_delivery.py", "create_session_message"): ["boundary"],
     # no reply audio rather than a failed message
     ("services/api_gateway/message_requests.py", "_store_translated_audio"): ["fallback"],
     # telemetry must never reach the caller
@@ -132,8 +198,6 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/realtime_heartbeat.py", "Heartbeat.monitor_loop"): ["boundary"],
     # one dead socket is released, the rest still pinged
     ("services/api_gateway/realtime_heartbeat.py", "Heartbeat.send_pings"): ["boundary"],
-    # fail closed: refuse the write, never raise
-    ("services/api_gateway/runtime_policy.py", "RuntimePolicyGate._decide"): ["fallback"],
     # one failed pass must not end polling
     ("services/api_gateway/service_health.py", "ServiceHealthManager._health_check_loop"): [
         "boundary"

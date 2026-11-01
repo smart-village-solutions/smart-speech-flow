@@ -167,19 +167,12 @@ describe('toPublicContent', () => {
 });
 
 describe('toGuestLanguages', () => {
-  it('keeps the nine guest languages in order, provided ones with name and icon', () => {
+  it('keeps the guest languages in order, provided ones with name and icon', () => {
     const languages = toGuestLanguages(guestLanguagesBody);
 
     expect(languages.map((language) => language.code)).toEqual([
-      'en',
-      'ar',
-      'tr',
-      'ru',
-      'uk',
-      'am',
-      'ti',
-      'ku',
-      'fa',
+      ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'fa'],
+      ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
     ]);
     expect(languages[0]).toEqual({
       code: 'en',
@@ -219,32 +212,26 @@ describe('toGuestContent', () => {
   it('maps content Studio provides', () => {
     const content = toGuestContent(guestContentBody('en'));
 
-    expect(content.storage.mode).toBe('ask');
-    expect(content.provided && content.storageQuestionHtml).toContain('180 days');
+    expect(content.provided && content.explanationHtml).toContain('KasselDIALOG');
     expect(content.provided && content.feedback?.button).toBe('Send feedback');
   });
 
-  it('maps content Studio does not provide to exactly its mode', () => {
-    expect(toGuestContent(guestContentBody('ar'))).toEqual({
-      storage: { mode: 'ask' },
-      provided: false,
-    });
+  it('maps content Studio does not provide', () => {
+    expect(toGuestContent(guestContentBody('ar'))).toEqual({ provided: false });
   });
 
-  it('keeps a disabled mode without a storage question', () => {
+  it('drops the storage fields an earlier gateway still sends', () => {
     const content = toGuestContent({
       ...guestContentBody('en'),
-      storage: { mode: 'disabled' },
-      storageQuestionHtml: null,
+      storage: { mode: 'ask' },
+      storageQuestionHtml: '<p>Keep it?</p>',
     });
 
-    expect(content).toMatchObject({ storage: { mode: 'disabled' }, storageQuestionHtml: null });
-  });
-
-  it('reads a mode it does not know as unknown', () => {
-    expect(toGuestContent({ storage: { mode: 'always' }, provided: false }).storage.mode).toBe(
-      'unknown'
-    );
+    expect(content).not.toHaveProperty('storage');
+    expect(content).not.toHaveProperty('storageQuestionHtml');
+    expect(toGuestContent({ provided: false, storage: { mode: 'ask' } })).toEqual({
+      provided: false,
+    });
   });
 });
 
@@ -284,5 +271,31 @@ describe('toStaffContent', () => {
     expect(
       toStaffContent({ ...staffContentBody, timeZone: 'Mars/Olympus_Mons' }).timeZone
     ).toBeNull();
+  });
+});
+
+describe('recording display content', () => {
+  const recordingStatus = {
+    locale: 'de',
+    waiting: 'Waiting',
+    running: 'Running',
+    stopped: 'Stopped',
+    renewedReleaseRequired: 'Release again',
+  };
+  it('keeps independently resolved legal status for an unprovided guest language', () => {
+    expect(toGuestContent({ provided: false, recordingStatus })).toEqual({
+      provided: false,
+      recordingStatus,
+    });
+    expect(toStaffContent({ ...staffContentBody, recordingStatus })).toHaveProperty(
+      'recordingStatus',
+      recordingStatus
+    );
+  });
+  it('withdraws malformed optional status without withdrawing other content', () => {
+    expect(toGuestContent({ provided: false, recordingStatus: { locale: 7 } })).toEqual({
+      provided: false,
+      recordingStatus: null,
+    });
   });
 });

@@ -100,6 +100,24 @@ describe('toAppError', () => {
     expect(result.kind).toBe('server');
   });
 
+  it('keeps the code a 5xx carries, for callers that act on it', () => {
+    const result = toAppError(
+      axiosErrorWithStatus(503, { detail: { error_code: 'ARCHIVE_WRITE_FAILED' } })
+    );
+    expect(result.serverCode).toBe('ARCHIVE_WRITE_FAILED');
+    expect(result.kind).toBe('server');
+  });
+
+  it('reads the code of an error body that arrived as bytes', () => {
+    const body = new TextEncoder().encode(
+      JSON.stringify({ detail: { error_code: 'OBJECT_NOT_STORED' } })
+    );
+    expect(toAppError(axiosErrorWithStatus(404, body.buffer)).serverCode).toBe('OBJECT_NOT_STORED');
+    expect(
+      toAppError(axiosErrorWithStatus(404, new Uint8Array([0xff]).buffer)).serverCode
+    ).toBeUndefined();
+  });
+
   it('maps a response-less axios error to network', () => {
     const error = new AxiosError('offline', 'ERR_NETWORK');
     expect(toAppError(error).kind).toBe('network');

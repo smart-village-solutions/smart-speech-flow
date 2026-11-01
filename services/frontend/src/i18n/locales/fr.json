@@ -1,0 +1,144 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Retour",
+    "home": "Accueil",
+    "feedback": "Avis",
+    "theme": "Changer de thème"
+  },
+  "accessCode": {
+    "title": "Saisissez le code",
+    "continue": "Continuer",
+    "digitLabel": "Caractère {{position}}",
+    "notFound": "Ce code ne correspond à aucune session ouverte.",
+    "sessionHasGuest": "Cette conversation a déjà un invité."
+  },
+  "language": {
+    "title": "Choisissez votre langue",
+    "loadFailed": "La liste des langues n'a pas pu être chargée.",
+    "retry": "Réessayer"
+  },
+  "consent": {
+    "intro": "$t(app.name) est un service automatique de traduction en temps réel, conçu pour faciliter les conversations entre des personnes qui parlent des langues différentes. Le service fonctionne exclusivement sur un serveur privé dédié.",
+    "howTo": "Pour lancer l'enregistrement, appuyez sur le bouton du microphone. Vous disposez alors de 20 secondes pour parler. Vous pouvez aussi arrêter l'enregistrement plus tôt en appuyant à nouveau. Vous pouvez également utiliser la saisie de texte.",
+    "retention": "Par défaut, les données audio et de transcription ne sont traitées que pendant la session active et ne sont pas conservées ensuite. À la fin de la conversation, les données sont supprimées automatiquement. Vous pouvez à tout moment signaler un problème ou proposer des améliorations grâce à la fonction d'avis de l'application.",
+    "getStarted": "Commencer",
+    "loading": "Chargement des informations"
+  },
+  "conversation": {
+    "record": "Enregistrer",
+    "sendRecording": "Envoyer l'enregistrement",
+    "openKeyboard": "Ouvrir le clavier",
+    "sendText": "Envoyer le texte",
+    "placeholder": "Saisissez votre message…",
+    "play": "Lire",
+    "pause": "Pause",
+    "sendFailed": "Ce message n'a pas pu être envoyé.",
+    "notSent": "Non envoyé",
+    "retry": "Réessayer",
+    "micDenied": "L'accès au microphone a été refusé. Vous pouvez saisir votre message à la place.",
+    "reconnecting": "Reconnexion…",
+    "ended": "Cette conversation est terminée.",
+    "timeoutWarning": "Cette conversation se terminera à {{time}}."
+  },
+  "recording": {
+    "label": "Enregistrement",
+    "starting": "Démarrage de l'enregistrement…",
+    "paused": "Enregistrement en pause",
+    "stop": "Arrêter l'enregistrement",
+    "error": "L'enregistrement n'a pas pu être modifié. Veuillez réessayer.",
+    "reason": {
+      "liveness": "connexion interrompue",
+      "unacknowledged": "en attente des deux écrans",
+      "storage": "stockage indisponible",
+      "policy": "non autorisé pour le moment"
+    },
+    "ask": {
+      "title": "Cette conversation peut-elle être enregistrée ?",
+      "resumeTitle": "Reprendre l'enregistrement ?",
+      "yes": "Oui, enregistrer",
+      "no": "Non"
+    },
+    "consent": {
+      "readAloud": "Lire à voix haute",
+      "stopReading": "Arrêter la lecture",
+      "loading": "Chargement du texte…",
+      "unavailable": "Le texte ne peut pas être chargé pour le moment. Veuillez vous adresser à votre interlocuteur.",
+      "name": "Votre nom",
+      "nameProposed": "Saisi par votre interlocuteur. Veuillez le vérifier.",
+      "signature": "Votre signature",
+      "optional": "facultatif",
+      "clear": "Effacer",
+      "cannotSign": "Je ne peux pas signer et je confirme d'un toucher.",
+      "nameRequired": "Veuillez saisir votre nom.",
+      "signatureRequired": "Veuillez signer ou confirmer que vous ne pouvez pas signer.",
+      "textChanged": "Le texte a changé. Veuillez le relire avant de répondre.",
+      "originalLanguage": "Langue d’origine : {{language}}",
+      "documentationRequired": "Veuillez confirmer séparément le consentement à la documentation.",
+      "staffReleaseChanged": "Le texte d’autorisation de l’agent a changé. Demandez à l’agent de retirer cette demande et d’en envoyer une nouvelle."
+    }
+  },
+  "feedback": {
+    "title": "Donnez votre avis",
+    "close": "Fermer",
+    "quality": {
+      "label": "Qualité de la traduction",
+      "question": "Les traductions étaient-elles précises ?"
+    },
+    "performance": {
+      "label": "Performances",
+      "question": "L'application vous a-t-elle semblé rapide et réactive ?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "L'interface était-elle facile et agréable à utiliser ?"
+    },
+    "nps": {
+      "label": "Recommandation",
+      "question": "Quelle est la probabilité que vous recommandiez $t(app.name) à un collègue ?",
+      "low": "Pas du tout probable",
+      "high": "Extrêmement probable",
+      "option": "Note {{score}}"
+    },
+    "improvements": {
+      "label": "Idées d'amélioration",
+      "question": "Qu'est-ce qui rendrait $t(app.name) encore meilleur ?",
+      "placeholder": "Vos idées, suggestions de fonctionnalités ou tout ce qui vous a gêné…"
+    },
+    "notice": {
+      "purpose": "Vos réponses servent uniquement à améliorer $t(app.name).",
+      "retention": "Nous conservons les avis pendant douze mois, puis nous les supprimons automatiquement.",
+      "withdrawal": "Vous pouvez faire retirer votre avis à tout moment : il suffit de le demander à un membre du personnel."
+    },
+    "stars": "{{count}} étoiles",
+    "required": "Obligatoire",
+    "submit": "Envoyer l'avis",
+    "submitting": "Envoi…",
+    "retry": "Renvoyer",
+    "failed": "Votre avis n'a pas pu être envoyé. Vos réponses ont été conservées.",
+    "formChanged": "Le formulaire a été modifié entre-temps. Chargez le nouveau formulaire ; les réponses qui correspondent encore sont conservées.",
+    "reload": "Charger le nouveau formulaire",
+    "loading": "Chargement du formulaire d'avis",
+    "thanksTitle": "Merci !",
+    "thanksBody": "Votre avis nous aide à améliorer $t(app.name) pour tous."
+  },
+  "errors": {
+    "network": "Pas de connexion au serveur.",
+    "timeout": "Le délai a été dépassé. Veuillez réessayer.",
+    "notFound": "Introuvable.",
+    "validation": "Cette demande n'a pas pu être traitée.",
+    "server": "Une erreur s'est produite de notre côté.",
+    "noSpeech": "Rien n'a été reconnu. Veuillez réessayer.",
+    "unknown": "Une erreur s'est produite.",
+    "languageChanged": "La langue de la conversation a changé. Veuillez renvoyer votre message."
+  },
+  "legal": {
+    "label": "Informations légales",
+    "imprint": "Mentions légales",
+    "privacyPolicy": "Confidentialité",
+    "accessibilityStatement": "Accessibilité",
+    "opensInNewTab": "(s'ouvre dans un nouvel onglet)"
+  }
+}

@@ -13,10 +13,12 @@ from requests import Response, exceptions
 
 from .quality_telemetry import classify_exception, classify_upstream_status
 from .quality_telemetry_schema import QualityErrorCode, RefinementOutcomeCode, RefinerRole
+from .telemetry_languages import reported_languages
+from .translation_facts import refinement_changes_facts
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SKIP_TARGET_LANGUAGES = "am,ti,ku,fa"
+DEFAULT_SKIP_TARGET_LANGUAGES = "am,fa,pl,bg,el,sq,hi"
 
 
 def _normalized_language(code: str) -> str:
@@ -27,9 +29,12 @@ def _skip_target_languages() -> frozenset[str]:
     """Target languages the refiner leaves untouched.
 
     The default is the four supported languages Phi-4-mini's model card does
-    not cover, which keeps behaviour identical to the model-name check this
-    replaces. Which languages get refined is a product decision, so it belongs
-    in configuration rather than in a check on the model's name.
+    not cover, plus five of the twelve added in October 2026: measured on
+    production, Qwen3.5-4B made Polish, Bulgarian, Greek, Albanian and Hindi
+    worse about as often as better (invented words, wrong cases), while it
+    fixed Chinese amounts M2M100 read as whole numbers. Which languages get
+    refined is a product decision, so it belongs in configuration rather than
+    in a check on the model's name.
     """
     raw = os.getenv("LLM_REFINEMENT_SKIP_TARGET_LANGUAGES", DEFAULT_SKIP_TARGET_LANGUAGES)
     return frozenset(_normalized_language(code) for code in raw.split(",") if code.strip())
@@ -192,6 +197,7 @@ class RefinementOutcome:
     candidate_model: Optional[str] = None
     candidate_status: Optional[str] = None
     skipped_reason: Optional[str] = None
+    rejected_reason: Optional[str] = None
 
 
 class BaseTranslationRefiner:
@@ -276,6 +282,8 @@ class BaseTranslationRefiner:
     ) -> None:
         if outcome.skipped_reason:
             code = RefinementOutcomeCode.SKIPPED_LANGUAGE
+        elif outcome.rejected_reason:
+            code = RefinementOutcomeCode.REJECTED_FACTS
         elif outcome.error:
             code = RefinementOutcomeCode.ERROR
         else:
@@ -402,12 +410,13 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         is empty exactly where it matters.
         """
         outcome = self._perform_refinement(text, source_lang, target_lang, context)
+        source, target = reported_languages(source_lang, target_lang, context)
         self._emit_outcome(
             outcome,
             role=RefinerRole.PRIMARY,
             model_ref=self.model,
-            source_lang=source_lang,
-            target_lang=target_lang,
+            source_lang=source,
+            target_lang=target,
         )
         return outcome
 
@@ -456,6 +465,25 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                         error_code=QualityErrorCode.UPSTREAM_MALFORMED_RESPONSE,
                         raw_response=data,
                         model=self.model,
+                    )
+
+                original = context.get("original_text") if context else None
+                if original and refinement_changes_facts(
+                    original, source_lang, text, refined, target_lang
+                ):
+                    logger.warning(
+                        "Refinement %s->%s changed a number or weekday; keeping the translation",
+                        source_lang,
+                        target_lang,
+                    )
+                    return RefinementOutcome(
+                        text=text,
+                        changed=False,
+                        latency_ms=elapsed_ms,
+                        error=None,
+                        raw_response=data,
+                        model=self.model,
+                        rejected_reason="facts_changed",
                     )
 
                 changed = refined != text
@@ -585,7 +613,8 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
         way round by the two pipelines."""
         source = kwargs.get("source_lang") or (args[1] if len(args) > 1 else "")
         target = kwargs.get("target_lang") or (args[2] if len(args) > 2 else "")
-        return str(source), str(target)
+        context = kwargs.get("context") or (args[3] if len(args) > 3 else None)
+        return reported_languages(str(source), str(target), context)
 
     def _run_candidate(self, *args: Any, **kwargs: Any) -> None:
         try:

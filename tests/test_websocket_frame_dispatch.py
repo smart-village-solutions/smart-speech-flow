@@ -31,7 +31,8 @@ def manager(monkeypatch) -> WebSocketManager:
         AsyncMock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE)),
     )
     monkeypatch.setattr(manager.heartbeat, "handle_pong", AsyncMock())
-    monkeypatch.setattr(manager, "_handle_client_message", AsyncMock())
+    monkeypatch.setattr(manager, "_handle_recording_ack", AsyncMock())
+    monkeypatch.setattr(manager, "_handle_recording_pong", AsyncMock())
     monkeypatch.setattr(manager, "_handle_typing_indicator", AsyncMock())
     for name in (
         "handle_tab_visibility_change",
@@ -46,7 +47,8 @@ def manager(monkeypatch) -> WebSocketManager:
 def _handlers(manager: WebSocketManager) -> dict[str, AsyncMock]:
     return {
         "pong": manager.heartbeat.handle_pong,
-        "message": manager._handle_client_message,
+        "recording_ack": manager._handle_recording_ack,
+        "recording_pong": manager._handle_recording_pong,
         "typing": manager._handle_typing_indicator,
         "tab": manager.client_status.handle_tab_visibility_change,
         "battery": manager.client_status.handle_battery_status_update,
@@ -59,7 +61,8 @@ def _handlers(manager: WebSocketManager) -> dict[str, AsyncMock]:
     ("frame_type", "handler", "with_connection_id"),
     [
         (MessageType.HEARTBEAT_PONG, "pong", True),
-        (MessageType.MESSAGE, "message", False),
+        (MessageType.RECORDING_STATE_ACK, "recording_ack", False),
+        (MessageType.RECORDING_PONG, "recording_pong", False),
         (MessageType.TYPING_INDICATOR, "typing", False),
         (MessageType.TAB_VISIBILITY_CHANGE, "tab", False),
         (MessageType.BATTERY_STATUS_UPDATE, "battery", False),
@@ -84,7 +87,8 @@ async def test_each_frame_type_reaches_only_its_handler(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("frame_type", ["no_such_type", None, ["a", "list"], {"a": 1}])
+# "message" was the client relay; content now travels only by HTTP (spec §5.2).
+@pytest.mark.parametrize("frame_type", ["no_such_type", "message", None, ["a", "list"], {"a": 1}])
 async def test_an_unknown_or_malformed_type_is_logged_and_reaches_no_handler(
     manager, caplog, frame_type
 ):

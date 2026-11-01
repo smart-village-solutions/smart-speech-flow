@@ -1,0 +1,9 @@
+# Copy to /etc/ssf-archive/seaweedfs/security.toml on each VM, with that VM's
+# own keys: `openssl rand -hex 32` for each. With these set, the filer and the
+# volume servers refuse unsigned writes, so nothing below the S3 API can remove
+# a locked version.
+[jwt.signing]
+key = ""
+
+[jwt.filer_signing]
+key = ""

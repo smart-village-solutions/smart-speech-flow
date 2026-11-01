@@ -92,15 +92,25 @@ const guestLanguages = z.object({
   ),
 });
 
-const storage = z.object({ mode: z.enum(['ask', 'disabled', 'unknown']).catch('unknown') });
+const recordingStatus = z
+  .object({
+    locale: z.string().min(1),
+    waiting: z.string(),
+    running: z.string(),
+    stopped: z.string(),
+    renewedReleaseRequired: z.string(),
+  })
+  .nullable()
+  .optional()
+  .catch(null);
+
 const guestContent = z.discriminatedUnion('provided', [
-  z.object({ storage, provided: z.literal(false) }),
+  z.object({ provided: z.literal(false), recordingStatus }),
   z.object({
-    storage,
     provided: z.literal(true),
+    recordingStatus,
     revision: z.string(),
     explanationHtml: z.string(),
-    storageQuestionHtml: z.string().nullable(),
     feedback: feedbackForm,
   }),
 ]);
@@ -123,6 +133,7 @@ const staffTexts = z.object({
 });
 
 const staffContent = z.object({
+  recordingStatus,
   revision: z.string(),
   timeZone: z.string().refine(isKnownTimeZone).nullable().catch(null),
   branding,

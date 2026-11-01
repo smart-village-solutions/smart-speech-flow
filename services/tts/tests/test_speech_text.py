@@ -104,23 +104,8 @@ def test_amharic_numbers_are_spelled(number, expected):
     assert mms(number, "am") == expected
 
 
-@pytest.mark.parametrize(
-    ("number", "expected"),
-    [
-        ("5", "ሓሙሽተ"),
-        ("10", "ዓሰርተ"),
-        ("15", "ዓሰርተ ሓሙሽተ"),
-        ("25", "ዕስራ ሓሙሽተ"),
-        ("300", "ሰለስተ ሚእቲ"),
-        ("999999", "ትሽዓተ ሚእቲ ቴስዓ ትሽዓተ ሽሕ ትሽዓተ ሚእቲ ቴስዓ ትሽዓተ"),
-    ],
-)
-def test_tigrinya_numbers_are_spelled(number, expected):
-    assert mms(number, "ti") == expected
-
-
 def test_mms_voices_get_times_spelled_too():
-    assert mms("ሰዓት 9:30", "ti") == "ሰዓት ትሽዓተ ሰላሳ"
+    assert mms("ሰዓት 9:30", "am") == "ሰዓት ዘጠኝ ሰላሳ"
 
 
 def test_numbers_beyond_the_speller_are_read_digit_by_digit():
@@ -144,7 +129,6 @@ def test_whitespace_is_collapsed():
         ("ar", "€1,000", "1000 يورو"),
         ("ar", "١٬٠٠٠ €", "1000 يورو"),
         ("fa", "€1,250,000", "1250000 یورو"),
-        ("ku", "1.000 €", "1000 euro"),
         ("de", "1.000.000 Euro", "1000000 Euro"),
         ("en", "1,000,000 euros", "1000000 euros"),
     ],
@@ -157,7 +141,6 @@ def test_thousands_groups_are_merged_in_every_language(lang, text, expected):
     ("lang", "text", "expected"),
     [
         ("am", "1,000 ዩሮ", "ሺህ ዩሮ"),
-        ("ti", "1.500 ዩሮ", "ሽሕ ሓሙሽተ ሚእቲ ዩሮ"),
         ("am", "€1,000", "ሺህ ዩሮ"),
     ],
 )
@@ -170,7 +153,6 @@ def test_ethiopic_thousands_are_one_number(lang, text, expected):
     [
         ("am", "3.5 ኪሎ", "ሶስት ነጥብ አምስት ኪሎ"),
         ("am", "0,25", "ዜሮ ነጥብ ሁለት አምስት"),
-        ("ti", "3,5 ኪሎ", "ሰለስተ ነጥቢ ሓሙሽተ ኪሎ"),
         ("am", "ዋጋው 3.5.", "ዋጋው ሶስት ነጥብ አምስት."),
         ("am", "1.2.3", "አንድ ሁለት ሶስት"),
     ],
@@ -319,3 +301,52 @@ def test_the_languages_own_decimal_sign_is_kept(lang, text, expected):
 )
 def test_money_never_has_three_decimal_places(lang, text, expected):
     assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("it", "La tassa è di 3,50 €.", "La tassa è di 3 euro 50."),
+        ("ro", "Taxa este 3,50 €.", "Taxa este 3 euro 50."),
+        ("pl", "Opłata wynosi 3,50 €.", "Opłata wynosi 3 euro 50."),
+        ("bg", "Таксата е 3,50 €.", "Таксата е 3 евро 50."),
+        ("el", "Το τέλος είναι 3,50 €.", "Το τέλος είναι 3 ευρώ 50."),
+        ("fr", "Les frais sont de 3,50 €.", "Les frais sont de 3 euros 50."),
+        ("es", "La tasa es de 3,50 €.", "La tasa es de 3 euros 50."),
+        ("pt", "A taxa é de 3,50 €.", "A taxa é de 3 euros 50."),
+        ("sq", "Tarifa është 3,50 €.", "Tarifa është 3 euro 50."),
+        ("hu", "A díj 3,50 €.", "A díj 3 euró 50."),
+        ("zh", "费用为 €3.50。", "费用为 3 欧元 50。"),
+        ("hi", "शुल्क €3.50 है।", "शुल्क 3 यूरो 50 है।"),
+        ("fr", "Cela coûte 1.250,00 €.", "Cela coûte 1250 euros."),
+        ("hi", "€1,250.99", "1250 यूरो 99"),
+    ],
+)
+def test_added_languages_read_money_in_their_own_word(lang, text, expected):
+    assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize("lang", ["it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu"])
+def test_a_decimal_comma_is_not_read_as_a_thousands_group(lang):
+    assert piper("1,500 kg", lang) == "1,500 kg"
+    assert piper("2.250 kg", lang) == "2250 kg"
+
+
+@pytest.mark.parametrize("lang", ["zh", "hi"])
+def test_a_decimal_point_is_not_read_as_a_thousands_group(lang):
+    assert piper("1.500 kg", lang) == "1.500 kg"
+    assert piper("2,250 kg", lang) == "2250 kg"
+
+
+def test_chinese_sentences_split_without_a_space_after_the_full_stop():
+    text = f"{'中' * 150}。{'文' * 150}！{'字' * 150}？"
+    assert split_for_synthesis(text, max_chars=200) == [
+        f"{'中' * 150}。",
+        f"{'文' * 150}！",
+        f"{'字' * 150}？",
+    ]
+
+
+def test_a_hindi_danda_ends_a_sentence():
+    first, second = " ".join(["कक"] * 40) + "।", " ".join(["खख"] * 40) + "।"
+    assert split_for_synthesis(f"{first} {second}", max_chars=200) == [first, second]

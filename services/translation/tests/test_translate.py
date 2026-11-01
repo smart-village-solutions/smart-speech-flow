@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from services.translation import app as translation_app
@@ -83,3 +84,38 @@ def test_translate_refuses_a_body_that_is_not_a_json_object():
             "/translate", content=body, headers={"content-type": "application/json"}
         )
         assert response.status_code == 400, body
+
+
+def test_translate_names_the_model_and_its_snapshot(monkeypatch):
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    monkeypatch.setattr(
+        translation_app.m2m_model,
+        "config",
+        type("Config", (), {"_commit_hash": revision})(),
+        raising=False,
+    )
+
+    data = client.post(
+        "/translate", json={"text": "Hallo Welt", "source_lang": "de", "target_lang": "en"}
+    ).json()
+
+    assert data["model"] == translation_app.MODEL_NAME
+    assert data["model_version"] == revision
+
+
+def test_a_model_without_a_snapshot_hash_has_an_unknown_version(monkeypatch):
+    monkeypatch.setattr(translation_app.m2m_model, "config", object(), raising=False)
+
+    assert translation_app._model_version() == "unknown"
+
+
+@pytest.mark.parametrize("language", ["ti", "ku"])
+@pytest.mark.parametrize("side", ["source_lang", "target_lang"])
+def test_removed_languages_are_rejected_even_if_the_model_supports_them(
+    monkeypatch, language, side
+):
+    monkeypatch.setitem(translation_app.m2m_tokenizer.lang_code_to_id, language, 99)
+    payload = {"text": "Hello", "source_lang": "en", "target_lang": "de", side: language}
+    response = client.post("/translate", json=payload)
+    assert response.status_code == 400
+    assert "Unsupported language code" in response.json()["detail"]

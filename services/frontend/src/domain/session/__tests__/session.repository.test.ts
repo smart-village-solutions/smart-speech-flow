@@ -14,29 +14,16 @@ const activateResponseFixture = {
 };
 
 describe('SessionRepository.activate', () => {
-  it('sends the consent answer on the activation request', async () => {
+  it('sends the language and no storage answer', async () => {
     const post = vi.fn().mockResolvedValue({ data: activateResponseFixture });
     const repository = createSessionRepository({ post } as never, tokens());
 
-    await repository.activate('ABC12345', 'en', true);
+    await repository.activate('ABC12345', 'en');
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/customer/session/activate',
-      { session_id: 'ABC12345', customer_language: 'en', data_retention_consent: true },
-      expect.anything()
-    );
-  });
-
-  it('sends false when the guest did not agree', async () => {
-    const post = vi.fn().mockResolvedValue({ data: activateResponseFixture });
-    const repository = createSessionRepository({ post } as never, tokens());
-
-    await repository.activate('ABC12345', 'en', false);
-
-    expect(post).toHaveBeenCalledWith(
-      '/api/customer/session/activate',
-      { session_id: 'ABC12345', customer_language: 'en', data_retention_consent: false },
+      { session_id: 'ABC12345', customer_language: 'en' },
       expect.anything()
     );
   });
@@ -53,16 +40,21 @@ describe('SessionRepository guest token', () => {
       });
     });
 
-    await createSessionRepository({ post } as never, store).activate('ABC12345', 'en', true);
+    await createSessionRepository({ post } as never, store).activate('ABC12345', 'en');
 
     const sent = post.mock.calls[0][2].headers['X-Guest-Token'] as string;
     expect(sent).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it('sends the token it already holds for the session', async () => {
-    const post = vi.fn().mockResolvedValue({ data: { ...activateResponseFixture, guest_token: null } });
+    const post = vi
+      .fn()
+      .mockResolvedValue({ data: { ...activateResponseFixture, guest_token: null } });
 
-    await createSessionRepository({ post } as never, tokens('held-token')).activate('ABC12345', 'tr', true);
+    await createSessionRepository({ post } as never, tokens('held-token')).activate(
+      'ABC12345',
+      'tr'
+    );
 
     expect(post.mock.calls[0][2]).toEqual({ headers: { 'X-Guest-Token': 'held-token' } });
   });
@@ -73,7 +65,7 @@ describe('SessionRepository guest token', () => {
       data: { ...activateResponseFixture, guest_token: 'server-chosen' },
     });
 
-    await createSessionRepository({ post } as never, store).activate('ABC12345', 'en', true);
+    await createSessionRepository({ post } as never, store).activate('ABC12345', 'en');
 
     expect(store.save).toHaveBeenLastCalledWith('ABC12345', 'server-chosen');
   });

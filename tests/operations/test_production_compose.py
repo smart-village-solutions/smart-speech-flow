@@ -150,7 +150,7 @@ def test_skip_target_languages_default_is_reachable_with_an_explicitly_empty_val
         compose = load_compose(path)
         environment = _environment_by_name(compose["services"]["api_gateway"])
         assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
-            "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
+            f"${{LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-{refiner_module.DEFAULT_SKIP_TARGET_LANGUAGES}}}"
         ), path
 
 
@@ -193,7 +193,7 @@ def test_development_gateway_can_exercise_the_vllm_path():
     assert environment["LLM_REFINEMENT_BACKEND"] == "${LLM_REFINEMENT_BACKEND:-ollama}"
     assert environment["LLM_REFINEMENT_MAX_TOKENS"] == "${LLM_REFINEMENT_MAX_TOKENS:-256}"
     assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
-        "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
+        f"${{LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-{refiner_module.DEFAULT_SKIP_TARGET_LANGUAGES}}}"
     )
 
 
@@ -358,3 +358,14 @@ def test_no_compose_file_sets_a_global_content_retention():
         environment = _environment_by_name(load_compose(path)["services"]["api_gateway"])
         assert "SSF_CONTENT_RETENTION_HOURS" not in environment, path
         assert "AUDIO_RETENTION_HOURS" not in environment, path
+
+
+def test_the_recording_database_is_published_on_loopback_unless_the_link_is_set():
+    """The archive VMs' retention workers reach ssf_recording over the link (#618).
+
+    Only the retention runbook sets SSF_RECORDING_DB_PUBLISH, to the gateway
+    host's link address behind a firewall rule; until then nothing outside the
+    host can reach the database.
+    """
+    database = load_production_compose()["services"]["ssf-postgres"]
+    assert database["ports"] == ["${SSF_RECORDING_DB_PUBLISH:-127.0.0.1:55432}:5432"]

@@ -130,7 +130,7 @@ constrained to a label charset with no whitespace:
 | --- | --- | --- |
 | Refiner role | `ssf.quality.refiner_role` | enum: primary (in-path), candidate (shadow) |
 | Model | `ssf.quality.model_ref` | label token, max 64 chars |
-| Outcome | `ssf.quality.refinement_outcome` | enum: success, error, skipped_language, skipped_overload, submission_failed |
+| Outcome | `ssf.quality.refinement_outcome` | enum: success, error, skipped_language, skipped_overload, submission_failed, rejected_facts |
 | Latency | `ssf.quality.refinement_latency_ms` | integer |
 | Changed | `ssf.quality.refinement_changed` | enum: true, false |
 | Source language | `ssf.quality.source_lang` | language code, else `und` |
@@ -139,6 +139,9 @@ constrained to a label charset with no whitespace:
 
 `skipped_language` means the target language is on the configured skip list, so
 refinement was not attempted and the translation was passed through unchanged.
+`rejected_facts` means the model answered, but its rewrite named a number or a
+weekday differently from the original where the translation had not, so the
+translation was passed through unchanged.
 
 And on `translation_message` (mode `enabled` only), one row per processed
 message, thirteen more. Every one is a number, a closed enum or an opaque

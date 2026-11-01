@@ -4,11 +4,13 @@
 
 The gateway reads one tenant's runtime configuration from Studio's
 `/internal/plugins/ssf/v2/runtime-configuration` with the shared `ssf-runtime`
-service token. A read has two halves, parsed differently. The storage policy
-(`conversationContentStorage`: mode and `retentionHours`) is strict and read
-live every time it decides something, at three stages: staff session create,
-guest activation (where consent is resolved and retention captured) and each
-message's persistence gate. It is never cached. The display content (staff
+service token. A read has two halves, parsed differently. The policy (tenant,
+revision, and the optional `recording` block) is strict and read live every
+time it decides something: at staff session create, at guest activation (a
+suspended tenant starts no session), and by recording mode. It is never cached.
+The retired `conversationContentStorage` block and guest `storageQuestionHtml`
+are ignored if Studio still sends them: outside a recording a conversation
+leaves nothing behind. The display content (staff
 texts, guest languages and their texts, feedback forms, branding, legal links)
 is lenient: an invalid section is dropped on its own, the rest stays usable,
 and every HTML field is sanitised once, through `studio_html.safe_html`, when
@@ -97,23 +99,18 @@ token's issuer through the Studio login directory, cached for
 longer than that, `GET /api/admin/content` answers 503 like every other staff
 route, and the dashboard shows its bundled texts.
 
-When a guest grants consent, the session stores Studio's `retentionHours` and
-`configurationRevision` from that same live read, and keeps them for the rest
-of its life. That value governs how long the session's consented content is
-kept; `0` disables automatic deletion so an operator removes it by hand.
-`SSF_TERMINAL_RECORD_HOURS` (default 24, positive) is the period for everything
-else: the terminal record of a session without granted consent, which holds no
-conversation content, and audio whose retention marker is missing or invalid.
-No retention ever keeps content a guest declined or a tenant policy disabled:
-that is removed when the conversation ends, and at the latest when the session
-passes `SSF_SESSION_MAX_HOURS`.
-
-Retention is applied two ways, because the two stores differ. Audio files are
-swept hourly by age, against the `retention.json` marker written beside a
-consented session's audio. A session record is immutable once terminated, so
-its expiry is set on the record at the moment it terminates. The join tombstone
-deliberately outlives the record -- it holds no conversation content and is
-what stops a session identifier being reused.
+Outside a recording a conversation leaves nothing behind (secure recording
+mode, #615): what a guest agrees to keep is archived, encrypted, by recording
+mode alone. A session's messages live in Redis, which keeps nothing on disk,
+and its delivery audio on the gateway's `/tmp/audio` tmpfs
+(`SSF_AUDIO_BASE_DIR`). When the session ends, the terminal record keeps its
+metadata and message count but no message, and its audio is deleted; the
+record itself expires after `SSF_TERMINAL_RECORD_HOURS` (default 24,
+positive). A session that passes `SSF_SESSION_MAX_HOURS` without ending is
+stripped by the hourly pass, which also deletes any delivery audio an ending
+missed once it is older than `SSF_SESSION_MAX_HOURS` plus an hour. The join tombstone outlives
+the record -- it holds no conversation content and is what stops a session
+identifier being reused while Redis runs.
 
 The client secret must come from the deployment environment or secret store;
 it must never be embedded in an image, browser bundle, or checked-in file.

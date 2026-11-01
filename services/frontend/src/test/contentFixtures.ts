@@ -163,7 +163,10 @@ export const installationBody = {
   feedback: feedbackForm(germanTexts),
 };
 
-export const GUEST_LANGUAGE_CODES = ['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'] as const;
+export const GUEST_LANGUAGE_CODES = [
+  ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'fa'],
+  ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
+] as const;
 
 const NAMES: Record<string, [string, string]> = {
   en: ['English', 'English'],
@@ -172,9 +175,19 @@ const NAMES: Record<string, [string, string]> = {
   ru: ['Russian', 'Русский'],
   uk: ['Ukrainian', 'Українська'],
   am: ['Amharic', 'አማርኛ'],
-  ti: ['Tigrinya', 'ትግርኛ'],
-  ku: ['Kurdish', 'Kurmancî'],
   fa: ['Persian', 'فارسی'],
+  it: ['Italian', 'Italiano'],
+  ro: ['Romanian', 'Română'],
+  pl: ['Polish', 'Polski'],
+  bg: ['Bulgarian', 'Български'],
+  el: ['Greek', 'Ελληνικά'],
+  fr: ['French', 'Français'],
+  es: ['Spanish', 'Español'],
+  pt: ['Portuguese', 'Português'],
+  sq: ['Albanian', 'Shqip'],
+  hu: ['Hungarian', 'Magyar'],
+  zh: ['Chinese', '中文'],
+  hi: ['Hindi', 'हिन्दी'],
 };
 
 type ProvidedLanguage = {
@@ -182,7 +195,7 @@ type ProvidedLanguage = {
   icon: { url: string; alternativeText: string } | null;
 };
 
-/** The nine guest languages, with Studio's entries exactly where given. */
+/** The guest languages, with Studio's entries exactly where given. */
 export function guestLanguagesBodyWith(provided: Readonly<Record<string, ProvidedLanguage>>) {
   return {
     languages: GUEST_LANGUAGE_CODES.map((code) => {
@@ -210,30 +223,19 @@ export const STUDIO_ICON_URL = 'https://studio.example.org/flags/en.svg';
 export const STUDIO_ENGLISH = {
   explanationHtml:
     '<p>Studio explains the service.</p><p>Studio explains <strong>storage</strong>.</p>',
-  storageQuestionHtml: '<p>Studio asks to <em>keep</em> the conversation.</p>',
 };
 
 const englishGuestContent = {
-  storage: { mode: 'ask' },
   provided: true,
   revision: KASSEL_REVISION,
   explanationHtml:
     '<p>KasselDIALOG is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.</p><p>To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.</p><p>By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.</p><p>If you would like to help us improve KasselDIALOG, you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the KasselDIALOG project.</p>',
-  storageQuestionHtml:
-    '<p>I agree to the storage of my conversation data for up to 180 days for the purpose of improving KasselDIALOG.</p>',
   feedback: feedbackForm(englishTexts),
 };
 
-export type FixtureStorageMode = 'ask' | 'disabled' | 'unknown';
-
-/** The gateway sends no storage question while the tenant's mode is `disabled`. */
-export function guestContentBody(language: string, mode: FixtureStorageMode = 'ask') {
-  if (language !== 'en') return { storage: { mode }, provided: false };
-  return {
-    ...englishGuestContent,
-    storage: { mode },
-    storageQuestionHtml: mode === 'disabled' ? null : englishGuestContent.storageQuestionHtml,
-  };
+export function guestContentBody(language: string) {
+  if (language !== 'en') return { provided: false };
+  return { ...englishGuestContent };
 }
 
 export const staffContentBody = {

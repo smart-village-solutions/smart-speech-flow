@@ -19,11 +19,16 @@ import hmac
 import logging
 import os
 import secrets
+import time
+from collections.abc import Callable
 from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
 SESSION_KEY_ENV: Final[str] = "SSF_QUALITY_TELEMETRY_SESSION_KEY"
+# How long a recorded session keeps its random reference after it ends: late
+# messages and guest feedback (SSF_FEEDBACK_GRACE_MINUTES) arrive after the end.
+RECORDED_MARK_SECONDS: Final[float] = 24 * 3600
 
 # 128 bits of a SHA-256 HMAC. Truncation is safe for an HMAC in a way it is not
 # for a bare digest -- the preimage is protected by the key, not by length --
@@ -62,15 +67,26 @@ def tenant_ref(tenant_id: Any) -> str:
 # spaces is sufficient, and it is the one with no history.
 _SESSION_DOMAIN: Final[str] = ""
 _FEEDBACK_DOMAIN: Final[str] = "feedback"
+_RECORDING_DOMAIN: Final[str] = "recording"
 
 
 class SessionPseudonymizer:
-    """Maps a session id to a reference that cannot be mapped back."""
+    """Maps a session id to a reference that cannot be mapped back.
 
-    __slots__ = ("_key",)
+    A recorded session's telemetry must not be joinable to its archive, not
+    even by whoever holds the key and can enumerate the 32-bit session ids
+    (spec §5.5): from its first yes on, it gets a random reference instead,
+    held only in this process until RECORDED_MARK_SECONDS after the session
+    ends, and its events name no language.
+    """
 
-    def __init__(self, *, key: bytes) -> None:
+    __slots__ = ("_key", "_recorded", "_clock")
+
+    def __init__(self, *, key: bytes, clock: Callable[[], float] = time.monotonic) -> None:
         self._key = key
+        self._clock = clock
+        # Session id -> (random reference, when the mark lapses; None while live).
+        self._recorded: dict[str, tuple[str, float | None]] = {}
 
     @classmethod
     def from_environment(cls) -> "SessionPseudonymizer":
@@ -97,7 +113,43 @@ class SessionPseudonymizer:
 
     def reference(self, session_id: Any) -> str:
         """Never raises: telemetry must not be able to fail a request."""
+        recorded = self._recorded_reference(session_id)
+        if recorded is not None:
+            return recorded
         return self._domain_reference(_SESSION_DOMAIN, session_id)
+
+    def mark_recorded(self, session_id: Any) -> None:
+        """The session has had a recording window: its telemetry goes unlinkable."""
+        self._drop_lapsed()
+        text = str(session_id or "").strip()
+        if not text:
+            return
+        held = self._recorded.get(text)
+        reference = held[0] if held else secrets.token_hex(_REFERENCE_LENGTH // 2)
+        self._recorded[text] = (reference, None)
+
+    def is_recorded(self, session_id: Any) -> bool:
+        return self._recorded_reference(session_id) is not None
+
+    def ended(self, session_id: Any) -> None:
+        """The session is over; its mark lapses RECORDED_MARK_SECONDS from now."""
+        text = str(session_id or "").strip()
+        held = self._recorded.get(text)
+        if held is not None:
+            self._recorded[text] = (held[0], self._clock() + RECORDED_MARK_SECONDS)
+        self._drop_lapsed()
+
+    def _recorded_reference(self, session_id: Any) -> str | None:
+        held = self._recorded.get(str(session_id or "").strip())
+        if held is None or (held[1] is not None and self._clock() >= held[1]):
+            return None
+        return held[0]
+
+    def _drop_lapsed(self) -> None:
+        now = self._clock()
+        lapsed = [sid for sid, (_, until) in self._recorded.items() if until and now >= until]
+        for session_id in lapsed:
+            del self._recorded[session_id]
 
     def feedback_reference(self, feedback_id: Any) -> str:
         """The reference ClickHouse holds instead of a feedback record id.
@@ -108,6 +160,14 @@ class SessionPseudonymizer:
         the same output in both spaces.
         """
         return self._domain_reference(_FEEDBACK_DOMAIN, feedback_id)
+
+    def recording_reference(self, session_id: Any) -> str:
+        """The session reference a recorded conversation keeps (spec §13).
+
+        Its own domain, so an archive row and a telemetry row of the same
+        session carry different references and cannot be joined (§5.5).
+        """
+        return self._domain_reference(_RECORDING_DOMAIN, session_id)
 
     def _domain_reference(self, domain: str, value: Any) -> str:
         text = str(value or "").strip()

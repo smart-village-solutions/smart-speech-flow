@@ -25,13 +25,8 @@ def test_reads_both_tenants_with_defaults():
     assert settings.api_base == "https://api.example"
     assert settings.client_id == "ssf-frontend"
     first, second = settings.tenants
-    assert (first.label, first.directory_id, first.guest_language, first.storage_mode) == (
-        "A",
-        "tenant-a",
-        "en",
-        "ask",
-    )
-    assert (second.guest_language, second.storage_mode) == ("tr", "ask")
+    assert (first.label, first.directory_id, first.guest_language) == ("A", "tenant-a", "en")
+    assert second.guest_language == "tr"
     assert [op.username for op in second.operators] == ["user-B1", "user-B2"]
 
 
@@ -54,9 +49,9 @@ def test_names_a_missing_variable():
 
 def test_never_echoes_an_invalid_value():
     with pytest.raises(ConfigError) as raised:
-        load_settings(_environment(SSF_RC_TENANT_A_STORAGE="hunter2"))
+        load_settings(_environment(SSF_RC_TENANT_A_LANGUAGE="hunter2"))
 
-    assert "SSF_RC_TENANT_A_STORAGE" in str(raised.value)
+    assert "SSF_RC_TENANT_A_LANGUAGE" in str(raised.value)
     assert "hunter2" not in str(raised.value)
 
 

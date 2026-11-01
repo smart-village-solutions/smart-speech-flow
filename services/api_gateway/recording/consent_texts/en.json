@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>The staff member would like to record this conversation. From now on, every message would be stored in encrypted form until you or the staff member stop the recording. You can stop it at any time.</p><p>Only authorised persons can open the recording. It is deleted when the retention period ends.</p><p>Your consent is voluntary. If you say no, the conversation continues without recording. Messages that are already stored remain stored after a stop.</p>",
+    "resume": "<p>The recording was stopped. May it continue from now on? You can stop it again at any time.</p>"
+  },
+  "statutory": {
+    "first": "<p>The staff member would like to record this conversation. From now on, every message would be stored in encrypted form until you or the staff member stop the recording. You can stop it at any time.</p><p>The recording is made on a legal basis. Only authorised persons can open the recording. It is deleted when the retention period ends.</p><p>Please confirm that you have been informed and that the recording may begin.</p>",
+    "resume": "<p>The recording was stopped. It is to continue from now on, on the same legal basis. You can stop it again at any time.</p>"
+  }
+}

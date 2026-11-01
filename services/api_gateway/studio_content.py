@@ -1,8 +1,7 @@
 """Studio display content, sanitised once and kept by revision.
 
-The storage mode is not held here and cannot be: it decides persistence and
-consent, so every use reads it live. Nor is the tenant display name, which SSF
-never shows. `TenantContent` has slots and no field for either.
+The tenant display name is not held here: SSF never shows it, and
+`TenantContent` has slots and no field for it.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .studio_html import safe_html
+from .studio_legal import LegalTexts
 from .studio_locales import GUEST_LANGUAGES, SkipReason, guest_languages_by_code
 from .studio_runtime_flow import RuntimeConfigurationFetcher
 from .studio_v2 import (
@@ -42,6 +42,7 @@ class TenantContent:
     staff: StaffContent | None
     # Keyed by SSF language code, in SSF's order.
     guest_languages: Mapping[str, GuestLanguageContent]
+    legal_texts: LegalTexts | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,11 +76,9 @@ def _staff(staff: StaffContent | None) -> StaffContent | None:
 
 
 def _guest(language: GuestLanguageContent) -> GuestLanguageContent:
-    question = language.storage_question_html
     return language.model_copy(
         update={
             "explanation_html": safe_html(language.explanation_html),
-            "storage_question_html": None if question is None else safe_html(question),
             "feedback": _form(language.feedback),
         }
     )
@@ -106,6 +105,7 @@ def _tenant_content(read: RuntimeRead, on_skip: Callable[[SkipReason], None]) ->
         time_zone=content.time_zone,
         branding=content.branding,
         staff=_staff(content.staff),
+        legal_texts=content.legal_texts,
         guest_languages=MappingProxyType(
             {code: _guest(mapped[code]) for code in GUEST_LANGUAGES if code in mapped}
         ),
@@ -203,8 +203,8 @@ class StudioContentCache:
 class ContentRecordingFetcher:
     """Pass every live runtime read on unchanged, refreshing the content cache from it.
 
-    Session create, activation and the persistence gate all read through this,
-    so display content follows each policy read without another Studio request.
+    Session create and activation read through this, so display content
+    follows each policy read without another Studio request.
     """
 
     def __init__(self, inner: RuntimeConfigurationFetcher, cache: StudioContentCache) -> None:

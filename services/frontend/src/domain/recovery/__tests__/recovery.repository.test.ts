@@ -1,0 +1,324 @@
+import { http, HttpResponse } from 'msw';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getAdminAccessToken } from '@/app/auth/keycloak';
+import { readConfig } from '@/app/config/env';
+import { scalarToBytes, toBase64Url } from '@/core/crypto/bytes';
+import { publicPoint } from '@/core/crypto/curve';
+import { createHttpClient } from '@/core/http/client';
+import { AppError } from '@/core/http/AppError';
+import { createRecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
+import { server } from '@/test/setup';
+
+vi.mock('@/app/auth/keycloak', () => ({ getAdminAccessToken: vi.fn() }));
+
+const BASE = 'http://api.test';
+const CEREMONY = '0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a';
+const URL = `${BASE}/api/admin/recording/ceremony`;
+const b64 = (bytes: Uint8Array) => toBase64Url(bytes);
+
+function repository() {
+  return createRecoveryCeremonyRepository(createHttpClient(readConfig({ VITE_API_BASE_URL: BASE }), () => 'de'));
+}
+
+const ceremonyBody = {
+  ceremony_id: CEREMONY,
+  k: 2,
+  status: 'confirming',
+  started_by: 'olga',
+  started_at: '2026-10-26T09:00:00+00:00',
+  expires_at: '2026-10-27T09:00:00+00:00',
+  gateway_keys: [{ key_id: 'gk-1', public_key: b64(publicPoint(9n)) }],
+  participants: [
+    {
+      holder_index: 1,
+      holder_ref: 'anna',
+      kind: 'custodian',
+      display_name: 'Anna',
+      enc_pub: b64(publicPoint(1n)),
+      sig_pub: b64(publicPoint(2n)),
+      fingerprint: b64(new Uint8Array(32).fill(1)),
+    },
+    {
+      holder_index: 2,
+      holder_ref: 'paper-1',
+      kind: 'paper',
+      display_name: null,
+      enc_pub: b64(publicPoint(3n)),
+      sig_pub: null,
+      fingerprint: b64(new Uint8Array(32).fill(2)),
+    },
+  ],
+  dealings: [
+    {
+      dealer_index: 1,
+      commitments: [b64(publicPoint(4n)), b64(publicPoint(5n))],
+      c: b64(scalarToBytes(6n)),
+      s: b64(scalarToBytes(7n)),
+      signature: b64(new Uint8Array(64).fill(8)),
+    },
+  ],
+  confirmed: [1],
+  paper_confirmed: false,
+  transcript_hash: b64(new Uint8Array(32).fill(9)),
+  kind: 'generation',
+  recovery_key_id: null,
+  previous_transcript_hash: null,
+  dealers: [{ dealer_index: 1, holder_ref: 'anna', kind: 'custodian' }],
+};
+
+/** The state's fields that only a recovery key fills. */
+const noKey = { holders: [], previous_had_paper: false, chain: [] };
+
+const generationBody = {
+  ceremony_id: CEREMONY,
+  kind: 'generation',
+  k: 2,
+  transcript_hash: b64(new Uint8Array(32).fill(9)),
+  previous_transcript_hash: null,
+  gateway_keys: ceremonyBody.gateway_keys,
+  participants: ceremonyBody.participants,
+  dealers: [1],
+  dealings: ceremonyBody.dealings,
+  transcript_signatures: [{ holder_index: 1, signature: b64(new Uint8Array(64).fill(5)) }],
+};
+
+describe('recovery ceremony repository', () => {
+  beforeEach(() => {
+    vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue('staff-token');
+  });
+
+  it('reads why the last ceremony ended', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          recovery_key: null,
+          ceremony: null,
+          ...noKey,
+          last_failed: { ceremony_id: CEREMONY, reason: 'proof_invalid', ended_at: '2026-10-26T10:00:00+00:00' },
+        })
+      )
+    );
+    expect((await repository().state()).lastFailed).toEqual({
+      ceremonyId: CEREMONY,
+      reason: 'proof_invalid',
+      endedAt: '2026-10-26T10:00:00+00:00',
+    });
+  });
+
+  it('reads a ceremony in progress into bytes and scalars', async () => {
+    server.use(http.get(URL, () => HttpResponse.json({ recovery_key: null, ceremony: ceremonyBody, ...noKey })));
+    const { ceremony, recoveryKey } = await repository().state();
+    expect(recoveryKey).toBeNull();
+    expect(ceremony?.participants.map((p) => [p.kind, p.sigPub === null])).toEqual([
+      ['custodian', false],
+      ['paper', true],
+    ]);
+    expect(ceremony?.dealings[0].proof).toEqual({ c: 6n, s: 7n });
+    expect(Array.from(ceremony?.transcriptHash ?? [])).toEqual(Array(32).fill(9));
+  });
+
+  it('reads the current holders and the chain they are certified by', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          recovery_key: {
+            key_id: CEREMONY,
+            k: 2,
+            n: 2,
+            mode: 'enhanced',
+            transcript_hash: b64(new Uint8Array(32).fill(9)),
+            transcript_display: '0909',
+            activated_at: '2026-10-26T10:00:00+00:00',
+            holders_ceremony_id: CEREMONY,
+            holders_transcript_hash: b64(new Uint8Array(32).fill(9)),
+          },
+          ceremony: null,
+          usable_shares: 1,
+          holders: [{ holder_index: 2, holder_ref: 'paper-1', kind: 'paper', display_name: null, state: 'paper', left: false }],
+          previous_had_paper: true,
+          chain: [generationBody],
+        })
+      )
+    );
+    const state = await repository().state();
+    expect(state.recoveryKey?.holders[0]).toEqual({
+      holderIndex: 2,
+      holderRef: 'paper-1',
+      kind: 'paper',
+      displayName: null,
+      state: 'paper',
+      left: false,
+    });
+    expect(state.recoveryKey?.previousHadPaper).toBe(true);
+    expect(state.chain?.recoveryKeyId).toBe(CEREMONY);
+    expect(state.chain?.generations[0].signatures.get(1)).toHaveLength(64);
+  });
+
+  it('starts a resharing and reads a dealer’s key', async () => {
+    let sent: Record<string, unknown> = {};
+    server.use(
+      http.post(`${URL}/resharing`, async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { ...ceremonyBody, kind: 'resharing', recovery_key_id: CEREMONY, previous_transcript_hash: b64(new Uint8Array(32)) },
+          { status: 201 }
+        );
+      }),
+      http.get(`${URL}/${CEREMONY}/dealer`, () =>
+        HttpResponse.json({
+          dealer_index: 1,
+          encrypted_share: '{"v":1}',
+          has_active_key: false,
+          key: {
+            key_version: 2,
+            enc_pub: b64(publicPoint(1n)),
+            sig_pub: b64(publicPoint(2n)),
+            blob: '{"kdf":{}}',
+            fingerprint: b64(new Uint8Array(32)),
+            fingerprint_display: '0000',
+          },
+        })
+      )
+    );
+    const started = await repository().startResharing({
+      k: 2,
+      custodians: ['dora'],
+      dealers: [1, 4],
+      paperDevicePub: null,
+      holdersCeremonyId: CEREMONY,
+    });
+    expect(sent).toEqual({
+      k: 2,
+      custodians: ['dora'],
+      dealers: [1, 4],
+      paper_device_pub: null,
+      holders_ceremony_id: CEREMONY,
+    });
+    expect(started.kind).toBe('resharing');
+    const dealer = await repository().dealer(CEREMONY);
+    expect([dealer.dealerIndex, dealer.keyVersion, dealer.blob]).toEqual([1, 2, '{"kdf":{}}']);
+    expect(dealer.hasActiveKey).toBe(false);
+  });
+
+  it('sends a paper dealing unsigned, and a confirmation with its share proof', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    server.use(
+      http.post(`${URL}/${CEREMONY}/paper-dealings`, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ status: 'confirming' }, { status: 201 });
+      }),
+      http.post(`${URL}/${CEREMONY}/confirmations`, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ status: 'confirming' }, { status: 201 });
+      })
+    );
+    await repository().paperDeal(CEREMONY, 4, {
+      commitments: [publicPoint(4n)],
+      proof: { c: 6n, s: 7n },
+      signature: null,
+      subshares: new Map([[1, '{"v":1}']]),
+    });
+    await repository().confirm(CEREMONY, {
+      transcriptSignature: new Uint8Array(64),
+      encryptedShare: '{"v":2}',
+      shareProof: { c: 1n, s: 2n },
+    });
+    expect(bodies[0]).toEqual({
+      dealer_index: 4,
+      commitments: [b64(publicPoint(4n))],
+      c: b64(scalarToBytes(6n)),
+      s: b64(scalarToBytes(7n)),
+      subshares: { '1': '{"v":1}' },
+    });
+    expect(bodies[1]).toMatchObject({ share_proof_c: b64(scalarToBytes(1n)), share_proof_s: b64(scalarToBytes(2n)) });
+  });
+
+  it('sends a dealing in the gateway wire form', async () => {
+    let sent: Record<string, unknown> = {};
+    server.use(
+      http.post(`${URL}/${CEREMONY}/dealings`, async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ status: 'dealing' }, { status: 201 });
+      })
+    );
+    await repository().deal(CEREMONY, {
+      commitments: [publicPoint(4n)],
+      proof: { c: 6n, s: 7n },
+      signature: new Uint8Array(64),
+      subshares: new Map([
+        [1, '{"v":1}'],
+        [2, '{"v":2}'],
+      ]),
+    });
+    expect(sent).toEqual({
+      commitments: [b64(publicPoint(4n))],
+      c: b64(scalarToBytes(6n)),
+      s: b64(scalarToBytes(7n)),
+      signature: b64(new Uint8Array(64)),
+      subshares: { '1': '{"v":1}', '2': '{"v":2}' },
+    });
+  });
+
+  it('maps received sub-shares by holder and dealer', async () => {
+    server.use(
+      http.get(`${URL}/${CEREMONY}/subshares`, () => HttpResponse.json({ subshares: { '2': { '1': 'a', '3': 'b' } } }))
+    );
+    const received = await repository().subshares(CEREMONY);
+    expect(received.get(2)?.get(3)).toBe('b');
+  });
+
+  it('surfaces the step-up code when starting', async () => {
+    server.use(
+      http.post(URL, () =>
+        HttpResponse.json({ detail: { error_code: 'STEP_UP_REQUIRED', message: 'x' } }, { status: 403 })
+      )
+    );
+    const started = repository().start(2, ['anna', 'bernd', 'carla'], null);
+    await expect(started).rejects.toBeInstanceOf(AppError);
+    await expect(started).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+  });
+
+  it('lists leavers and marks one by the version it showed', async () => {
+    const leavers = `${BASE}/api/admin/recording/leavers`;
+    let sent: unknown = null;
+    let path = '';
+    server.use(
+      http.get(leavers, () =>
+        HttpResponse.json({
+          candidates: [
+            {
+              sub: 'f3a1:x@y',
+              key_version: 2,
+              fingerprint: b64(new Uint8Array(32)),
+              fingerprint_display: '0000 0000',
+              enrolled_at: '2026-01-02T10:00:00+00:00',
+              conversations: 4,
+              last_conversation_at: null,
+              custodian: true,
+              display_name: 'Anna',
+            },
+          ],
+        })
+      ),
+      http.post(`${leavers}/:sub`, async ({ request, params }) => {
+        sent = await request.json();
+        path = String(params.sub);
+        return HttpResponse.json({ sub: path, key_version: 2, custodian: true, wraps_deleted: 4 });
+      })
+    );
+    const [candidate] = await repository().leavers();
+    expect(candidate).toEqual({
+      sub: 'f3a1:x@y',
+      keyVersion: 2,
+      fingerprintDisplay: '0000 0000',
+      enrolledAt: '2026-01-02T10:00:00+00:00',
+      conversations: 4,
+      lastConversationAt: null,
+      custodian: true,
+      displayName: 'Anna',
+    });
+    await repository().markLeaver(candidate.sub, candidate.keyVersion);
+    expect(sent).toEqual({ key_version: 2 });
+    expect(path).toBe('f3a1:x@y');
+  });
+});

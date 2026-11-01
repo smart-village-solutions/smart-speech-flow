@@ -1,0 +1,1 @@
+"""Secure recording mode."""

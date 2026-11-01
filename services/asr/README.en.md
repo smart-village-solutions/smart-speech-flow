@@ -25,9 +25,14 @@ Successful requests return JSON:
 ```json
 {
   "text": "This is the police speaking.",
-  "fallback": false
+  "fallback": false,
+  "model": "whisper-large-v3-turbo",
+  "model_version": "aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a",
+  "input_sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 }
 ```
+
+`model_version` is the SHA-256 of the checkpoint, as named in Whisper's download URL, and `input_sha256` the hash of the normalised 16 kHz WAV the model transcribed. The gateway archives both with every recorded message.
 
 When the ASR model is unavailable, the service returns its fallback response with `fallback: true`. When `debug=true` is supplied as a form or query parameter, the response additionally contains a `debug` object. Invalid language codes return `400`.
 

@@ -166,12 +166,25 @@ SSF reads `/internal/plugins/ssf/v2/runtime-configuration` for one tenant and
 both with the `ssf-runtime` service identity. A tenant read has two halves with
 opposite failure behaviour:
 
-- **Policy** — `conversationContentStorage` (mode and `retentionHours`) — is
-  read live whenever SSF decides with it: when staff create a session, when a
-  guest activates it (consent is resolved here, and on `granted` the session
-  keeps that read's `retentionHours` and `configurationRevision` for life), and
-  once per message before anything is stored. It is never cached, and it fails
-  closed: without a successful read no session starts and nothing is stored.
+- **Policy** — the tenant and its `configurationRevision` — is read live
+  whenever SSF decides with it: when staff create a session (without a
+  successful read none starts), and when a guest activates it (a suspended or
+  not-ready tenant starts no session; any other failure lets the guest in). It
+  is never cached. The `ask` storage mode's `conversationContentStorage` block
+  and guest `storageQuestionHtml` are retired (#615): SSF ignores them, and
+  outside a recording a conversation leaves nothing behind.
+- **Recording policy** — the optional `recording` block (`enabled`,
+  `legalBasis`, `signature`, `idCheck`, `retentionHours`,
+  `verificationRequired`, `recoveryMode`, `timestampAuthorityUrl`,
+  `auditRetentionHours`, and `texts`: per locale a `consentHtml` and a
+  `resumePromptHtml`, German included), proposed for the Studio contract in
+  #612 — is read live when staff request a recording, when the guest's screen
+  loads the consent text, at the guest's yes, and while a recording is paused
+  for policy. It fails closed for recording alone: a missing or invalid block
+  makes recording unavailable and leaves the rest of the read intact. A
+  language without a Studio text gets SSF's bundled text for the legal basis;
+  the guest's yes carries the SHA-256 of the text it was served, and a
+  mismatch refuses it.
 - **Content** — staff texts, guest languages and texts, feedback forms per
   audience, branding, legal links — fails open. SSF sanitises it once, caches it
   by revision, and serves it to browsers through four routes:

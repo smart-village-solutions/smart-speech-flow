@@ -5,17 +5,17 @@ torch
 # piper-tts is installed from requirements-piper.txt with --no-deps, because
 # it requires the CPU onnxruntime, which would overwrite the GPU build. Its
 # other declared dependency is listed here by hand.
-onnxruntime-gpu==1.30.0
+onnxruntime-gpu==1.31.1
 pathvalidate>=3,<4
 soundfile
-numpy>=2.5.3
-# The floor is the release Amharic and Tigrinya (mms_engine.py) were last
+numpy>=2.5.4
+# The floor is the release Amharic (mms_engine.py) was last
 # verified on, by comparing token ids and audio with the previous pin (#432).
-transformers>=5.18.0
+transformers>=5.21.0
 httpx==0.28.1
 pytest==9.0.3
 psutil==7.2.2
 uroman
 pynvml
-black==26.3.1
-isort==9.0.1
+black==26.10.1
+isort==9.0.2

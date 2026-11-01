@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Votre interlocuteur souhaite enregistrer cette conversation. À partir de maintenant, chaque message serait conservé sous forme chiffrée jusqu'à ce que vous ou votre interlocuteur arrêtiez l'enregistrement. Vous pouvez l'arrêter à tout moment.</p><p>Seules les personnes autorisées peuvent ouvrir l'enregistrement. Il est supprimé à la fin de la durée de conservation.</p><p>Votre consentement est libre. Si vous refusez, la conversation se poursuit sans enregistrement. Les messages déjà conservés le restent après un arrêt.</p>",
+    "resume": "<p>L'enregistrement a été arrêté. Peut-il reprendre à partir de maintenant ? Vous pouvez l'arrêter de nouveau à tout moment.</p>"
+  },
+  "statutory": {
+    "first": "<p>Votre interlocuteur souhaite enregistrer cette conversation. À partir de maintenant, chaque message serait conservé sous forme chiffrée jusqu'à ce que vous ou votre interlocuteur arrêtiez l'enregistrement. Vous pouvez l'arrêter à tout moment.</p><p>L'enregistrement est effectué sur une base légale. Seules les personnes autorisées peuvent ouvrir l'enregistrement. Il est supprimé à la fin de la durée de conservation.</p><p>Veuillez confirmer que vous avez reçu ces informations et que l'enregistrement peut commencer.</p>",
+    "resume": "<p>L'enregistrement a été arrêté. Il doit reprendre à partir de maintenant, sur la même base légale. Vous pouvez l'arrêter de nouveau à tout moment.</p>"
+  }
+}

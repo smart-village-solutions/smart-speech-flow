@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Ihre Ansprechperson möchte dieses Gespräch aufzeichnen. Ab jetzt würde jede Nachricht verschlüsselt gespeichert, bis Sie oder Ihre Ansprechperson die Aufnahme beenden. Sie können sie jederzeit beenden.</p><p>Nur berechtigte Personen können die Aufnahme öffnen. Sie wird gelöscht, wenn die Aufbewahrungsfrist endet.</p><p>Ihre Einwilligung ist freiwillig. Wenn Sie ablehnen, wird das Gespräch ohne Aufnahme fortgesetzt. Bereits gespeicherte Nachrichten bleiben nach dem Beenden gespeichert.</p>",
+    "resume": "<p>Die Aufnahme wurde beendet. Darf sie ab jetzt fortgesetzt werden? Sie können sie jederzeit wieder beenden.</p>"
+  },
+  "statutory": {
+    "first": "<p>Ihre Ansprechperson möchte dieses Gespräch aufzeichnen. Ab jetzt würde jede Nachricht verschlüsselt gespeichert, bis Sie oder Ihre Ansprechperson die Aufnahme beenden. Sie können sie jederzeit beenden.</p><p>Die Aufnahme erfolgt auf gesetzlicher Grundlage. Nur berechtigte Personen können die Aufnahme öffnen. Sie wird gelöscht, wenn die Aufbewahrungsfrist endet.</p><p>Bitte bestätigen Sie, dass Sie informiert wurden und die Aufnahme beginnen darf.</p>",
+    "resume": "<p>Die Aufnahme wurde beendet. Sie soll ab jetzt auf derselben gesetzlichen Grundlage fortgesetzt werden. Sie können sie jederzeit wieder beenden.</p>"
+  }
+}

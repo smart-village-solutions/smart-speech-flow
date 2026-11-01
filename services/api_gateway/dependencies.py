@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from .pipeline_logic import SpeechPipeline
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
-    from .runtime_policy import RuntimePolicyGate
+    from .recording.retention.metrics import RetentionWorkerMetrics
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -85,6 +85,32 @@ class GatewayDependencies:
     feedback_service: Any = None
     feedback_read_service: Any = None
     feedback_maintenance: Any = None
+    # Recording mode (#614); None until its database and secrets are wired.
+    recording_repository: Any = None
+    recording_secrets: Any = None
+    recording_keys: Any = None
+    recording_ceremony: Any = None
+    # Supervisors' retention decisions (#618).
+    recording_retention: Any = None
+    # Where each conversation's recording state lives; always built, used once wired.
+    recording_state_store: Any = None
+    recording_sessions: Any = None
+    # The archive behind recording (#615), wired with it when a store is configured.
+    recording_archive: Any = None
+    recording_spools: Any = None
+    recording_archive_client: Any = None
+    recording_stamper: Any = None
+    # The employee's own archive (#616), wired with the archive.
+    recording_archive_access: Any = None
+    # Exceptional access through custodian approval (#617a), wired with the keys.
+    recording_recovery_requests: Any = None
+    # Employee key recovery's re-enrolment (#617b), wired with the keys.
+    recording_reenrolment: Any = None
+    recording_resharing: Any = None
+    # Leavers (#617d), wired with the keys.
+    recording_leavers: Any = None
+    # The archive sites' retention workers, as the gateway exports them (#618).
+    retention_worker_metrics: Any = None
 
 
 def build_gateway_dependencies(
@@ -95,7 +121,6 @@ def build_gateway_dependencies(
     studio_runtime_flow: StudioRuntimeFlow | None = None,
     studio_token_provider: StudioRuntimeTokenProvider | None = None,
     studio_content: StudioContentService | None = None,
-    runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
     websocket_metrics: WebSocketMetrics | None = None,
     translation_refiner: BaseTranslationRefiner,
@@ -104,6 +129,7 @@ def build_gateway_dependencies(
     quality_telemetry_exporter: Any = None,
     audio_store: AudioStore | None = None,
     audio_storage_metrics: AudioStorageMetrics | None = None,
+    retention_worker_metrics: RetentionWorkerMetrics | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -122,7 +148,7 @@ def build_gateway_dependencies(
     Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
     it is set when this runs, counting into `audio_storage_metrics`. The app's
     series (`polling_messages_dropped`, `websocket_metrics`,
-    `audio_storage_metrics`) come from create_app(); without them this
+    `audio_storage_metrics`, `retention_worker_metrics`) come from create_app(); without them this
     container counts into a registry of its own that no /metrics serves.
     """
     # Imported here: every module below imports its provider from this one.
@@ -140,6 +166,8 @@ def build_gateway_dependencies(
         RealtimeTicketStore,
         RedisRealtimeTicketBackend,
     )
+    from .recording.retention.metrics import RetentionWorkerMetrics
+    from .recording.session_store import MemoryRecordingStateStore, RedisRecordingStateStore
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -177,7 +205,6 @@ def build_gateway_dependencies(
         audio_store=audio_store,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
-        runtime_policy=runtime_policy,
         pseudonymizer=pseudonymizer,
     )
     websocket_manager = WebSocketManager(session_manager, polling_store, monitor=websocket_monitor)
@@ -225,6 +252,14 @@ def build_gateway_dependencies(
         pipeline_admission=pipeline_admission,
         quality_telemetry=quality_telemetry,
         quality_telemetry_exporter=quality_telemetry_exporter,
+        recording_state_store=(
+            RedisRecordingStateStore(redis, namespace=redis_namespace)
+            if redis is not None
+            else MemoryRecordingStateStore()
+        ),
+        retention_worker_metrics=(
+            retention_worker_metrics or RetentionWorkerMetrics(CollectorRegistry())
+        ),
     )
 
 

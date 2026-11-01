@@ -1,4 +1,4 @@
-const BARS = ['intro', 'howTo', 'retention', 'optIn'] as const;
+const BARS = ['intro', 'howTo', 'retention'] as const;
 
 /** Holds the prose block's place while guest content loads, so no legal text is shown twice. */
 export function ConsentSkeleton({ label }: Readonly<{ label: string }>) {

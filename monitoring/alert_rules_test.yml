@@ -213,10 +213,9 @@ tests:
         alertname: TTSVRAMOverBudget
         exp_alerts: []
 
-  # Audio retention (#426). The pass runs hourly and stamps
+  # Delivery audio (#426, #615). The pass runs hourly and stamps
   # audio_cleanup_last_run_timestamp_seconds, deleting nothing on a quiet
-  # deployment or for sessions that captured a retention of 0. Neither may
-  # alert.
+  # deployment. That must not alert.
   - interval: 1m
     input_series:
       - series: 'audio_cleanup_last_run_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
@@ -250,13 +249,12 @@ tests:
               severity: warning
               component: audio-storage
             exp_annotations:
-              summary: The audio retention pass has stopped reporting.
+              summary: The audio cleanup pass has stopped reporting.
               description: >-
-                No retention pass has completed for more than two and a half
-                hours, so recordings and transcripts past their session's
-                retention may not be deleted. Check the gateway
-                log for the hourly Audio-Cleanup line and for an error from the
-                pass.
+                No cleanup pass has completed for more than two and a half
+                hours, so delivery audio and transcripts that an ended session
+                left behind may not be deleted. Check the gateway log for the
+                hourly Audio-Cleanup line and for an error from the pass.
 
   # A pass that never completed: the gauge keeps the gateway's start time,
   # here 0, and the alert waits the same 2.5h + 1h as for a stalled pass.
@@ -277,13 +275,12 @@ tests:
               severity: warning
               component: audio-storage
             exp_annotations:
-              summary: The audio retention pass has stopped reporting.
+              summary: The audio cleanup pass has stopped reporting.
               description: >-
-                No retention pass has completed for more than two and a half
-                hours, so recordings and transcripts past their session's
-                retention may not be deleted. Check the gateway
-                log for the hourly Audio-Cleanup line and for an error from the
-                pass.
+                No cleanup pass has completed for more than two and a half
+                hours, so delivery audio and transcripts that an ended session
+                left behind may not be deleted. Check the gateway log for the
+                hourly Audio-Cleanup line and for an error from the pass.
 
   # The gateway is down: no audio series at all. APIGatewayScrapeDown reports
   # that; this alert must not repeat it.
@@ -296,7 +293,7 @@ tests:
         alertname: AudioCleanupNotRunning
         exp_alerts: []
 
-  # The pass runs but cannot delete: the root-owned audio volume.
+  # The pass runs but cannot delete, as with the once root-owned audio volume.
   - interval: 1m
     input_series:
       - series: 'audio_cleanup_errors_total{job="api_gateway",instance="api_gateway:8000"}'
@@ -312,13 +309,13 @@ tests:
               severity: warning
               component: audio-storage
             exp_annotations:
-              summary: The audio retention pass cannot delete expired recordings.
+              summary: The audio cleanup pass cannot delete expired delivery audio.
               description: >-
                 3 failed deletions in the last two hours. Each hourly pass
                 retries the same files, so this counts attempts, not files; the
-                recordings outlive their session's retention until it clears.
-                The gateway log names the failure; an audio volume the gateway's
-                user cannot write or read is the usual cause.
+                audio outlives its session until it clears. The gateway log
+                names the failure; a tmpfs the gateway's user cannot write or
+                read is the usual cause.
 
   # A window whose first sample is already non-zero: increase() extrapolates
   # 3 failures to about 3.025, and the description still says 3.
@@ -334,22 +331,22 @@ tests:
               severity: warning
               component: audio-storage
             exp_annotations:
-              summary: The audio retention pass cannot delete expired recordings.
+              summary: The audio cleanup pass cannot delete expired delivery audio.
               description: >-
                 3 failed deletions in the last two hours. Each hourly pass
                 retries the same files, so this counts attempts, not files; the
-                recordings outlive their session's retention until it clears.
-                The gateway log names the failure; an audio volume the gateway's
-                user cannot write or read is the usual cause.
+                audio outlives its session until it clears. The gateway log
+                names the failure; a tmpfs the gateway's user cannot write or
+                read is the usual cause.
 
-  # Sized for 180 days of retention (see the ssf-audio-storage comment in
-  # alert_rules.yml). Neither directory alone is over 100 GiB; together they are.
+  # Sized for the gateway's 1 GiB tmpfs (see the ssf-audio-storage comment in
+  # alert_rules.yml). Neither directory alone is over 768 MiB; together they are.
   - interval: 1m
     input_series:
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
-        values: "64424509440+0x20"
+        values: "419430400+0x20"
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
-        values: "53687091200+0x20"
+        values: "419430400+0x20"
     alert_rule_test:
       - eval_time: 10m
         alertname: AudioStorageDiskUsageHigh
@@ -358,14 +355,13 @@ tests:
               severity: warning
               component: audio-storage
             exp_annotations:
-              summary: Stored audio exceeds 100 GiB.
+              summary: Delivery audio fills three quarters of its tmpfs.
               description: >-
-                Stored audio totals 110 GiB, above the 100 GiB sized for 180 days
-                of retention at 500 voice messages a day. Retention should keep it
-                below this, so check AudioCleanupNotRunning and AudioCleanupErrors,
-                the tenants' Studio retentionHours (0 keeps audio until it is
-                removed by hand) and whether traffic has outgrown the budget.
-                ServerDiskUsageHigh covers the disk itself.
+                Delivery audio totals 800 MiB of the gateway's 1 GiB tmpfs.
+                Sessions free theirs when they end, so check
+                AudioCleanupNotRunning and AudioCleanupErrors and whether many
+                long sessions run at once. New voice messages fail once the
+                tmpfs is full.
       - eval_time: 10m
         alertname: AudioStorageDiskUsageCritical
         exp_alerts: []
@@ -373,9 +369,9 @@ tests:
   - interval: 1m
     input_series:
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
-        values: "96636764160+0x20"
+        values: "524288000+0x20"
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
-        values: "75161927680+0x20"
+        values: "461373440+0x20"
     alert_rule_test:
       - eval_time: 10m
         alertname: AudioStorageDiskUsageCritical
@@ -384,45 +380,19 @@ tests:
               severity: critical
               component: audio-storage
             exp_annotations:
-              summary: Stored audio exceeds 150 GiB.
+              summary: Delivery audio nearly fills its tmpfs.
               description: >-
-                Stored audio totals 160 GiB and is still growing past the
-                warning threshold. Check the cleanup alerts and free space on
-                the host disk before saving audio starts to fail.
+                Delivery audio totals 940 MiB of the gateway's 1 GiB tmpfs and
+                is still growing past the warning threshold. New voice messages
+                fail once it is full.
 
-  - interval: 1m
-    input_series:
-      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="original"}'
-        values: "130000+0x20"
-      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
-        values: "130000+0x20"
-    alert_rule_test:
-      - eval_time: 10m
-        alertname: AudioStorageFileCountHigh
-        exp_alerts:
-          - exp_labels:
-              severity: warning
-              component: audio-storage
-            exp_annotations:
-              summary: More than 250,000 audio files are stored.
-              description: >-
-                260000 audio files are stored, above the 250,000 sized for 180
-                days of retention at 500 voice messages a day, two files each.
-                Check AudioCleanupNotRunning and AudioCleanupErrors and the
-                tenants' Studio retentionHours.
-
-  # The full budget, 180 days at 500 voice messages a day plus headroom, is
-  # quiet: the old 24-hour thresholds (8 GiB, 10,000 files) would fire here.
+  # A busy afternoon, half the tmpfs, is quiet.
   - interval: 1m
     input_series:
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
-        values: "53687091200+0x20"
+        values: "268435456+0x20"
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
-        values: "42949672960+0x20"
-      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="original"}'
-        values: "100000+0x20"
-      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
-        values: "100000+0x20"
+        values: "268435456+0x20"
     alert_rule_test:
       - eval_time: 10m
         alertname: AudioStorageDiskUsageHigh
@@ -430,20 +400,17 @@ tests:
       - eval_time: 10m
         alertname: AudioStorageDiskUsageCritical
         exp_alerts: []
-      - eval_time: 10m
-        alertname: AudioStorageFileCountHigh
-        exp_alerts: []
 
-  # Studio is unreachable during a conversation: every message's policy read
+  # Studio is unreachable while guests join: every activation's policy read
   # fails. The floor of three failures is met at 3m, so the alert holds from
   # there and fires at 13m, not a minute earlier.
   - interval: 1m
     input_series:
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="unavailable"}'
         values: "0+1x40"
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="ok"}'
         values: "0+0x40"
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="contract_error"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="contract_error"}'
         values: "0+0x40"
     alert_rule_test:
       - eval_time: 12m
@@ -457,7 +424,7 @@ tests:
               component: studio
             exp_annotations:
               summary: Most live Studio policy reads are failing.
-              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions or recordings while this lasts; conversations already running and their translation keep working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
       - eval_time: 25m
         alertname: StudioPolicyReadsFailing
         exp_alerts:
@@ -466,7 +433,7 @@ tests:
               component: studio
             exp_annotations:
               summary: Most live Studio policy reads are failing.
-              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions or recordings while this lasts; conversations already running and their translation keep working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
 
   # Two failed clicks three minutes apart while Studio restarts, nothing else
   # reading: the ratio is 100% for thirteen minutes, but two reads are not a
@@ -488,12 +455,12 @@ tests:
         alertname: StudioPolicyReadsFailing
         exp_alerts: []
 
-  # One failed read among a conversation's successful ones.
+  # One failed read among many successful ones.
   - interval: 1m
     input_series:
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="unavailable"}'
         values: "0 0 0 1+0x30"
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="ok"}'
         values: "0+1x33"
     alert_rule_test:
       - eval_time: 12m
@@ -517,15 +484,15 @@ tests:
               component: studio
             exp_annotations:
               summary: Most live Studio policy reads are failing.
-              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions or recordings while this lasts; conversations already running and their translation keep working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
 
   # Four failed and six successful reads every ten minutes: the floor is met,
   # but most reads succeed, so the ratio keeps it quiet.
   - interval: 1m
     input_series:
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="unavailable"}'
         values: "0+0.4x40"
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="ok"}'
         values: "0+0.6x40"
     alert_rule_test:
       - eval_time: 30m
@@ -535,9 +502,9 @@ tests:
   # Six failed and four successful reads every ten minutes: above one half.
   - interval: 1m
     input_series:
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="unavailable"}'
         values: "0+0.6x40"
-      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="ok"}'
         values: "0+0.4x40"
     alert_rule_test:
       - eval_time: 14m
@@ -551,7 +518,7 @@ tests:
               component: studio
             exp_annotations:
               summary: Most live Studio policy reads are failing.
-              description: "60% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+              description: "60% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions or recordings while this lasts; conversations already running and their translation keep working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
 
   # A suspended tenant refuses every read on purpose: not a failure.
   - interval: 1m
@@ -695,7 +662,7 @@ tests:
               component: studio
             exp_annotations:
               summary: The gateway cannot read the Studio policy at all.
-              description: "The gateway started without a usable Studio runtime client, so it never reads the policy: staff cannot start sessions and no conversation content is stored. Its startup log says 'Runtime policy gate unbound' with the reason. Check STUDIO_RUNTIME_CONFIGURATION_BASE_URL and the ssf-runtime client settings (STUDIO_RUNTIME_TOKEN_URL, STUDIO_RUNTIME_CLIENT_SECRET) in .env, then recreate the gateway."
+              description: "The gateway started without a usable Studio runtime client, so it never reads the policy: staff cannot start sessions or recordings. Its startup log says 'Studio runtime client unbound' with the reason. Check STUDIO_RUNTIME_CONFIGURATION_BASE_URL and the ssf-runtime client settings (STUDIO_RUNTIME_TOKEN_URL, STUDIO_RUNTIME_CLIENT_SECRET) in .env, then recreate the gateway."
 
   - interval: 1m
     input_series:
@@ -704,4 +671,138 @@ tests:
     alert_rule_test:
       - eval_time: 10m
         alertname: StudioPolicyGateUnbound
+        exp_alerts: []
+
+  # Recording retention (#618).
+  # A worker whose last beat was at minute 0: past 30 min at 30m01s, firing ten minutes on.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 41m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: A retention worker has stopped finishing its passes.
+              description: "The primary archive site's retention worker has not finished a pass for over thirty minutes, or never reported since the gateway has had an archive, so locks, holds and expiry there are not being kept up. Check its container on that VM (archive_compose ps retention, then its log) and its link to ssf_recording, and that the gateway can read ssf_recording. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+  # Still pending ten minutes after the last beat; and a worker beating every pass never fires.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+60x90"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: RecordingRetentionWorkerSilent
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_failing_seconds{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "86401+60x60"
+    alert_rule_test:
+      - eval_time: 31m
+        alertname: RecordingRetentionWorkerFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: A retention step has been failing or overdue for over a day.
+              description: "A retention step on the primary archive site has failed, or waited, for over a day: a version's lock, hold or deletion, or a whole tenant's pass, is behind. The worker's log names the failure's type. Usually the site's S3 API, its retention credential or a tenant without a bucket: check them. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+  # Exactly a day is not over a day.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_failing_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "86400+0x60"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: RecordingRetentionWorkerFailing
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_halted{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: RecordingRetentionWorkerHalted
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: A retention worker holds deletions back after a database restore.
+              description: "The primary archive site's retention worker found ssf_recording behind the audit position it last saw, as after a restore from a dump. It lifts no hold and deletes nothing until an operator works through the restore procedure and runs acknowledge-restore. See docs/operations/runbooks/recording-retention-deployment.md, 'After restoring ssf_recording'."
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_worker_halted{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: RecordingRetentionWorkerHalted
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_hold_mismatches{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "2+0x90"
+    alert_rule_test:
+      - eval_time: 61m
+        alertname: RecordingRetentionHoldMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: primary
+            exp_annotations:
+              summary: Archive versions are held without a legal hold.
+              description: "2 versions on the primary archive site are held although no legal hold applies, and no hold_off decision later than the hold exists to lift them. After a restore, have a supervisor lift the hold again; otherwise check the audit log for the conversation's decisions. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_hold_mismatches{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x90"
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: RecordingRetentionHoldMismatch
+        exp_alerts: []
+
+  # Under an hour of mismatch is not yet worth a warning.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_hold_mismatches{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "1+0x90"
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: RecordingRetentionHoldMismatch
         exp_alerts: []

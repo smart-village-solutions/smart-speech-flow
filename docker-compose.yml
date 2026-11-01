@@ -37,6 +37,11 @@ services:
       - "8000"
     volumes:
       - ./models:/models
+      # Every utterance passes through a temporary file: RAM only (spec §5.5).
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 256M
     deploy:
       resources:
         reservations:
@@ -82,6 +87,9 @@ services:
               capabilities: [gpu]
 
   api_gateway:
+    # No core dumps: a crashed gateway's memory holds live plaintext (spec §5.5).
+    ulimits:
+      core: 0
     build:
       context: .
       dockerfile: services/api_gateway/Dockerfile
@@ -93,31 +101,43 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: 2G
+          # 2 GiB for the process plus both tmpfs mounts, whose pages count here:
+          # a full tmpfs then refuses a write instead of costing the gateway.
+          memory: 3328M
         reservations:
           cpus: '1.0'
           memory: 1G
+    # No swap: tmpfs and heap pages hold conversation plaintext (spec §5.5).
+    memswap_limit: 3328M
 
     volumes:
-      # Persistent Audio Storage (named volume keeps write access for the
-      # non-root container user without relying on host directory ownership)
-      - audio-data:/data/audio
+      # Encrypted archive objects waiting for upload (#615): ciphertext only.
+      - archive-spool:/data/archive-spool
 
-      # Temporary Upload Buffer (RAM - tmpfs)
+      # Starlette spools an upload over 1 MiB into /tmp: RAM only (spec §5.5).
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 256M
+      # Delivery audio lives in RAM and nowhere else (spec §5.5); a session's
+      # files go when it ends. A gateway restart loses them while the
+      # conversation itself survives in Redis. World-writable with the sticky
+      # bit: the gateway runs as the unprivileged `app` user.
       - type: tmpfs
         target: /tmp/audio
         tmpfs:
           size: 1G
+          mode: 01777
+
+      # Recording secrets (#614): outside .env, so no backup of .env carries
+      # them. scripts/recording/generate-secrets.sh writes the directory.
+      - ${SSF_RECORDING_SECRETS_DIR:-./deploy/local/recording-secrets}:/run/secrets/ssf-recording:ro
 
     environment:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_NAMESPACE=ssf
       - CLIENT_BASE_URL=https://translate.smart-village.solutions
-      # Audio Storage Configuration
-      - AUDIO_STORAGE_PATH=/data/audio
-      - AUDIO_TEMP_PATH=/tmp/audio
-      - AUDIO_MAX_DISK_USAGE_GB=9
-      - AUDIO_CLEANUP_INTERVAL_MINUTES=60
+      - SSF_AUDIO_BASE_DIR=/tmp/audio
       - ENABLE_PIPELINE_METADATA=true
       # LLM Refinement Configuration
       - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
@@ -141,7 +161,7 @@ services:
       - LLM_REFINEMENT_MAX_TOKENS=${LLM_REFINEMENT_MAX_TOKENS:-256}
       # No colon before the dash: an explicitly empty value must survive so
       # "refine everything" is reachable through compose (see I4).
-      - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}
+      - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,fa,pl,bg,el,sq,hi}
       # Pipeline Admission Control — bounds concurrent GPU pipeline work.
       # One GPU hosts asr, translation, tts and vllm together. Five is the
       # limit measured on the production card (2026-09-24): peak 15345 MiB of
@@ -183,6 +203,13 @@ services:
       # feedback button sits in the ended-conversation screen's header, and the
       # ended session's join link is already revoked by then.
       - SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}
+      # Recording mode (#614). Off until SSF_RECORDING_APP_PASSWORD is set and
+      # the secrets directory above holds its two files.
+      - SSF_RECORDING_DATABASE_URL=postgresql://ssf_recording_app@ssf-postgres:5432/ssf_recording
+      - SSF_RECORDING_DATABASE_PASSWORD=${SSF_RECORDING_APP_PASSWORD:-}
+      # The archive store's S3 endpoint (#613); its writer credentials are the
+      # archive-writers.json file in the recording secrets directory.
+      - SSF_ARCHIVE_ENDPOINT=${SSF_ARCHIVE_ENDPOINT:-}
       - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
       - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
       - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-unknown}
@@ -308,11 +335,11 @@ services:
 
   redis:
     image: redis:7.4.7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    # Nothing on disk (D12): live conversations are in memory only, and a
+    # Redis restart ends them.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     expose:
       - "6379"
-    volumes:
-      - redis-data:/data
     restart: always
 
   clickhouse:
@@ -376,6 +403,11 @@ services:
       SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
       SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
       SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
+      # Optional: apply.sh creates the ssf_recording database only when set.
+      SSF_RECORDING_APP_PASSWORD: ${SSF_RECORDING_APP_PASSWORD:-}
+      # Optional: the retention workers' roles (#618) log in only once these are set.
+      SSF_RECORDING_RETENTION_PASSWORD: ${SSF_RECORDING_RETENTION_PASSWORD:-}
+      SSF_RECORDING_REPLICA_PASSWORD: ${SSF_RECORDING_REPLICA_PASSWORD:-}
     volumes:
       - ssf-postgres-data:/var/lib/postgresql/data
       # The entrypoint ignores subdirectories, so the migrations live in one
@@ -600,10 +632,9 @@ services:
       - ./monitoring/promtail-data:/var/lib/promtail
 
 volumes:
-  redis-data:
   ollama-data:
   vllm-models:
-  audio-data:
+  archive-spool:
   clickhouse-data:
   keycloak-postgres-data:
   ssf-postgres-data:

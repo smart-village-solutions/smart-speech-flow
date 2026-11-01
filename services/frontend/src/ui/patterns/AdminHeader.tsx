@@ -8,6 +8,12 @@ interface AdminHeaderProps {
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
+  onOpenKeys?: () => void;
+  onOpenCeremony?: () => void;
+  onOpenArchive?: () => void;
+  onOpenKeyRecovery?: () => void;
+  onOpenRecoveryRequests?: () => void;
+  onOpenRecoveryApprovals?: () => void;
 }
 
 /** The customer header plus the account menu: same 72px bar, same 800px column. */
@@ -18,6 +24,12 @@ export function AdminHeader({
   onSignOut,
   accountUrl,
   studioUrl,
+  onOpenKeys,
+  onOpenCeremony,
+  onOpenArchive,
+  onOpenKeyRecovery,
+  onOpenRecoveryRequests,
+  onOpenRecoveryApprovals,
 }: Readonly<AdminHeaderProps>) {
   return (
     <AppHeader
@@ -25,7 +37,17 @@ export function AdminHeader({
       onHome={onHome}
       onFeedback={onFeedback}
       trailing={
-        <AdminUserMenu onSignOut={onSignOut} accountUrl={accountUrl} studioUrl={studioUrl} />
+        <AdminUserMenu
+          onSignOut={onSignOut}
+          accountUrl={accountUrl}
+          studioUrl={studioUrl}
+          onOpenKeys={onOpenKeys}
+          onOpenCeremony={onOpenCeremony}
+          onOpenArchive={onOpenArchive}
+          onOpenKeyRecovery={onOpenKeyRecovery}
+          onOpenRecoveryRequests={onOpenRecoveryRequests}
+          onOpenRecoveryApprovals={onOpenRecoveryApprovals}
+        />
       }
     />
   );

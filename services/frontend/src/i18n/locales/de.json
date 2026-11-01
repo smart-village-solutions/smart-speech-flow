@@ -24,8 +24,6 @@
     "intro": "$t(app.name) ist ein automatischer Echtzeit-Übersetzungsdienst für Gespräche zwischen Menschen, die verschiedene Sprachen sprechen. Der Dienst läuft ausschließlich auf einem dedizierten, privaten Server.",
     "howTo": "Tippen Sie auf die Mikrofontaste, um die Aufnahme zu starten. Sie haben dann 20 Sekunden Zeit zu sprechen. Mit einem weiteren Tippen können Sie die Aufnahme früher beenden. Alternativ können Sie die Texteingabe verwenden.",
     "retention": "Standardmäßig werden Audio- und Transkriptionsdaten nur während der aktiven Sitzung verarbeitet und danach nicht aufbewahrt. Nach Ende des Gesprächs werden die Daten automatisch verworfen. Über die Feedback-Funktion können Sie jederzeit Probleme melden oder Verbesserungsvorschläge einreichen.",
-    "optIn": "Wenn Sie uns helfen möchten, $t(app.name) zu verbessern, können Sie der Speicherung Ihrer Gesprächsdaten für bis zu 180 Tage zustimmen. Diese Daten werden ausschließlich zur Analyse und Qualitätsverbesserung innerhalb des Projekts $t(app.name) verwendet.",
-    "checkbox": "Ich stimme der Speicherung meiner Gesprächsdaten für bis zu 180 Tage zum Zweck der Verbesserung von $t(app.name) zu.",
     "getStarted": "Loslegen",
     "loading": "Informationen werden geladen"
   },
@@ -44,6 +42,43 @@
     "reconnecting": "Verbindung wird wiederhergestellt…",
     "ended": "Dieses Gespräch ist beendet.",
     "timeoutWarning": "Dieses Gespräch endet um {{time}} Uhr."
+  },
+  "recording": {
+    "label": "Aufnahme läuft",
+    "starting": "Aufnahme startet …",
+    "paused": "Aufnahme pausiert",
+    "stop": "Aufnahme beenden",
+    "error": "Die Aufnahme konnte nicht geändert werden. Bitte versuchen Sie es erneut.",
+    "reason": {
+      "liveness": "Verbindung unterbrochen",
+      "unacknowledged": "warten auf beide Bildschirme",
+      "storage": "Speicher nicht erreichbar",
+      "policy": "derzeit nicht erlaubt"
+    },
+    "ask": {
+      "title": "Darf dieses Gespräch aufgezeichnet werden?",
+      "resumeTitle": "Aufnahme fortsetzen?",
+      "yes": "Ja, aufzeichnen",
+      "no": "Nein"
+    },
+    "consent": {
+      "readAloud": "Vorlesen",
+      "stopReading": "Vorlesen beenden",
+      "loading": "Text wird geladen …",
+      "unavailable": "Der Text kann gerade nicht geladen werden. Bitte wenden Sie sich an Ihre Ansprechperson.",
+      "name": "Ihr Name",
+      "nameProposed": "Von Ihrer Ansprechperson eingetragen. Bitte prüfen Sie ihn.",
+      "signature": "Ihre Unterschrift",
+      "optional": "freiwillig",
+      "clear": "Löschen",
+      "cannotSign": "Ich kann nicht unterschreiben und bestätige durch Antippen.",
+      "nameRequired": "Bitte geben Sie Ihren Namen ein.",
+      "signatureRequired": "Bitte unterschreiben Sie oder bestätigen Sie, dass Sie nicht unterschreiben können.",
+      "textChanged": "Der Text hat sich geändert. Bitte lesen Sie ihn erneut, bevor Sie antworten.",
+      "originalLanguage": "Originalsprache: {{language}}",
+      "documentationRequired": "Bitte bestätigen Sie die Einwilligung zur Dokumentation gesondert.",
+      "staffReleaseChanged": "Der Freigabetext für Mitarbeitende hat sich geändert. Bitten Sie die Mitarbeiterin oder den Mitarbeiter, diese Anfrage zurückzuziehen und eine neue zu senden."
+    }
   },
   "feedback": {
     "title": "Feedback geben",
@@ -120,7 +155,13 @@
       "accountSettings": "Kontoeinstellungen",
       "openStudio": "Organisation verwalten",
       "opensInNewTab": "(öffnet in neuem Tab)",
-      "signOut": "Abmelden"
+      "signOut": "Abmelden",
+      "keys": "Archivschlüssel",
+      "ceremony": "Wiederherstellungsschlüssel",
+      "archive": "Meine Aufzeichnungen",
+      "recoveryRequests": "Wiederherstellungsanträge",
+      "recoveryApprovals": "Wiederherstellungsfreigaben",
+      "keyRecovery": "Meine Schlüsselwiederherstellung"
     },
     "dashboard": {
       "welcome": {
@@ -188,6 +229,472 @@
       },
       "terminateFailed": "Das Gespräch konnte nicht beendet werden.",
       "backToDashboard": "Zurück zur Übersicht"
+    },
+    "keys": {
+      "title": "Archivschlüssel",
+      "intro": "Ihre persönlichen Schlüssel öffnen aufgezeichnete Gespräche. Sie sind durch eine Passphrase geschützt, die nur Sie kennen; SSF sieht sie nie und kann sie nicht zurücksetzen. Aufzeichnen funktioniert auch ohne Schlüssel.",
+      "stepUpTitle": "Identität bestätigen",
+      "stepUpBody": "Zum Einrichten der Schlüssel melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
+      "stepUpAction": "Erneut anmelden",
+      "enrolTitle": "Schlüssel einrichten",
+      "enrolBody": "Wählen Sie eine Passphrase mit mindestens 12 Zeichen, zum Beispiel vier oder fünf zusammenhanglose Wörter. Sie ist nicht Ihr Anmeldepasswort.",
+      "passphrase": "Passphrase",
+      "passphraseConfirm": "Passphrase wiederholen",
+      "passphraseMismatch": "Die beiden Eingaben stimmen nicht überein.",
+      "passphraseWeak": "Diese Passphrase ist zu leicht zu erraten. Verwenden Sie mehr oder seltenere Wörter.",
+      "enrolFailed": "Ihre Schlüssel konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+      "enrolAction": "Schlüssel erzeugen",
+      "enrolPending": "Schlüssel werden erzeugt …",
+      "unlockTitle": "Schlüssel entsperren",
+      "fingerprintLabel": "Fingerabdruck:",
+      "unlockFailed": "Diese Passphrase öffnet die Schlüssel nicht.",
+      "unlockAction": "Entsperren",
+      "unlockPending": "Wird entsperrt …",
+      "unlockedTitle": "Ihre Schlüssel sind entsperrt",
+      "fingerprintHint": "Vergleichen Sie diesen Fingerabdruck telefonisch oder persönlich, wenn Sie gebeten werden, Ihren Schlüssel zu bestätigen.",
+      "lockAction": "Sperren",
+      "unavailable": "Archivschlüssel sind gerade nicht verfügbar.",
+      "reenrol": {
+        "start": "Passphrase vergessen? Neuen Schlüssel einrichten",
+        "warningTitle": "Bevor Sie einen neuen Schlüssel einrichten",
+        "warningLocked": "Ihre Gespräche bleiben gesperrt, bis die Schlüsselwiederherstellung abgeschlossen ist.",
+        "warningRecovered": "Zugriffe, die Sie als Aufsicht wiederhergestellt haben, und Freigaben brauchen neue Anträge.",
+        "warningRequests": "Ihre offenen Anträge werden abgebrochen.",
+        "warningCustodian": "Ihr Anteil als Verwahrende Person ist nicht nutzbar, bis die Verwaltung die Verwahrenden ändert (Verwahrende ändern). Danach sind noch {{usable}} von {{k}} nötigen Anteilen nutzbar.",
+        "continue": "Weiter",
+        "cancel": "Abbrechen",
+        "submit": "Neuen Schlüssel einrichten",
+        "pending": "Bitte öffnen Sie den Bestätigungslink, den wir Ihnen per E-Mail geschickt haben. Bis dahin gilt Ihr bisheriger Schlüssel.",
+        "done": "Ihr neuer Schlüssel ist aktiv.",
+        "changed": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
+        "ceremony": "Während einer laufenden Schlüsselzeremonie, an der Sie teilnehmen, nicht möglich.",
+        "failed": "Der neue Schlüssel konnte nicht eingerichtet werden."
+      }
+    },
+    "ceremony": {
+      "title": "Wiederherstellungsschlüssel",
+      "intro": "Mit dem Wiederherstellungsschlüssel kann die Organisation ein aufgezeichnetes Gespräch öffnen, wenn die zuständige Person nicht mehr kann – aber nur, wenn genug Verwahrende gemeinsam zustimmen. Kein Gerät und keine Person hält den ganzen Schlüssel.",
+      "unavailable": "Der Wiederherstellungsschlüssel ist gerade nicht verfügbar.",
+      "stepUpBody": "Für diesen Schritt melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
+      "noCeremony": "Für diese Organisation gibt es noch keinen Wiederherstellungsschlüssel. Die Organisationsverwaltung startet die Zeremonie.",
+      "lastAborted": "Die letzte Zeremonie wurde abgebrochen ({{reason}}). Es gibt noch keinen Wiederherstellungsschlüssel; die Zeremonie muss vollständig neu gestartet werden.",
+      "lastExpired": "Die letzte Zeremonie ist nach 24 Stunden abgelaufen, ohne abgeschlossen zu werden. Sie muss vollständig neu gestartet werden.",
+      "keyActiveTitle": "Der Wiederherstellungsschlüssel ist aktiv",
+      "keyActiveBody": "{{k}} von {{n}} Anteilen öffnen gemeinsam ein Gespräch.",
+      "modeStandard": "Standardmodus: Jeder Anteil allein genügt. Der Schutz ist organisatorisch und nur so stark wie die schwächste Passphrase.",
+      "modeEnhanced": "Erweiterter Modus: Keine einzelne Person kann ein Gespräch öffnen.",
+      "transcriptLabel": "Protokoll:",
+      "startTitle": "Zeremonie starten",
+      "startBody": "Wählen Sie die Verwahrenden und wie viele Anteile ein Gespräch öffnen. Alle Verwahrenden treffen sich danach persönlich oder per Video und vergleichen ihre Fingerabdrücke.",
+      "custodiansLabel": "Verwahrende",
+      "notEnrolled": "noch keine Archivschlüssel",
+      "thresholdLabel": "Benötigte Anteile",
+      "paperLabel": "Papiersicherung auf diesem Gerät drucken",
+      "startAction": "Zeremonie starten",
+      "startPending": "Wird gestartet …",
+      "startInvalid": "Diese Auswahl ist nicht möglich. Wählen Sie mindestens einen Verwahrenden mehr als benötigte Anteile, alle mit Archivschlüsseln.",
+      "startFailed": "Die Zeremonie konnte nicht gestartet werden. Bitte versuchen Sie es erneut.",
+      "directoryUnavailable": "Die Liste der Verwahrenden ist gerade nicht verfügbar.",
+      "participantsTitle": "Beteiligte und Fingerabdrücke",
+      "paperHolder": "Papieranteil {{ref}}",
+      "statusWaiting": "ausstehend",
+      "statusDealt": "Beitrag abgegeben",
+      "statusSigned": "unterschrieben",
+      "statusPrinted": "gedruckt",
+      "fingerprintMismatch": "Ein Fingerabdruck passt nicht zu seinem Schlüssel. Brechen Sie die Zeremonie ab.",
+      "custodianTitle": "Ihr Teil",
+      "unlockFirst": "Entsperren Sie zuerst Ihre Archivschlüssel und kommen Sie dann hierher zurück.",
+      "openKeys": "Archivschlüssel öffnen",
+      "compareAttest": "Ich habe jeden Fingerabdruck oben persönlich mit seinem Inhaber verglichen.",
+      "dealAction": "Beitrag abgeben",
+      "confirmAction": "Prüfen und unterschreiben",
+      "working": "Wird bearbeitet …",
+      "waitForOthers": "Erledigt. Warten auf die anderen Beteiligten …",
+      "checkFailed": "Eine Prüfung ist fehlgeschlagen ({{reason}}). Die Zeremonie wurde abgebrochen und muss neu gestartet werden.",
+      "stepFailed": "Dieser Schritt ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "paperTitle": "Papiersicherung",
+      "deviceFingerprint": "Fingerabdruck dieses Geräts:",
+      "deviceLost": "Dieses Gerät hält den Papierschlüssel nicht mehr, etwa nach einem Neuladen. Brechen Sie die Zeremonie ab und starten Sie neu.",
+      "paperDone": "Die Papiersicherung ist abgeschlossen. Warten auf die Unterschriften der Verwahrenden …",
+      "paperWaiting": "Warten, bis alle Verwahrenden ihren Beitrag abgegeben haben …",
+      "verifyPaperAction": "Prüfen und Papieranteile erzeugen",
+      "printAction": "Drucken",
+      "sealedAttest": "Jeder Anteil ist einzeln gedruckt, versiegelt und einer anderen Person übergeben.",
+      "paperConfirmAction": "Papiersicherung abschließen",
+      "sheetTitle": "Papieranteil des Wiederherstellungsschlüssels",
+      "sheetWarning": "Vertraulich. {{k}} solcher Anteile öffnen gemeinsam jedes aufgezeichnete Gespräch. Versiegelt und getrennt von anderen Anteilen aufbewahren.",
+      "sheetTenant": "Organisation",
+      "sheetKey": "Schlüssel",
+      "sheetHolder": "Anteil",
+      "sheetHolderValue": "{{ref}} (Nummer {{index}} von {{n}})",
+      "abortAction": "Zeremonie abbrechen",
+      "abortTitle": "Zeremonie abbrechen?",
+      "abortBody": "Alle bisherigen Beiträge verfallen. Die Zeremonie muss danach vollständig neu gestartet werden.",
+      "abortFailed": "Die Zeremonie konnte nicht abgebrochen werden. Bitte versuchen Sie es erneut.",
+      "keepGoing": "Weitermachen",
+      "usableShares": "{{usable}} von {{k}} nötigen Anteilen nutzbar",
+      "reshare": {
+        "start": "Verwahrende ändern",
+        "voidSheets": "Die Verwahrenden wurden geändert. Vernichten Sie die alten Papieranteile: Zusammen mit anderen aus dem alten Kreis würden sie das Archiv noch öffnen.",
+        "lastAborted": "Die letzte Änderung der Verwahrenden wurde abgebrochen ({{reason}}). Die bisherigen Verwahrenden behalten ihre Anteile.",
+        "lastExpired": "Die letzte Änderung der Verwahrenden ist nach 24 Stunden verfallen. Die bisherigen Verwahrenden behalten ihre Anteile.",
+        "title": "Verwahrende ändern",
+        "intro": "Benennen Sie die neuen Verwahrenden und wie viele Anteile ein Gespräch öffnen. Bisherige Anteilsinhaber geben ihren Teil weiter; der Schlüssel und alle Archive bleiben, wie sie sind.",
+        "dealers": "Wählen Sie {{k}} bisherige Anteilsinhaber, die ihre Anteile weitergeben",
+        "state": {
+          "fresh": "nutzbar",
+          "kept": "nutzbar mit früherem Schlüssel",
+          "lost": "nicht nutzbar",
+          "paper": "Papieranteil"
+        },
+        "holderPaper": "Papieranteil {{ref}}",
+        "submit": "Änderung starten",
+        "pending": "Wird gestartet …",
+        "cancel": "Abbrechen",
+        "errorDealers": "Wählen Sie genau so viele bisherige Anteilsinhaber, wie heute Anteile nötig sind.",
+        "errorUnusable": "Einer der gewählten Anteilsinhaber kann seinen Anteil nicht mehr öffnen.",
+        "dealerTitle": "Ihren Anteil weitergeben",
+        "newHolders": "Vergleichen Sie den Fingerabdruck jedes neuen Anteilsinhabers persönlich mit ihm:",
+        "compared": "verglichen",
+        "retiredKey": "Ihr Anteil ist an Ihren früheren Schlüssel gebunden. Geben Sie dessen Passphrase ein.",
+        "unlockRetired": "Früheren Schlüssel entsperren",
+        "unlockFailed": "Diese Passphrase öffnet den früheren Schlüssel nicht.",
+        "deal": "Meinen Anteil weitergeben",
+        "paperTitle": "Papieranteile, die ihren Anteil weitergeben",
+        "sheet": "Blatt {{ref}}",
+        "sheetValue": "Die 64 Zeichen auf dem Blatt",
+        "sheetMismatch": "Das passt nicht zum Anteil dieses Blatts. Prüfen Sie die Eingabe.",
+        "dealSheet": "Dieses Blatt weitergeben",
+        "sheetsDone": "Alle Blätter haben ihren Anteil weitergegeben.",
+        "chainPending": "Die Protokolle der bisherigen Verwahrenden werden geprüft …",
+        "sheetCeremony": "Ausgestellt durch",
+        "errorChanged": "Die Verwahrenden haben sich inzwischen geändert. Schließen Sie das Formular und wählen Sie neu.",
+        "leftNotice": "Ausgeschieden: {{names}}. Ihre Anteile gelten weiter, bis die Verwahrenden geändert sind. Ändern Sie die Verwahrenden.",
+        "left": "ausgeschieden"
+      },
+      "leavers": {
+        "title": "Ausgeschiedene",
+        "intro": "Personen mit Archivschlüssel, denen Studio keine Aufnahmeberechtigung mehr gibt. Entfernen Sie dort zuerst die Berechtigungen. Erst dann erscheint die Person hier.",
+        "none": "Niemand: Alle Personen mit Archivschlüssel haben in Studio noch eine Aufnahmeberechtigung.",
+        "custodian": "Verwahrende",
+        "copySub": "Kennung kopieren",
+        "copied": "Kopiert",
+        "copyFailed": "Kopieren nicht möglich",
+        "fingerprint": "Fingerabdruck",
+        "activity": "Eingerichtet am {{enrolled}} · Gespräche: {{conversations}} ·",
+        "lastConversation": "letztes am {{date}}",
+        "noConversation": "noch kein Gespräch",
+        "mark": "Als ausgeschieden markieren",
+        "confirmBody": "Der Archivschlüssel dieser Person und alle ihre Zugänge werden gelöscht. Ihre Gespräche bleiben über den Ausnahmezugang erreichbar.",
+        "confirmCustodian": "Diese Person ist Verwahrende. Ihr Anteil bleibt, bis die Verwahrenden geändert sind. Ändern Sie die Verwahrenden danach.",
+        "confirm": "Endgültig markieren",
+        "cancel": "Abbrechen",
+        "errorDirectory": "Das Studio-Verzeichnis ist gerade nicht erreichbar oder unvollständig. Versuchen Sie es später erneut.",
+        "errorStillListed": "Diese Person hat in Studio wieder eine Aufnahmeberechtigung.",
+        "errorAlreadyLeft": "Diese Person ist bereits als ausgeschieden markiert.",
+        "errorNoKey": "Diese Person hat keinen aktiven Archivschlüssel mehr.",
+        "errorKeyChanged": "Der Schlüssel dieser Person hat sich inzwischen geändert. Laden Sie die Liste neu.",
+        "errorCeremony": "Diese Person nimmt an einer laufenden Schlüsselzeremonie teil. Brechen Sie diese zuerst ab.",
+        "errorFailed": "Das hat nicht geklappt. Bitte versuchen Sie es erneut."
+      }
+    },
+    "recording": {
+      "off": "Keine Aufnahme",
+      "request": "Aufnahme anfragen",
+      "waiting": "Warten auf die Antwort des Gastes …",
+      "cancel": "Anfrage zurückziehen",
+      "reason": {
+        "declined": "Der Gast hat die Aufnahme abgelehnt.",
+        "unanswered": "Der Gast hat nicht geantwortet.",
+        "stopped_by_guest": "Der Gast hat die Aufnahme beendet."
+      },
+      "error": {
+        "GUEST_NOT_CONNECTED": "Der Gast ist nicht verbunden.",
+        "RECORDING_DISABLED": "Aufnahmen sind für diese Organisation nicht freigegeben.",
+        "RECOVERY_KEY_MISSING": "Für diese Organisation fehlt noch der Wiederherstellungsschlüssel.",
+        "RECORDING_POLICY_UNAVAILABLE": "Die Aufnahmeeinstellungen sind gerade nicht erreichbar. Bitte erneut versuchen.",
+        "RECORDING_BUSY": "Die Aufnahme ist bereits angefragt oder läuft.",
+        "ARCHIVE_UNAVAILABLE": "Für diese Installation ist kein Aufnahmearchiv eingerichtet.",
+        "ARCHIVE_WRITE_FAILED": "Die Zustimmung des Gastes konnte nicht gespeichert werden. Der Gast kann es erneut versuchen.",
+        "generic": "Die Aufnahme konnte nicht geändert werden.",
+        "ID_CHECK_REQUIRED": "Bitte prüfen Sie zuerst das Ausweisdokument des Gastes.",
+        "STAFF_RELEASE_TEXT_MISMATCH": "Der Freigabetext hat sich geändert. Ziehen Sie eine offene Anfrage zurück, lesen Sie den Text erneut und fragen Sie die Aufnahme erneut an."
+      },
+      "ask": {
+        "title": "Aufnahme anfragen",
+        "body": "Der Gast wird auf seinem Bildschirm um Zustimmung zur Aufnahme gebeten.",
+        "name": "Name des Gastes (freiwillig)",
+        "nameHint": "Der Gast bestätigt oder korrigiert ihn auf seinem Bildschirm.",
+        "idChecked": "Identität mit Ausweisdokument geprüft",
+        "idRequired": "Diese Organisation verlangt vor der Aufnahme die Ausweisprüfung.",
+        "cancel": "Abbrechen"
+      }
+    },
+    "archive": {
+      "title": "Meine Aufzeichnungen",
+      "intro": "Gespräche, die Sie aufgezeichnet haben. Inhalte werden erst nach dem Entsperren Ihrer Schlüssel in diesem Browser entschlüsselt.",
+      "locked": "Entsperren Sie zuerst Ihre Schlüssel.",
+      "unlock": "Schlüssel entsperren",
+      "unavailable": "Das Archiv ist gerade nicht erreichbar.",
+      "empty": "Noch keine abgeschlossenen Aufzeichnungen.",
+      "more": "Weitere laden",
+      "messages": "Nachrichten: {{count}}",
+      "duration": "{{minutes}} Min.",
+      "incomplete": "Unvollständig",
+      "hold": "Aufbewahrungspflicht",
+      "retention": "Aufbewahrt bis {{date}}",
+      "verification": {
+        "not_verified": "Nicht geprüft"
+      },
+      "checking": "Integrität wird geprüft …",
+      "integrity": {
+        "title": "Integritätsfehler",
+        "trust": "Die Signaturschlüssel konnten nicht bestätigt werden. Inhalte werden nicht angezeigt.",
+        "wrap": "Ein Schlüssel dieses Gesprächs ist nicht korrekt signiert. Inhalte werden nicht angezeigt.",
+        "chain": "Die Kette der Einträge ist beschädigt oder verändert. Inhalte werden nicht angezeigt.",
+        "stamp": "Ein Zeitstempel passt nicht zu den Einträgen. Inhalte werden nicht angezeigt.",
+        "object": "Ein Eintrag ist beschädigt."
+      },
+      "field": {
+        "guest": "Gast",
+        "languages": "Sprachen",
+        "basis": "Rechtsgrundlage",
+        "retention": "Aufbewahrung",
+        "verification": "Prüfung",
+        "stamp": "Zeitstempel"
+      },
+      "basis": {
+        "consent": "Einwilligung",
+        "statutory": "gesetzlich"
+      },
+      "stamp": {
+        "at": "{{time}}",
+        "unverified": "(Signatur der Zeitstempelstelle nicht geprüft)",
+        "pending": "ausstehend"
+      },
+      "gaps": {
+        "title": "Lücken",
+        "pause": "Pausiert: {{reason}}",
+        "failed": "Nachricht fehlgeschlagen",
+        "notStored": "Noch nicht gespeichert",
+        "noKey": "Kein Schlüssel für diesen Teil",
+        "damaged": "Beschädigt"
+      },
+      "kind": {
+        "message": "Nachricht",
+        "failed": "Fehlgeschlagen",
+        "consent": "Einwilligung",
+        "playback": "Wiedergabe",
+        "amendment": "Ergänzung"
+      },
+      "sender": {
+        "admin": "Mitarbeitende",
+        "customer": "Gast"
+      },
+      "entry": {
+        "damaged": "Dieser Eintrag ist beschädigt.",
+        "noKey": "Kein Schlüssel für diesen Teil.",
+        "notStored": "Noch nicht gespeichert."
+      },
+      "message": {
+        "asr": "Erkannt",
+        "rawMt": "Maschinelle Übersetzung",
+        "refined": "Überarbeitet",
+        "changed": "(geändert)",
+        "final": "Ausgegeben"
+      },
+      "failed": "Fehler in {{stage}} ({{code}})",
+      "audio": {
+        "original": "Original anhören",
+        "translated": "Übersetzung anhören",
+        "loading": "Wird geladen …"
+      },
+      "consent": {
+        "yes": "Zugestimmt",
+        "no": "Abgelehnt",
+        "kind": {
+          "first": "Erste Einwilligung",
+          "resume": "Fortsetzung"
+        },
+        "signature": "Unterschrift",
+        "idCheck": "Ausweis geprüft",
+        "idNotChecked": "Ausweis nicht geprüft",
+        "citedText": "Text: {{language}}, {{source}}, {{version}}, {{hash}}",
+        "text": "Gezeigter Text",
+        "enteredBy": {
+          "employee": "(von Mitarbeitenden eingetragen)",
+          "guest": "(vom Gast eingetragen)"
+        }
+      },
+      "playback": {
+        "started": "Wiedergabe gestartet {{time}}",
+        "completed": "Wiedergabe beendet {{time}}"
+      },
+      "window": {
+        "opened": "Aufzeichnung gestartet {{time}}",
+        "closed": "Aufzeichnung beendet {{time}}: {{reason}}"
+      },
+      "closeReason": {
+        "declined": "abgelehnt",
+        "cancelled": "abgebrochen",
+        "unanswered": "unbeantwortet",
+        "stopped_by_guest": "vom Gast beendet",
+        "stopped_by_employee": "von Mitarbeitenden beendet",
+        "session_ended": "Gespräch beendet",
+        "liveness": "Verbindung unterbrochen",
+        "unacknowledged": "nicht bestätigt",
+        "storage": "Speicher nicht erreichbar",
+        "policy": "nicht erlaubt"
+      },
+      "amend": "Ergänzen",
+      "amendment": {
+        "label": "Ergänzung {{time}}",
+        "superseded": "(ersetzt)",
+        "foreignAuthor": "(anderer Verfasser)",
+        "unattached": "Ergänzung zu unbekanntem Eintrag",
+        "title": "Ergänzung hinzufügen",
+        "references": "Zu: {{entries}}",
+        "text": "Ergänzung",
+        "count": "{{count}} / 4000",
+        "cancel": "Abbrechen",
+        "submit": "Ergänzung speichern",
+        "retry": "Erneut senden",
+        "pending": "Eine Ergänzung ist noch nicht bestätigt gespeichert. Bitte erneut senden, solange diese Seite offen ist.",
+        "error": {
+          "notStored": "In der Kette gespeichert, aber noch nicht im Archiv. Bitte erneut senden.",
+          "failed": "Die Ergänzung wurde nicht gespeichert.",
+          "noKey": "Kein geeigneter Schlüssel für eine Ergänzung."
+        }
+      },
+      "recovered": "Wiederhergestellt: {{name}}"
+    },
+    "recovery": {
+      "locked": "Entsperren Sie zuerst Ihren Archivschlüssel.",
+      "unlock": "Schlüssel entsperren",
+      "stepUpBody": "Für Wiederherstellungsschritte melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
+      "unavailable": "Die Wiederherstellung ist gerade nicht verfügbar.",
+      "requests": {
+        "title": "Wiederherstellungsanträge",
+        "intro": "Bitten Sie die Verwahrenden um Zugang zu Gesprächen einer Person, die nicht mehr verfügbar ist. Jeder Schritt wird protokolliert.",
+        "empty": "Noch keine Anträge.",
+        "conversations": "Gespräche: {{count}}"
+      },
+      "status": {
+        "open": "Offen",
+        "completed": "Abgeschlossen",
+        "cancelled": "Zurückgezogen",
+        "expired": "Abgelaufen",
+        "scope_gone": "Nichts mehr wiederherzustellen"
+      },
+      "new": {
+        "action": "Neuer Antrag",
+        "title": "Neuer Wiederherstellungsantrag",
+        "employee": "Mitarbeitende Person",
+        "chooseEmployee": "Person auswählen",
+        "from": "Von",
+        "to": "Bis",
+        "none": "In diesem Zeitraum lässt sich kein Gespräch dieser Person wiederherstellen.",
+        "limit": "Höchstens 50 Gespräche je Antrag.",
+        "reason": "Begründung",
+        "used": "{{used}} / 1000",
+        "submit": "Antrag signieren und stellen"
+      },
+      "detail": {
+        "title": "Antrag",
+        "progress": "{{valid}} von {{k}} Zustimmungen",
+        "combine": "Gespräche öffnen",
+        "combining": "Prüfen und zusammenführen …",
+        "cancel": "Antrag zurückziehen",
+        "created": "Gestellt",
+        "expires": "Läuft ab",
+        "reason": "Begründung",
+        "status": "Status",
+        "conversations": "Gespräche",
+        "decisions": "Entscheidungen",
+        "noDecisions": "Noch hat keine verwahrende Person entschieden."
+      },
+      "decision": {
+        "approved": "Zugestimmt",
+        "declined": "Abgelehnt",
+        "rejected": "Teilergebnis verworfen"
+      },
+      "combine": {
+        "done": "Der Zugang ist wiederhergestellt. Die Gespräche stehen jetzt in Ihrem Archiv.",
+        "waiting": "Noch nicht genug gültige Zustimmungen.",
+        "damaged": "Die gelieferten Daten haben eine Prüfung nicht bestanden. Nichts wurde gespeichert; der Fehler wurde protokolliert.",
+        "rejectedCustodian": "Das Teilergebnis von {{name}} war ungültig und wurde verworfen.",
+        "failed": "Das Zusammenführen ist fehlgeschlagen. Bitte erneut versuchen."
+      },
+      "approvals": {
+        "title": "Wiederherstellungsfreigaben",
+        "intro": "Anträge, die auf Ihre Entscheidung als verwahrende Person warten. Den Inhalt eines Gesprächs sehen Sie nie.",
+        "empty": "Es warten keine Anträge auf Sie."
+      },
+      "approve": {
+        "fingerprint": "Fingerabdruck des Schlüssels der antragstellenden Person",
+        "fingerprintHint": "Lesen Sie ihn der antragstellenden Person telefonisch oder persönlich vor und vergleichen Sie jede Gruppe.",
+        "confirmed": "Ich habe diesen Fingerabdruck telefonisch oder persönlich mit der antragstellenden Person verglichen.",
+        "action": "Zustimmen",
+        "approving": "Prüfen und zustimmen …",
+        "askFiled": "Fragen Sie auch, ob die Person diesen Antrag selbst gestellt hat. Wenn nicht, lehnen Sie ihn ab."
+      },
+      "decline": {
+        "action": "Ablehnen",
+        "reason": "Grund der Ablehnung",
+        "submit": "Antrag ablehnen"
+      },
+      "fault": {
+        "self_approval": "Sie haben diesen Antrag gestellt und können ihm daher nicht zustimmen.",
+        "not_listed": "Ihr Schlüssel passt nicht zum Wiederherstellungsprotokoll. Stimmen Sie nicht zu und informieren Sie die anderen Verwahrenden.",
+        "request_signature": "Die Signatur des Antrags ist ungültig. Stimmen Sie nicht zu.",
+        "out_of_scope": "Der Antrag enthält ein Gespräch, das die antragstellende Person nicht signiert hat. Stimmen Sie nicht zu.",
+        "wrap_signature": "Eine Schlüsselhülle ist nicht von einem bestätigten Gateway-Schlüssel signiert. Stimmen Sie nicht zu.",
+        "share_mismatch": "Ihr Anteil passt nicht zum Protokoll. Stimmen Sie nicht zu.",
+        "custodians_changed": "Die Verwahrenden haben sich geändert, seit dieser Antrag gestellt wurde. Stellen Sie ihn neu.",
+        "trust": "Das Wiederherstellungsprotokoll ist ungültig. Stimmen Sie nicht zu und informieren Sie die anderen Verwahrenden.",
+        "step_up": "Melden Sie sich zuerst erneut mit Ihrem zweiten Faktor an.",
+        "unavailable": "Die Wiederherstellung ist gerade nicht verfügbar.",
+        "fingerprint_changed": "Die Schlüssel der antragstellenden Person haben sich nach Ihrer Bestätigung geändert. Stimmen Sie nicht zu; vergleichen Sie erneut."
+      },
+      "error": {
+        "REQUEST_EXISTS": "Eines dieser Gespräche steht bereits in einem offenen Antrag von Ihnen.",
+        "ALREADY_ACCESSIBLE": "Eines dieser Gespräche können Sie bereits öffnen.",
+        "KEY_NOT_ENROLLED": "Richten Sie zuerst Ihren Archivschlüssel ein.",
+        "CONVERSATION_NOT_FOUND": "Eines dieser Gespräche lässt sich nicht mehr wiederherstellen.",
+        "RECOVERY_KEY_MISSING": "Diese Organisation hat keinen Wiederherstellungsschlüssel.",
+        "SIGNATURE_INVALID": "Die Signatur ist ungültig. Entsperren Sie Ihren Schlüssel erneut und versuchen Sie es noch einmal.",
+        "REQUESTER_CANNOT_APPROVE": "Sie haben diesen Antrag gestellt und können ihm daher nicht zustimmen.",
+        "ALREADY_DECIDED": "Sie haben über diesen Antrag bereits entschieden.",
+        "REQUEST_CLOSED": "Dieser Antrag ist abgeschlossen.",
+        "NOT_ENOUGH_APPROVALS": "Noch haben nicht genug Verwahrende zugestimmt.",
+        "SCOPE_NOT_COVERED": "Nicht jedes Gespräch des Antrags war abgedeckt. Bitte erneut versuchen.",
+        "SCOPE_TOO_LARGE": "Diese Gespräche haben mehr Schlüssel, als ein Antrag tragen kann. Wählen Sie weniger aus.",
+        "SHARE_STALE": "Ihr Anteil gehört zu einem früheren Schlüssel und öffnet nichts mehr. Bitten Sie die Verwaltung, die Verwahrenden zu ändern (Verwahrende ändern); dabei können Sie diesen Anteil mit Ihrem früheren Schlüssel noch weitergeben.",
+        "KEY_CHANGED": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
+        "PERMISSION_REQUIRED": "Dafür fehlt Ihnen inzwischen die Berechtigung."
+      },
+      "retry": "Erneut versuchen",
+      "kind": {
+        "access": "Zugriff",
+        "key_recovery": "Schlüsselwiederherstellung"
+      }
+    },
+    "keyRecovery": {
+      "title": "Meine Schlüsselwiederherstellung",
+      "intro": "Gespräche, die Ihr aktueller Schlüssel nicht öffnen kann, stellen die Verwahrenden für Sie wieder her. Niemand außer Ihnen sieht dabei Inhalte.",
+      "batch": "Gespräche in diesem Antrag: {{count}}",
+      "remaining": "Danach bleiben {{conversations}} Gespräche für einen weiteren Antrag.",
+      "fingerprint": "Ihr Schlüssel-Fingerabdruck",
+      "fingerprintHint": "Die Verwahrenden fragen Sie telefonisch oder persönlich nach diesem Wert. Nennen Sie ihn nur, wenn Sie diesen Antrag selbst gestellt haben.",
+      "reason": "Begründung",
+      "file": "Antrag signieren und stellen",
+      "next": "Nächsten Antrag stellen",
+      "progress": "{{done}} von {{total}}",
+      "unrecoverable": "Nicht wiederherstellbare Schlüssel: {{count}}",
+      "none": "Ihr Schlüssel öffnet alle Ihre Gespräche.",
+      "stepUpBody": "Für den Antrag ist eine frische Anmeldung mit zweitem Faktor nötig.",
+      "open": "Zugang wiederherstellen",
+      "banner": "Gespräche, die sich mit Ihrem Schlüssel nicht öffnen lassen: {{count}}"
     }
   }
 }

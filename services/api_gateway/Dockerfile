@@ -64,12 +64,13 @@ RUN printf '%s%s\n' \
     && addgroup --system app \
     && adduser --system --ingroup app app \
     && chown -R app:app /app \
-    # Compose mounts a named volume here. Docker initialises such a volume
-    # from the image path, so the directory must exist and belong to app --
-    # otherwise the volume is created root:root and the container, which runs
-    # as app, cannot write a single audio file into it.
-    && mkdir -p /data/audio \
-    && chown -R app:app /data
+    # Compose mounts the archive spool (#615), a named volume, here. Docker
+    # initialises such a volume from the image path, so the directory must
+    # exist and belong to app -- otherwise the volume is created root:root and
+    # the container, which runs as app, cannot write a single file into it.
+    # The retention worker's state volume (#618) on the archive VMs likewise.
+    && mkdir -p /data/archive-spool /var/lib/ssf-retention \
+    && chown -R app:app /data /var/lib/ssf-retention
 
 COPY services/api_gateway/ /app/services/api_gateway/
 COPY services/__init__.py /app/services/__init__.py
@@ -77,4 +78,7 @@ COPY services/__init__.py /app/services/__init__.py
 ENV PYTHONPATH=/app
 USER app
 
-CMD ["uvicorn", "services.api_gateway.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+# The explicit backend applies websockets' fragment limit. Uvicorn's auto
+# backend currently uses a SansIO assembler without that limit. The selected
+# backend logs ticket-bearing URLs at INFO even when access logs are off.
+CMD ["uvicorn", "services.api_gateway.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--ws", "websockets", "--log-level", "warning"]

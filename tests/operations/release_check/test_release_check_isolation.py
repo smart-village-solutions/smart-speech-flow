@@ -7,21 +7,21 @@ from scripts.release_check.scenario import Conversation, run_conversation
 from tests.operations.release_check.release_check_fakes import FakeGateway
 
 OPERATORS = (Operator("u1", "p1"), Operator("u2", "p2"))
-TENANT_A = Tenant("A", "tenant-a", "en", "ask", OPERATORS)
-TENANT_B = Tenant("B", "tenant-b", "tr", "ask", OPERATORS)
+TENANT_A = Tenant("A", "tenant-a", "en", OPERATORS)
+TENANT_B = Tenant("B", "tenant-b", "tr", OPERATORS)
 
 
 async def _live_pair(gateway: FakeGateway) -> tuple[Conversation, Conversation]:
-    first = Conversation(tenant=TENANT_A, index=1, token="token-A1", consent=True)
-    second = Conversation(tenant=TENANT_B, index=1, token="token-B1", consent=True)
+    first = Conversation(tenant=TENANT_A, index=1, token="token-A1")
+    second = Conversation(tenant=TENANT_B, index=1, token="token-B1")
     for conversation in (first, second):
         await run_conversation(gateway, Evidence(), conversation)
     return first, second
 
 
 async def _colleagues(gateway: FakeGateway) -> tuple[Conversation, Conversation]:
-    first = Conversation(tenant=TENANT_A, index=1, token="token-A1", consent=True)
-    second = Conversation(tenant=TENANT_A, index=2, token="token-A2", consent=False)
+    first = Conversation(tenant=TENANT_A, index=1, token="token-A1")
+    second = Conversation(tenant=TENANT_A, index=2, token="token-A2")
     for conversation in (first, second):
         await run_conversation(gateway, Evidence(), conversation)
     return first, second

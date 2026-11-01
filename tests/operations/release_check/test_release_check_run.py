@@ -21,33 +21,27 @@ def _failed(evidence: Evidence) -> list[str]:
     return [check.name for check in evidence.checks if not check.passed]
 
 
-async def test_a_healthy_run_passes_and_keeps_only_consented_content():
+async def test_a_healthy_run_passes_and_keeps_nothing_of_an_ended_conversation():
     gateway, evidence = FakeGateway(), Evidence()
 
     assert await run(_settings(), gateway, evidence, _login) is True
     assert _failed(evidence) == []
     names = [check.name for check in evidence.checks]
-    assert "A1 keeps 4 messages" in names
-    assert "A2 keeps 0 messages" in names
+    assert {"A1", "A2", "B1", "B2"} == {
+        name.split()[0] for name in names if name.endswith("keeps no messages")
+    }
     assert "B1 audio retrievable during conversation" in names
     assert "B2 serves no audio after termination" in names
     assert "A1 → A2 status is not found" in names
     assert "B2 → B1 terminate is not found" in names
 
 
-async def test_refused_content_that_survives_termination_fails():
+async def test_content_that_survives_termination_fails():
     gateway, evidence = FakeGateway(), Evidence()
-    gateway.keep_refused_content = True
+    gateway.keep_ended_content = True
 
     assert await run(_settings(), gateway, evidence, _login) is False
-    assert "A2 keeps 0 messages" in _failed(evidence)
-
-
-async def test_a_disabled_tenant_keeps_nothing_even_with_consent():
-    gateway, evidence = FakeGateway(storage={"A": "ask", "B": "disabled"}), Evidence()
-
-    assert await run(_settings(SSF_RC_TENANT_B_STORAGE="disabled"), gateway, evidence, _login)
-    assert "B1 keeps 0 messages" in [check.name for check in evidence.checks]
+    assert "A1 keeps no messages" in _failed(evidence)
 
 
 async def test_cleanup_terminates_every_session_after_a_failure(monkeypatch):
@@ -127,6 +121,7 @@ async def test_an_idle_tenant_pair_passes_the_preflight():
 async def test_audio_served_after_termination_fails():
     gateway, evidence = FakeGateway(), Evidence()
     gateway.serve_audio_after_termination = True
+    gateway.keep_ended_content = True  # a file that survived its conversation
 
     assert await run(_settings(), gateway, evidence, _login) is False
     assert "A1 serves no audio after termination" in _failed(evidence)
@@ -140,7 +135,7 @@ async def test_audio_missing_during_the_conversation_fails():
     assert "A1 audio retrievable during conversation" in _failed(evidence)
 
 
-# The on-host audio retention check needs the session ids the report hides.
+# The on-host check that no audio survived needs the session ids the report hides.
 async def test_the_manifest_is_owner_only_and_names_each_conversation(tmp_path):
     gateway, evidence = FakeGateway(), Evidence()
     manifest = tmp_path / "manifest.json"
@@ -149,12 +144,7 @@ async def test_the_manifest_is_owner_only_and_names_each_conversation(tmp_path):
 
     assert stat.S_IMODE(manifest.stat().st_mode) == 0o600
     entries = json.loads(manifest.read_text())["conversations"]
-    assert [(e["label"], e["consent"], e["storage"]) for e in entries] == [
-        ("A1", True, "ask"),
-        ("A2", False, "ask"),
-        ("B1", True, "ask"),
-        ("B2", False, "ask"),
-    ]
+    assert [e["label"] for e in entries] == ["A1", "A2", "B1", "B2"]
     assert {e["session_id"] for e in entries} == set(gateway.sessions)
     assert all(len(e["message_ids"]) == 4 for e in entries)
 

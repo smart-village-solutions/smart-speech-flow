@@ -35,7 +35,6 @@ from .realtime_protocol import (
     connection_ack_frame,
     disconnecting_frame,
     error_frame,
-    relayed_message_frame,
     session_terminated_frame,
     typing_frame,
 )
@@ -50,6 +49,7 @@ from .tenant_session import TenantSessionKey
 from .websocket_monitor import DisconnectReason, WebSocketMonitor
 
 if TYPE_CHECKING:
+    from .recording.session_service import RecordingSessions
     from .websocket_polling_routes import TenantPollingStore
 
 # === Logging Setup ===
@@ -164,6 +164,8 @@ class WebSocketManager:
         self.registry = ConnectionRegistry()
         self.dispatcher = BroadcastDispatcher(self.registry, polling_store, monitor)
         self.heartbeat = Heartbeat(self.registry, monitor, self)
+        # Set once recording mode is wired; without it no recording frame is handled.
+        self.recording: Optional["RecordingSessions"] = None
         # 📱 Mobile-Optimization
         self.client_status = ClientStatusHandler(AdaptivePollingManager())
 
@@ -281,6 +283,8 @@ class WebSocketManager:
 
         # Connection-Bestätigung senden
         await self._send_connection_ack(connection)
+        if self.recording is not None:
+            await self.recording.greet(session_id, client_type, websocket.send_json)
 
         # Heartbeat-System starten falls noch nicht aktiv
         await self.start_heartbeat_system()
@@ -439,8 +443,11 @@ class WebSocketManager:
         client_status = self.client_status
         return {
             MessageType.HEARTBEAT_PONG.value: self.heartbeat.handle_pong,
-            MessageType.MESSAGE.value: lambda _id, connection, message: (
-                self._handle_client_message(connection, message)
+            MessageType.RECORDING_STATE_ACK.value: lambda _id, connection, message: (
+                self._handle_recording_ack(connection, message)
+            ),
+            MessageType.RECORDING_PONG.value: lambda _id, connection, message: (
+                self._handle_recording_pong(connection, message)
             ),
             MessageType.TYPING_INDICATOR.value: lambda _id, connection, message: (
                 self._handle_typing_indicator(connection, message)
@@ -480,6 +487,8 @@ class WebSocketManager:
 
         connection.state = ConnectionState.DISCONNECTED
         self.registry.remove(connection_id)
+        if self.recording is not None:
+            self.recording.released(connection.key, connection.client_type)
 
         # Recorded in the same step as the removal above: the monitor's cleanup
         # purges any record the registry no longer holds, and it can run during
@@ -499,22 +508,20 @@ class WebSocketManager:
 
     # === Private Methods ===
 
-    async def _handle_client_message(
+    async def _handle_recording_ack(
         self, connection: WebSocketConnection, message: Dict[str, Any]
     ) -> None:
-        """
-        Client-Message verarbeiten und weiterleiten
-        """
-        # Message an alle anderen Clients der Session weiterleiten
-        forward_message = relayed_message_frame(
-            connection.client_type, connection.session_id, message.get("content")
-        )
+        version = message.get("state_version")
+        if self.recording is None or type(version) is not int:
+            return
+        await self.recording.acknowledge(connection.key, connection.client_type, version)
 
-        await self.broadcast_to_session(
-            connection.key,
-            forward_message,
-            exclude_connection=self.registry.registered_connection_id(connection),
-        )
+    async def _handle_recording_pong(
+        self, connection: WebSocketConnection, _message: Dict[str, Any]
+    ) -> None:
+        await asyncio.sleep(0)
+        if self.recording is not None:
+            self.recording.pong(connection.key, connection.client_type)
 
     async def _handle_typing_indicator(
         self, connection: WebSocketConnection, message: Dict[str, Any]
@@ -522,8 +529,9 @@ class WebSocketManager:
         """
         Typing-Indicator weiterleiten
         """
+        # Only a boolean crosses: the HTTP message path is the one content travels on.
         typing_message = typing_frame(
-            connection.client_type, connection.session_id, message.get("is_typing", False)
+            connection.client_type, connection.session_id, message.get("is_typing") is True
         )
 
         await self.broadcast_to_session(

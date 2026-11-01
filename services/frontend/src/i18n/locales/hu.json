@@ -1,0 +1,144 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Vissza",
+    "home": "Kezdőlap",
+    "feedback": "Visszajelzés",
+    "theme": "Téma váltása"
+  },
+  "accessCode": {
+    "title": "Adja meg a kódot",
+    "continue": "Tovább",
+    "digitLabel": "{{position}}. karakter",
+    "notFound": "Ez a kód egyetlen nyitott munkamenethez sem tartozik.",
+    "sessionHasGuest": "Ebben a beszélgetésben már van vendég."
+  },
+  "language": {
+    "title": "Válassza ki a nyelvet",
+    "loadFailed": "A nyelvek listáját nem sikerült betölteni.",
+    "retry": "Újra"
+  },
+  "consent": {
+    "intro": "A $t(app.name) automatikus, valós idejű fordítószolgáltatás, amely a különböző nyelveket beszélő emberek közötti beszélgetéseket segíti. A szolgáltatás kizárólag egy dedikált, privát szerveren fut.",
+    "howTo": "A felvétel indításához koppintson a mikrofon gombra. Ezután 20 másodperce van beszélni. A felvételt egy újabb koppintással korábban is befejezheti. Ehelyett szöveges bevitelt is használhat.",
+    "retention": "Alapértelmezés szerint a hang- és átirati adatokat csak az aktív munkamenet alatt dolgozzuk fel, utána nem őrizzük meg őket. A beszélgetés végén az adatok automatikusan törlődnek. Problémát jelezhet vagy fejlesztési ötletet oszthat meg bármikor az alkalmazás visszajelzési funkciójával.",
+    "getStarted": "Kezdés",
+    "loading": "Az információk betöltése"
+  },
+  "conversation": {
+    "record": "Felvétel",
+    "sendRecording": "Felvétel küldése",
+    "openKeyboard": "Billentyűzet megnyitása",
+    "sendText": "Szöveg küldése",
+    "placeholder": "Írja be üzenetét…",
+    "play": "Lejátszás",
+    "pause": "Szünet",
+    "sendFailed": "Az üzenetet nem sikerült elküldeni.",
+    "notSent": "Nincs elküldve",
+    "retry": "Újra",
+    "micDenied": "A mikrofonhoz való hozzáférést elutasították. Ehelyett beírhatja az üzenetét.",
+    "reconnecting": "Újracsatlakozás…",
+    "ended": "Ez a beszélgetés véget ért.",
+    "timeoutWarning": "Ez a beszélgetés ekkor ér véget: {{time}}."
+  },
+  "recording": {
+    "label": "Felvétel folyamatban",
+    "starting": "A felvétel indul…",
+    "paused": "A felvétel szünetel",
+    "stop": "Felvétel leállítása",
+    "error": "A felvételt nem sikerült módosítani. Próbálja újra.",
+    "reason": {
+      "liveness": "megszakadt a kapcsolat",
+      "unacknowledged": "várakozás mindkét képernyőre",
+      "storage": "a tárhely nem érhető el",
+      "policy": "jelenleg nem engedélyezett"
+    },
+    "ask": {
+      "title": "Rögzíthető ez a beszélgetés?",
+      "resumeTitle": "Folytatódhat a felvétel?",
+      "yes": "Igen, rögzítés",
+      "no": "Nem"
+    },
+    "consent": {
+      "readAloud": "Felolvasás",
+      "stopReading": "Felolvasás leállítása",
+      "loading": "A szöveg betöltése…",
+      "unavailable": "A szöveg most nem tölthető be. Kérjük, forduljon az ügyintézőhöz.",
+      "name": "Az Ön neve",
+      "nameProposed": "Az ügyintéző adta meg. Kérjük, ellenőrizze.",
+      "signature": "Az Ön aláírása",
+      "optional": "nem kötelező",
+      "clear": "Törlés",
+      "cannotSign": "Nem tudok aláírni, koppintással erősítem meg.",
+      "nameRequired": "Kérjük, adja meg a nevét.",
+      "signatureRequired": "Kérjük, írja alá, vagy erősítse meg, hogy nem tud aláírni.",
+      "textChanged": "A szöveg megváltozott. Kérjük, olvassa el újra, mielőtt válaszol.",
+      "originalLanguage": "Eredeti nyelv: {{language}}",
+      "documentationRequired": "Kérjük, külön erősítse meg a dokumentáláshoz adott hozzájárulását.",
+      "staffReleaseChanged": "A munkatárs engedélyezési szövege megváltozott. Kérje meg a munkatársat, hogy vonja vissza ezt a kérést, és küldjön újat."
+    }
+  },
+  "feedback": {
+    "title": "Ossza meg véleményét",
+    "close": "Bezárás",
+    "quality": {
+      "label": "Fordítási minőség",
+      "question": "Mennyire voltak pontosak a fordítások?"
+    },
+    "performance": {
+      "label": "Teljesítmény",
+      "question": "Mennyire volt gyors és reszponzív az alkalmazás?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "Mennyire volt könnyű és kellemes a felület használata?"
+    },
+    "nps": {
+      "label": "Ajánlás",
+      "question": "Mennyire valószínű, hogy ajánlaná a $t(app.name) szolgáltatást egy kollégájának?",
+      "low": "Egyáltalán nem valószínű",
+      "high": "Rendkívül valószínű",
+      "option": "{{score}} pont"
+    },
+    "improvements": {
+      "label": "Fejlesztési ötletek",
+      "question": "Mitől lenne a $t(app.name) még jobb?",
+      "placeholder": "Ötletei, funkciókérései vagy bármi, ami zavarta…"
+    },
+    "notice": {
+      "purpose": "Válaszait kizárólag a $t(app.name) fejlesztésére használjuk.",
+      "retention": "A visszajelzéseket tizenkét hónapig őrizzük meg, majd automatikusan töröljük.",
+      "withdrawal": "Visszajelzését bármikor visszavonathatja — csak szóljon egy munkatársnak."
+    },
+    "stars": "{{count}} csillag",
+    "required": "Kötelező",
+    "submit": "Visszajelzés küldése",
+    "submitting": "Küldés…",
+    "retry": "Küldés újra",
+    "failed": "Visszajelzését nem sikerült elküldeni. Válaszait megőriztük.",
+    "formChanged": "Az űrlap időközben megváltozott. Töltse be az új űrlapot; a továbbra is illeszkedő válaszok megmaradnak.",
+    "reload": "Az új űrlap betöltése",
+    "loading": "A visszajelzési űrlap betöltése",
+    "thanksTitle": "Köszönjük!",
+    "thanksBody": "Visszajelzése segít, hogy mindenki számára jobbá tegyük a $t(app.name) szolgáltatást."
+  },
+  "errors": {
+    "network": "Nincs kapcsolat a szerverrel.",
+    "timeout": "Ez túl sokáig tartott. Kérjük, próbálja újra.",
+    "notFound": "Nem található.",
+    "validation": "A kérést nem sikerült feldolgozni.",
+    "server": "Hiba történt a mi oldalunkon.",
+    "noSpeech": "Semmit sem sikerült felismerni. Kérjük, próbálja újra.",
+    "unknown": "Hiba történt.",
+    "languageChanged": "Megváltozott a beszélgetés nyelve. Kérjük, küldje el újra."
+  },
+  "legal": {
+    "label": "Jogi információk",
+    "imprint": "Impresszum",
+    "privacyPolicy": "Adatvédelem",
+    "accessibilityStatement": "Akadálymentesség",
+    "opensInNewTab": "(új lapon nyílik meg)"
+  }
+}

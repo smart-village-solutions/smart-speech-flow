@@ -1,4 +1,4 @@
-"""Studio display content held by revision: sanitised once, never the storage mode."""
+"""Studio display content held by revision: sanitised once, never the display name."""
 
 from __future__ import annotations
 
@@ -68,8 +68,10 @@ def _html_fields(node: Any) -> list[str]:
     return []
 
 
-def kassel_read(revision_seed: str = "", *, mode_scenario: str | None = None):
-    body = contract_fixtures.runtime_configuration_v2(TENANT, mode_scenario)
+def kassel_read(revision_seed: str = "", *, extra_locale: str | None = None):
+    body = contract_fixtures.runtime_configuration_v2(TENANT, None)
+    if extra_locale:
+        body["guestLanguages"].append({**body["guestLanguages"][0], "locale": extra_locale})
     if revision_seed:
         body["configurationRevision"] = "sha256:" + revision_seed * 64
     return parse_runtime_configuration_v2(body, expected_tenant_id=TENANT)
@@ -77,6 +79,9 @@ def kassel_read(revision_seed: str = "", *, mode_scenario: str | None = None):
 
 def test_every_html_field_is_sanitised_at_insert() -> None:
     body = load_fixture(KASSEL)
+    # Retired with the `ask` mode: parsed past, so never cached.
+    for language in body["guestLanguages"]:
+        language["guest"].pop("storageQuestionHtml")
     poisoned = _poison_html(body)
     read = parse_runtime_configuration_v2(body, expected_tenant_id=body["tenant"]["id"])
 
@@ -103,36 +108,36 @@ def test_every_installation_html_field_is_sanitised() -> None:
     assert all("<script" not in fragment and "onclick" not in fragment for fragment in html)
 
 
-def test_cached_content_has_no_storage_mode_and_no_display_name() -> None:
+def test_cached_content_has_no_display_name_and_takes_no_new_field() -> None:
     names = {field.name for field in dataclasses.fields(TenantContent)}
 
-    assert names == {"revision", "time_zone", "branding", "staff", "guest_languages"}
+    assert names == {"revision", "time_zone", "branding", "staff", "guest_languages", "legal_texts"}
     content = StudioContentCache().record(kassel_read())
     with pytest.raises((AttributeError, TypeError)):
-        content.mode = "ask"  # type: ignore[misc, attr-defined]
+        content.display_name = "Kassel"  # type: ignore[misc, attr-defined]
     assert "Kassel Test Municipality" not in repr(content)
 
 
 def test_guest_languages_are_keyed_by_ssf_code_in_ssf_order() -> None:
     skipped: list[str] = []
 
-    content = StudioContentCache(on_skip=skipped.append).record(kassel_read())
+    content = StudioContentCache(on_skip=skipped.append).record(kassel_read(extra_locale="hr"))
 
-    assert list(content.guest_languages) == ["en", "ar", "tr", "ku"]
-    assert content.guest_languages["ku"].locale == "kmr"
+    assert list(content.guest_languages) == ["en", "ar", "tr", "pt"]
+    assert content.guest_languages["pt"].locale == "pt-BR"
     assert content.guest_languages["ar"].icon is None
-    assert skipped == ["unsupported"]
+    assert skipped == ["unsupported", "unsupported"]
 
 
 def test_a_known_revision_is_reused_and_reports_no_second_skip() -> None:
     skipped: list[str] = []
     cache = StudioContentCache(on_skip=skipped.append)
 
-    first = cache.record(kassel_read())
-    second = cache.record(kassel_read())
+    first = cache.record(kassel_read(extra_locale="hr"))
+    second = cache.record(kassel_read(extra_locale="hr"))
 
     assert second is first
-    assert skipped == ["unsupported"]
+    assert skipped == ["unsupported", "unsupported"]
 
 
 def test_the_pointer_follows_the_latest_read_and_ages() -> None:
@@ -228,8 +233,8 @@ def test_skipped_locales_are_counted_once_even_after_a_failed_insert(monkeypatch
     skipped: list[str] = []
     cache = StudioContentCache(on_skip=skipped.append)
 
-    assert cache.try_record(kassel_read()) is None
-    assert cache.try_record(kassel_read()) is not None
-    assert cache.try_record(kassel_read()) is not None
+    assert cache.try_record(kassel_read(extra_locale="hr")) is None
+    assert cache.try_record(kassel_read(extra_locale="hr")) is not None
+    assert cache.try_record(kassel_read(extra_locale="hr")) is not None
 
-    assert skipped == ["unsupported"]
+    assert skipped == ["unsupported", "unsupported"]

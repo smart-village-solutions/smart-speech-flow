@@ -10,10 +10,8 @@ from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,
-    PollingMessage,
     TenantPollingStore,
     _poll,
-    _send,
 )
 
 
@@ -53,59 +51,31 @@ def test_polling_store_rejects_unknown_or_cross_tenant_client():
     assert cross_tenant.value.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_polling_send_queues_and_broadcasts_only_inside_tenant():
+def test_a_broadcast_queues_only_inside_the_tenant():
     store = TenantPollingStore()
     key = TenantSessionKey("tenant-a", "SESSION1")
-    sender = store.activate(key, ClientType.CUSTOMER)
     receiver = store.activate(key, ClientType.ADMIN)
     other_tenant = store.activate(TenantSessionKey("tenant-b", "SESSION1"), ClientType.ADMIN)
-    manager = AsyncMock()
-    response = await _send(
-        store,
-        sender,
-        PollingMessage(type="message", content={"text": "hello"}),
-        manager,
-    )
 
-    assert response == {"status": "success"}
-    assert len(receiver.messages) == 1
+    delivered, dropped = store.broadcast(key, {"type": "ready"})
+
+    assert (delivered, dropped) == (1, 0)
+    assert list(receiver.messages) == [{"type": "ready"}]
     assert not other_tenant.messages
-    manager.broadcast_to_session.assert_awaited_once_with(
-        key,
-        {
-            "type": "message",
-            "content": {"text": "hello"},
-            "session_id": "SESSION1",
-            "client_type": "customer",
-        },
-        include_polling=False,
-    )
 
 
-@pytest.mark.asyncio
-async def test_polling_overflow_accepts_current_message_and_is_not_retryable():
+def test_an_overflowing_queue_keeps_the_newest_frame():
     store = TenantPollingStore()
     key = TenantSessionKey("tenant-a", "SESSION1")
-    sender = store.activate(key, ClientType.CUSTOMER)
     receiver = store.activate(key, ClientType.ADMIN)
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
-    manager = AsyncMock()
-    response = await _send(
-        store,
-        sender,
-        PollingMessage(type="message", content={"text": "newest"}),
-        manager,
-    )
 
-    assert receiver.messages[-1]["content"] == {"text": "newest"}
+    _delivered, dropped = store.broadcast(key, {"type": "newest"})
+
+    assert receiver.messages[-1] == {"type": "newest"}
     assert len(receiver.messages) == POLLING_QUEUE_SIZE
-    assert response == {
-        "status": "partial",
-        "retryable": False,
-        "messages_dropped": 1,
-    }
+    assert dropped == 1
 
 
 @pytest.mark.asyncio

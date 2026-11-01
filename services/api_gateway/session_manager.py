@@ -9,7 +9,6 @@ in legacy_session_manager.py; the dataclasses and helpers here serve both.
 from __future__ import annotations
 
 import asyncio
-import copy
 import logging
 import uuid
 from dataclasses import fields, replace
@@ -26,7 +25,6 @@ from typing import (
 )
 
 from .clock import utc_now
-from .content_retention import session_retention_hours
 from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
 from .realtime_protocol import customer_language_changed_frame, timeout_warning_frame
@@ -39,8 +37,6 @@ from .session_models import (
     _env_flag,
     _positive_env_int,
     _session_duration_ms,
-    _settle_refused_content,
-    _unprune_messages,
 )
 from .session_ports import SessionSockets
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer, tenant_ref
@@ -54,7 +50,6 @@ from .tenant_session import TenantSessionKey
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
     from .realtime_ticket import RealtimeTicketStore
-    from .runtime_policy import RuntimePolicyGate
     from .websocket_polling_routes import TenantPollingStore
 
 logger = logging.getLogger(__name__)
@@ -101,6 +96,9 @@ class SessionManagerBase(Generic[KeyT]):
         telemetry = self.quality_telemetry
         if telemetry is None:
             return
+        # A recorded session's events say nothing that dates or sizes it: duration
+        # and count would join its random reference to its keyed one (spec §5.5).
+        recorded = self.pseudonymizer.is_recorded(session.id)
         try:
             telemetry.emit_session_lifecycle(
                 session_ref=self.pseudonymizer.reference(session.id),
@@ -109,8 +107,8 @@ class SessionManagerBase(Generic[KeyT]):
                 ),
                 phase=phase,
                 termination_reason=reason,
-                session_duration_ms=_session_duration_ms(session),
-                message_count=len(session.messages),
+                session_duration_ms=0 if recorded else _session_duration_ms(session),
+                message_count=0 if recorded else session.message_count,
             )
         except Exception:  # telemetry must never reach the caller
             logger.warning("Session quality telemetry failed", exc_info=True)
@@ -124,105 +122,68 @@ class SessionManagerBase(Generic[KeyT]):
         """
         raise NotImplementedError
 
-    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
-        """Delete the artefacts a settled record no longer accounts for.
+    def _delete_session_audio(self, key: TenantSessionKey) -> None:
+        """Delete every delivery audio file of the session.
 
-        Only a tenant session yields any, so only `TenantSessionManager` has an
+        Only a tenant session has any, so only `TenantSessionManager` has an
         audio store to delete them from.
         """
         raise NotImplementedError
 
     async def sweep_expired_content(self, now: datetime) -> Dict[str, int]:
-        """Remove refused content past session lifetime, and expired text.
+        """Strip a session that outlived its maximum lifetime without ending.
 
-        The two removals are deliberately different. Refused content goes at
-        the maximum session lifetime and no retention can keep it. Authorised
-        content goes at the session's own retention: the one captured with
-        granted consent, where `0` disables automatic deletion, else the short
-        `SSF_TERMINAL_RECORD_HOURS`.
+        A session that ends strips its own content at termination; this pass
+        catches one whose termination never ran, so no conversation's content
+        outlasts the session's lifetime.
 
         Args:
-            now: The moment to measure both ages against.
+            now: The moment to measure the session's age against.
 
         Returns:
-            Counts of the messages removed by each rule, and of the sessions
-            whose removal could not be saved and stays for the next pass.
+            Counts of the messages removed, and of the sessions whose removal
+            could not be saved and stays for the next pass.
         """
-        refused_removed = 0
-        expired_removed = 0
+        removed = 0
         failed = 0
 
         # Persistence callbacks may change the cache while this pass runs.
         for session in self.sessions.copy().values():
             # A terminated record is immutable in the store -- SAVE_SESSION_LUA
-            # refuses every change to one -- so its retention is the expiry set
-            # on it at termination, not this sweep. Pruning it here would drift
-            # from the store and resurrect on the next load.
+            # refuses every change to one -- and was stripped when it ended.
             if session.status is SessionStatus.TERMINATED:
                 continue
+            if now - session.created_at < timedelta(hours=session.maximum_lifetime_hours):
+                continue
             try:
-                refused_delta, expired_delta = await self._sweep_session_content(session, now)
-                refused_removed += refused_delta
-                expired_removed += expired_delta
+                removed += await self._sweep_session_content(session)
             except Exception:  # noqa: BLE001 - one session must not stop the pass
                 logger.warning(
                     "content_sweep_failed",
                     extra={"session_ref": self.pseudonymizer.reference(session.id)},
                 )
                 failed += 1
-                continue
 
-        return {
-            "refused_removed": refused_removed,
-            "expired_removed": expired_removed,
-            "failed": failed,
-        }
+        return {"removed": removed, "failed": failed}
 
-    async def _sweep_session_content(self, session: Session, now: datetime) -> tuple[int, int]:
-        # Settled on a copy, exactly as termination does. A failed
-        # write must leave the live session and its files untouched,
-        # or the next pass sees an already-pruned list, computes an
-        # empty deletion set, and the refused files are stranded.
-        working = replace(session)
-        working.messages = [copy.deepcopy(message) for message in session.messages]
-        changed = False
-        doomed_audio: list[tuple[str, Any]] = []
-        refused_delta = 0
-        expired_delta = 0
-        max_age = timedelta(hours=session.maximum_lifetime_hours)
-        if now - session.created_at >= max_age:
-            before = len(working.messages)
-            changed, doomed_audio = _settle_refused_content(working)
-            refused_delta = before - len(working.messages)
-        keep_for = session_retention_hours(session)
-        if keep_for:
-            cutoff = now - timedelta(hours=keep_for)
-            retained = [m for m in working.messages if m.timestamp > cutoff]
-            if len(retained) != len(working.messages):
-                changed = True
-            expired_delta = len(working.messages) - len(retained)
-            working.messages = retained
-        if not changed:
-            return 0, 0
-
+    async def _sweep_session_content(self, session: Session) -> int:
+        if not session.messages:
+            return 0
         previous = session.messages
-        pruned = working.messages
-        kept = len(pruned)
-        session.messages = pruned
+        removed = len(previous)
+        session.messages = []
         try:
             await self._persist_swept_session(session)
         except Exception:
-            # A termination that committed meanwhile replaced the list with
-            # its settled record, which stands.
-            if session.messages is pruned:
-                session.messages = _unprune_messages(previous, pruned, kept)
+            # A termination that committed meanwhile stripped the record, and that stands.
+            if session.status is not SessionStatus.TERMINATED:
+                # Messages appended while the write was pending are kept too.
+                session.messages = previous + session.messages
             raise
-
-        # `Session.key` raises without a tenant, and a legacy
-        # session never yields artefacts to delete anyway.
-        if session.tenant_id is not None and doomed_audio:
-            self._delete_settled_audio(session.key, doomed_audio)
-        return refused_delta, expired_delta
+        # `Session.key` raises without a tenant, and a legacy session has no audio.
+        if session.tenant_id is not None:
+            self._delete_session_audio(session.key)
+        return removed
 
     def get_sessions_requiring_timeout_check(self) -> List[Session]:
         """Sessions zurückgeben, die Timeout-Checks benötigen"""
@@ -248,21 +209,20 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         audio_store: AudioStore,
         realtime_tickets: Optional[RealtimeTicketStore] = None,
         polling_store: Optional[TenantPollingStore] = None,
-        runtime_policy: Optional[RuntimePolicyGate] = None,
         pseudonymizer: Optional[SessionPseudonymizer] = None,
         clock: Callable[[], datetime] = utc_now,
         session_id_factory: Optional[Callable[[], str]] = None,
     ) -> None:
         super().__init__(clock=clock, pseudonymizer=pseudonymizer)
         self.store = store
-        # Where settlement and the content sweep delete refused audio.
+        # Where termination and the content sweep delete a session's audio.
         self.audio_store = audio_store
         self.realtime_tickets = realtime_tickets
         self.polling_store = polling_store
-        # None refuses every write of conversation content.
-        self.runtime_policy = runtime_policy
         self.session_id_factory = session_id_factory or (lambda: str(uuid.uuid4())[:8].upper())
         self.active_admin_sessions: Dict[str, set[str]] = {}
+        # Set once recording mode is wired; a session's end turns its recording off.
+        self.recording: Any = None
         # Listing an admin's sessions and creating the next one await the
         # store; without this, two concurrent creates both find none to end.
         self._creation_locks: KeyedLocks[tuple[str, Optional[str]]] = KeyedLocks()
@@ -275,9 +235,30 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self.active_admin_sessions = {}
         self.websocket_manager = None
 
-    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
-        for message_id, variant in doomed:
-            self.audio_store.delete(key, message_id, variant)
+    def _delete_session_audio(self, key: TenantSessionKey) -> None:
+        self.audio_store.delete_session(key)
+
+    async def _note_recording(self, key: TenantSessionKey) -> None:
+        """Before the end event: after a restart only recording knows a session was recorded."""
+        if self.recording is None:
+            return
+        try:
+            await self.recording.note_recorded(key)
+        except Exception:  # telemetry must never decide whether a session ends
+            logger.warning("recording_mark_unavailable", extra={"tenant_ref": key.tenant_ref})
+
+    async def _end_recording(self, key: TenantSessionKey) -> None:
+        """After the commit: the session has ended whatever recording's own end does.
+
+        A conversation left open here is ended by the archive's pass over
+        conversations whose session is gone.
+        """
+        if self.recording is None:
+            return
+        try:
+            await self.recording.session_ended(key)
+        except Exception:  # the termination already committed
+            logger.error("recording_end_failed", extra={"tenant_ref": key.tenant_ref})
 
     async def rehydrate_tenant_sessions(self) -> None:
         """Restore active v2 sessions and discard process-local presence.
@@ -400,6 +381,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             self.polling_store.terminate(session_id, reason)
         if self.websocket_manager:
             await self.websocket_manager.handle_session_termination(session_id, reason)
+        await self._end_recording(session_id)
         # The yield the socket-pool cleanup always took before returning.
         await asyncio.sleep(0)
 
@@ -423,33 +405,21 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             admin_connection_count=0,
             customer_connection_count=0,
         )
-        # `replace` copies the message list by reference, so settling
-        # it would reach back into the running conversation and strip
-        # audio references from messages whose files are still on disk.
-        # The terminal record gets its own messages; the live session
-        # is untouched until the commit succeeds.
-        terminal_session.messages = [copy.deepcopy(message) for message in session.messages]
-        # The pruned message list is part of the record being
-        # committed. The files it drops are deleted only once that
-        # commit has succeeded: a store failure here is transient and
-        # the caller retries, so anything deleted first would be lost
-        # for a session that is still live.
-        _, doomed_audio = _settle_refused_content(terminal_session)
+        # The terminal record keeps metadata only (spec §5.5). Its own list:
+        # `replace` shares the live one, which must stay whole until the
+        # commit succeeds, since a store failure here is retried.
+        terminal_session.messages = list(session.messages)
+        terminal_session.strip_content()
         committed_terminal: Optional[Session] = await self.store.terminate(terminal_session)
         if session.status == SessionStatus.TERMINATED:
             # A concurrent termination committed while this one awaited, and
             # has already settled, cached and reported the record.
             return
-        # A store may accept the termination while keeping a terminal
-        # record it already held, discarding the payload settled here.
-        # Only delete artefacts when this payload is the committed one.
-        # `None` means the store reported success without echoing a
-        # record, which the fakes do; that is this payload.
-        payload_committed = committed_terminal in (None, terminal_session)
+        # The audio goes once the record is terminal, whichever termination
+        # wrote it: delivery files outlive no conversation.
         if committed_terminal is None:
             committed_terminal = terminal_session
-        if payload_committed and doomed_audio:
-            self._delete_settled_audio(session_id, doomed_audio)
+        self._delete_session_audio(session_id)
 
         # Preserve references held by handlers while replacing every
         # cached field with Redis' canonical terminal snapshot. This
@@ -465,6 +435,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         tenant_active.discard(session_id.session_id)
         if not tenant_active:
             self.active_admin_sessions.pop(session_id.tenant_id, None)
+        await self._note_recording(session_id)
         self._emit_lifecycle(
             session,
             SessionLifecyclePhase.TERMINATED,
@@ -579,44 +550,16 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         return session.status if session else None
 
     async def add_message(self, session_id: TenantSessionKey, message: SessionMessage) -> None:
-        """Nachricht zur Session hinzufügen"""
+        """Add a message to a live session; an ended one refuses it and keeps none (§5.5)."""
         if session := await self.get_session(session_id):
+            if session.status == SessionStatus.TERMINATED:
+                raise SessionStoreConsistencyError(_SESSION_ENDED)
             session.messages.append(message)
             # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
             session.update_activity()
+            # Ended while this save waited: the termination copies its stripped record
+            # onto this object, so the message goes with the rest.
             await self._save_live(session, SessionStoreConsistencyError(_SESSION_ENDED))
-
-    async def record_message_authorization(
-        self,
-        session_id: TenantSessionKey,
-        message_id: str,
-        *,
-        record: bool,
-        original_audio: bool,
-        translated_audio: bool,
-    ) -> None:
-        """Store the decision of one message's live policy read, per artefact.
-
-        Args:
-            session_id: The session key.
-            message_id: The message whose outcome this is.
-            record: Whether the message record itself may be retained.
-            original_audio: Whether the guest's input audio may be retained.
-            translated_audio: Whether the synthesised audio may be retained.
-        """
-        session = await self.get_session(session_id)
-        if session is None:
-            return
-        for message in session.messages:
-            if message.id != message_id:
-                continue
-            message.record_authorized = record
-            message.original_audio_authorized = original_audio
-            message.translated_audio_authorized = translated_audio
-            break
-        else:
-            return
-        await self._save_live(session, SessionStoreConsistencyError(_SESSION_ENDED))
 
     async def _persist_swept_session(self, session: Session) -> None:
         await self.store.save(session)

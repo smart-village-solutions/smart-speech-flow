@@ -361,30 +361,6 @@ class LegacySessionManager(SessionManagerBase[str]):
             session.update_activity()
             self._persist_session(session)
 
-    def record_message_authorization(
-        self,
-        session_id: str,
-        message_id: str,
-        *,
-        record: bool,
-        original_audio: bool,
-        translated_audio: bool,
-    ) -> None:
-        """Store the outcome of one message's three policy reads."""
-        session = self.get_session(session_id)
-        if session is None:
-            return
-        for message in session.messages:
-            if message.id != message_id:
-                continue
-            message.record_authorized = record
-            message.original_audio_authorized = original_audio
-            message.translated_audio_authorized = translated_audio
-            break
-        else:
-            return
-        self._persist_session(session)
-
     async def _persist_swept_session(self, session: Session) -> None:
         if session.tenant_id is None:
             self._persist_session(session)

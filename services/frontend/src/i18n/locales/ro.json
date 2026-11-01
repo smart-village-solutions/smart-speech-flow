@@ -1,0 +1,144 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Înapoi",
+    "home": "Acasă",
+    "feedback": "Feedback",
+    "theme": "Schimbă tema"
+  },
+  "accessCode": {
+    "title": "Introduceți codul",
+    "continue": "Continuați",
+    "digitLabel": "Caracterul {{position}}",
+    "notFound": "Acest cod nu corespunde niciunei sesiuni deschise.",
+    "sessionHasGuest": "Această conversație are deja un invitat."
+  },
+  "language": {
+    "title": "Alegeți limba",
+    "loadFailed": "Lista de limbi nu a putut fi încărcată.",
+    "retry": "Încercați din nou"
+  },
+  "consent": {
+    "intro": "$t(app.name) este un serviciu automat de traducere în timp real, conceput pentru a sprijini conversațiile dintre persoane care vorbesc limbi diferite. Serviciul funcționează exclusiv pe un server privat dedicat.",
+    "howTo": "Pentru a începe înregistrarea, atingeți butonul microfonului. Veți avea apoi 20 de secunde pentru a vorbi. Puteți încheia înregistrarea și mai devreme, cu o nouă atingere. Ca alternativă, puteți folosi introducerea de text.",
+    "retention": "În mod implicit, datele audio și de transcriere sunt prelucrate doar pe durata sesiunii active și nu sunt păstrate ulterior. După încheierea conversației, datele sunt șterse automat. Puteți raporta probleme sau împărtăși idei de îmbunătățire oricând, prin funcția de feedback din aplicație.",
+    "getStarted": "Începeți",
+    "loading": "Se încarcă informațiile"
+  },
+  "conversation": {
+    "record": "Înregistrați",
+    "sendRecording": "Trimiteți înregistrarea",
+    "openKeyboard": "Deschideți tastatura",
+    "sendText": "Trimiteți textul",
+    "placeholder": "Scrieți mesajul…",
+    "play": "Redați",
+    "pause": "Pauză",
+    "sendFailed": "Mesajul nu a putut fi trimis.",
+    "notSent": "Netrimis",
+    "retry": "Reîncercați",
+    "micDenied": "Accesul la microfon a fost refuzat. Puteți scrie mesajul în schimb.",
+    "reconnecting": "Se reconectează…",
+    "ended": "Această conversație s-a încheiat.",
+    "timeoutWarning": "Această conversație se va încheia la {{time}}."
+  },
+  "recording": {
+    "label": "Înregistrare în curs",
+    "starting": "Înregistrarea pornește…",
+    "paused": "Înregistrare în pauză",
+    "stop": "Opriți înregistrarea",
+    "error": "Înregistrarea nu a putut fi modificată. Încercați din nou.",
+    "reason": {
+      "liveness": "conexiune întreruptă",
+      "unacknowledged": "se așteaptă ambele ecrane",
+      "storage": "stocare indisponibilă",
+      "policy": "nepermis în acest moment"
+    },
+    "ask": {
+      "title": "Poate fi înregistrată această conversație?",
+      "resumeTitle": "Continuați înregistrarea?",
+      "yes": "Da, înregistrați",
+      "no": "Nu"
+    },
+    "consent": {
+      "readAloud": "Citește cu voce tare",
+      "stopReading": "Oprește citirea",
+      "loading": "Se încarcă textul…",
+      "unavailable": "Textul nu poate fi încărcat acum. Vă rugăm să vă adresați interlocutorului.",
+      "name": "Numele dumneavoastră",
+      "nameProposed": "Introdus de interlocutor. Vă rugăm să-l verificați.",
+      "signature": "Semnătura dumneavoastră",
+      "optional": "opțional",
+      "clear": "Șterge",
+      "cannotSign": "Nu pot semna și confirm prin atingere.",
+      "nameRequired": "Vă rugăm să introduceți numele.",
+      "signatureRequired": "Vă rugăm să semnați sau să confirmați că nu puteți semna.",
+      "textChanged": "Textul s-a schimbat. Vă rugăm să-l citiți din nou înainte de a răspunde.",
+      "originalLanguage": "Limba originală: {{language}}",
+      "documentationRequired": "Confirmați separat consimțământul pentru documentare.",
+      "staffReleaseChanged": "Textul aprobării angajatului s-a schimbat. Rugați angajatul să retragă această cerere și să trimită una nouă."
+    }
+  },
+  "feedback": {
+    "title": "Spuneți-ne părerea",
+    "close": "Închideți",
+    "quality": {
+      "label": "Calitatea traducerii",
+      "question": "Cât de exacte au fost traducerile?"
+    },
+    "performance": {
+      "label": "Performanță",
+      "question": "Cât de rapidă și de receptivă vi s-a părut aplicația?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "Cât de ușoară și de plăcută a fost utilizarea interfeței?"
+    },
+    "nps": {
+      "label": "Recomandare",
+      "question": "Cât de probabil este să recomandați $t(app.name) unui coleg?",
+      "low": "Deloc probabil",
+      "high": "Extrem de probabil",
+      "option": "Scor {{score}}"
+    },
+    "improvements": {
+      "label": "Idei de îmbunătățire",
+      "question": "Ce ar face $t(app.name) și mai bun?",
+      "placeholder": "Ideile dumneavoastră, funcții dorite sau orice v-a deranjat…"
+    },
+    "notice": {
+      "purpose": "Răspunsurile dumneavoastră sunt folosite doar pentru a îmbunătăți $t(app.name).",
+      "retention": "Păstrăm feedbackul timp de douăsprezece luni, după care îl ștergem automat.",
+      "withdrawal": "Puteți cere oricând retragerea feedbackului — adresați-vă unui membru al personalului."
+    },
+    "stars": "{{count}} stele",
+    "required": "Obligatoriu",
+    "submit": "Trimiteți feedbackul",
+    "submitting": "Se trimite…",
+    "retry": "Trimiteți din nou",
+    "failed": "Feedbackul nu a putut fi trimis. Răspunsurile dumneavoastră au fost păstrate.",
+    "formChanged": "Între timp, formularul s-a schimbat. Încărcați noul formular; răspunsurile care se potrivesc în continuare sunt păstrate.",
+    "reload": "Încărcați noul formular",
+    "loading": "Se încarcă formularul de feedback",
+    "thanksTitle": "Vă mulțumim!",
+    "thanksBody": "Feedbackul dumneavoastră ne ajută să îmbunătățim $t(app.name) pentru toți."
+  },
+  "errors": {
+    "network": "Nu există conexiune la server.",
+    "timeout": "A durat prea mult. Vă rugăm să încercați din nou.",
+    "notFound": "Nu a fost găsit.",
+    "validation": "Cererea nu a putut fi procesată.",
+    "server": "Ceva nu a funcționat din partea noastră.",
+    "noSpeech": "Nu a fost recunoscut nimic. Vă rugăm să încercați din nou.",
+    "unknown": "Ceva nu a funcționat.",
+    "languageChanged": "Limba conversației s-a schimbat. Vă rugăm să trimiteți din nou."
+  },
+  "legal": {
+    "label": "Informații juridice",
+    "imprint": "Mențiuni legale",
+    "privacyPolicy": "Date personale",
+    "accessibilityStatement": "Accesibilitate",
+    "opensInNewTab": "(se deschide într-o filă nouă)"
+  }
+}

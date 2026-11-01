@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway import (
     studio_installation_client,
     studio_login_directory_client,
+    studio_recording_directory_client,
     studio_runtime_v2_client,
 )
 from services.api_gateway.studio_installation_client import (
@@ -22,6 +23,10 @@ from services.api_gateway.studio_installation_client import (
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectoryClient,
     StudioLoginDirectoryClientError,
+)
+from services.api_gateway.studio_recording_directory_client import (
+    StudioRecordingDirectoryClient,
+    StudioRecordingDirectoryClientError,
 )
 from services.api_gateway.studio_runtime_v2_client import (
     TENANT_CONFLICT_CODES,
@@ -138,15 +143,13 @@ async def test_every_v2_tenant_validates_in_the_v2_client(tenant_id: str) -> Non
 
 
 @pytest.mark.asyncio
-async def test_the_ask_tenant_carries_every_guest_language_shape() -> None:
+async def test_the_kassel_tenant_carries_every_guest_language_shape() -> None:
     read = await _runtime_v2().fetch("tenant-kassel", "contract-correlation")
     languages = {language.locale: language for language in read.content.guest_languages}
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 4320)
     assert list(languages) == ["en", "tr", "ar", "kmr", "pt-BR"]
     assert languages["tr"].icon is not None
     assert languages["ar"].icon is None
-    assert all(language.storage_question_html for language in languages.values())
     assert read.content.staff is not None
     assert read.content.staff.feedback is not None
     assert {question.type for question in read.content.staff.feedback.questions} == {
@@ -157,30 +160,26 @@ async def test_the_ask_tenant_carries_every_guest_language_shape() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_disabled_tenant_has_null_retention_and_questions() -> None:
-    read = await _runtime_v2().fetch("tenant-fulda", "contract-correlation")
+@pytest.mark.parametrize(
+    ("tenant_id", "scenario"),
+    [
+        ("tenant-kassel", None),
+        ("tenant-fulda", None),
+        ("tenant-marburg", None),
+        ("tenant-kassel", "storage-disabled"),
+    ],
+)
+async def test_the_retired_storage_fields_the_mock_still_sends_are_ignored(
+    tenant_id: str, scenario: str | None
+) -> None:
+    served = contract_fixtures.runtime_configuration_v2(tenant_id, scenario)
+    assert "conversationContentStorage" in served
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("disabled", None)
-    assert read.content.guest_languages
-    assert all(language.storage_question_html is None for language in read.content.guest_languages)
+    read = await _runtime_v2(scenario=scenario).fetch(tenant_id, "contract-correlation")
 
-
-@pytest.mark.asyncio
-async def test_the_zero_retention_tenant_reads_zero() -> None:
-    read = await _runtime_v2().fetch("tenant-marburg", "contract-correlation")
-
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 0)
-
-
-@pytest.mark.asyncio
-async def test_storage_disabled_reaches_the_client_as_disabled() -> None:
-    client = _runtime_v2(scenario="storage-disabled")
-
-    read = await client.fetch("tenant-kassel", "contract-correlation")
-
-    assert (read.policy.mode, read.policy.retention_hours) == ("disabled", None)
-    assert len(read.content.guest_languages) == 5
-    assert all(language.storage_question_html is None for language in read.content.guest_languages)
+    assert [language.locale for language in read.content.guest_languages] == [
+        language["locale"] for language in served["guestLanguages"]
+    ]
 
 
 @pytest.mark.asyncio
@@ -189,7 +188,7 @@ async def test_invalid_content_drops_one_guest_language_and_keeps_the_policy() -
 
     read = await client.fetch("tenant-kassel", "contract-correlation")
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 4320)
+    assert read.policy.tenant_id == "tenant-kassel"
     assert [language.locale for language in read.content.guest_languages] == [
         "tr",
         "ar",
@@ -205,8 +204,7 @@ async def test_invalid_content_keeps_every_tenants_policy(tenant_id: str) -> Non
 
     read = await _runtime_v2(scenario="invalid-content").fetch(tenant_id, "contract-correlation")
 
-    assert read.policy.mode == plain.policy.mode
-    assert read.policy.retention_hours == plain.policy.retention_hours
+    assert read.policy.tenant_id == plain.policy.tenant_id
     assert read.content.guest_languages == plain.content.guest_languages[1:]
 
 
@@ -302,3 +300,54 @@ def test_every_directory_tenant_has_a_runtime_configuration() -> None:
     directory_ids = {tenant["id"] for tenant in mock._login_directory()["tenants"]}
 
     assert directory_ids <= set(contract_fixtures.RUNTIME_V2_TENANTS)
+
+
+def _recording_directory(
+    token: str = AUTHORIZED, scenario: str | None = None
+) -> StudioRecordingDirectoryClient:
+    return StudioRecordingDirectoryClient(
+        "http://studio-mock.test", _token(token), transport=MockTransport(scenario)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
+async def test_every_tenant_recording_directory_validates_in_the_client(tenant_id: str) -> None:
+    directory = await _recording_directory().fetch(tenant_id, "contract-correlation")
+
+    assert directory.tenant_id == tenant_id
+    served = contract_fixtures.recording_directory(tenant_id)
+    assert directory.directory_revision == served["directoryRevision"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("token", "scenario", "code"),
+    [
+        ("not-a-mock-token", None, "service_authentication_invalid"),
+        (UNAUTHORIZED, None, "service_action_forbidden"),
+        (AUTHORIZED, "suspended", "tenant_suspended"),
+        (AUTHORIZED, "unavailable", "recording_directory_unavailable"),
+    ],
+)
+async def test_every_reachable_recording_directory_error_is_one_the_client_accepts(
+    token: str, scenario: str | None, code: str
+) -> None:
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _recording_directory(token, scenario).fetch("tenant-kassel", "contract-correlation")
+
+    assert caught.value.code == code
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_tenant_has_no_recording_directory() -> None:
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _recording_directory().fetch("tenant-nowhere", "contract-correlation")
+
+    assert caught.value.code == "tenant_not_found"
+
+
+def test_the_mock_recording_directory_emits_only_codes_the_client_accepts() -> None:
+    accepted = set().union(*studio_recording_directory_client.EXPECTED_ERROR_CODES.values())
+
+    assert set(get_args(mock.RecordingDirectoryErrorCode)) <= accepted

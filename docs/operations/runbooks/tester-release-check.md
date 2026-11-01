@@ -1,9 +1,8 @@
 # Tester release check
 
 Proves on production that operators in two tenants can hold conversations at
-the same time without seeing each other's data, and that a conversation keeps
-its audio and messages only when the guest consented and the tenant stores
-content. It creates four conversations and terminates all of them, whatever
+the same time without seeing each other's data, and that an ended
+conversation keeps neither its audio nor its messages. It creates four conversations and terminates all of them, whatever
 happens. It never creates, changes or deletes an account.
 
 ## Before the run
@@ -25,10 +24,7 @@ happens. It never creates, changes or deletes an account.
    The check stops, creating nothing, if a tester account still has a live
    conversation from an earlier run. Each operator has at most one live
    conversation (#473), so the test accounts cannot end anyone else's.
-2. **Storage mode.** In each tenant's SSF configuration in Studio, note the
-   conversation-content storage mode (`ask` or `disabled`). Pass it as
-   `SSF_RC_TENANT_{A,B}_STORAGE`.
-3. **Tester accounts.** In the Keycloak admin console
+2. **Tester accounts.** In the Keycloak admin console
    (`https://auth.dialog.kassel.de/`), create two users in each tenant's realm,
    named `ssf-release-check-<yyyymmdd>-<n>`. Studio's user management cannot
    do this: it makes the email address the username and sets a password only
@@ -37,7 +33,7 @@ happens. It never creates, changes or deletes an account.
      realm's user profile asks for nothing at the first login;
    - under *Credentials*, set a password with *Temporary* off;
    - leave *Required user actions* empty. They need no SSF role.
-4. Keep the passwords out of the shell history and out of the repository, for
+3. Keep the passwords out of the shell history and out of the repository, for
    example in a mode-0600 env file outside the checkout that you source.
 
 ## Run
@@ -47,8 +43,8 @@ From the repository root, with the development environment installed:
     export SSF_RC_API_BASE=https://api.dialog.kassel.de
     export SSF_RC_KEYCLOAK_BASE=https://auth.dialog.kassel.de
     export SSF_RC_FRONTEND_ORIGIN=https://dialog.kassel.de
-    export SSF_RC_TENANT_A_ID=tenant-kassel SSF_RC_TENANT_A_LANGUAGE=en SSF_RC_TENANT_A_STORAGE=ask
-    export SSF_RC_TENANT_B_ID=smart-city-labor SSF_RC_TENANT_B_LANGUAGE=tr SSF_RC_TENANT_B_STORAGE=ask
+    export SSF_RC_TENANT_A_ID=tenant-kassel SSF_RC_TENANT_A_LANGUAGE=en
+    export SSF_RC_TENANT_B_ID=smart-city-labor SSF_RC_TENANT_B_LANGUAGE=tr
     export SSF_RC_TENANT_A_USER_1=… SSF_RC_TENANT_A_PASSWORD_1=…   # and _2, and tenant B
     export SSF_RC_REPORT=release-check-report.json                 # optional
     export SSF_RC_MANIFEST=release-check-manifest.json             # for the audio check below
@@ -72,26 +68,25 @@ id; sessions appear as 12-character hashes, as in the gateway logs.
 | `A1 → B1 … is not found` | a foreign tenant's session looks exactly like a missing one |
 | `A1 → A2 … is not found`, `B1 → B2 … is not found` | a colleague's session in the same tenant looks exactly like a missing one (#476) |
 | `… selector … is rejected` | a request cannot choose its tenant |
-| `A1 keeps 4 messages`, `A2 keeps 0 messages` | consent-gated retention of the conversation text after termination |
-| `A1 serves no audio after termination` | an ended conversation serves no recording to anyone, kept or not |
+| `A1 keeps no messages` | an ended conversation's terminal record holds no conversation text (spec §5.4) |
+| `A1 serves no audio after termination` | an ended conversation serves no recording to anyone |
 | `… cleanup` | only when a conversation had not been terminated yet |
 
-## Retained audio (on the production host)
+## No audio left behind (on the production host)
 
-An ended conversation serves no audio through the API, so whether recordings
-were kept is checked on disk. `SSF_RC_MANIFEST` holds each test conversation's
-session id; copy it to the production host, then from the repository root
-there:
+An ended conversation serves no audio through the API, so whether its files
+are gone is checked on the gateway's tmpfs. `SSF_RC_MANIFEST` holds each test
+conversation's session id; copy it to the production host, then from the
+repository root there:
 
     source scripts/lib/production-common.sh
-    for row in $(jq -r '.conversations[] | "\(.label):\(.consent):\(.storage):\(.session_id)"' release-check-manifest.json); do
+    for row in $(jq -r '.conversations[] | "\(.label):\(.session_id)"' release-check-manifest.json); do
       sid=${row##*:}
-      count=$(production_compose exec -T api_gateway sh -c "find /data/audio/v2 -path '*/$sid/translated/*.wav' -type f | wc -l")
+      count=$(production_compose exec -T api_gateway sh -c "find /tmp/audio/v2 -path '*/$sid/*' -name '*.wav' -type f | wc -l")
       echo "${row%:*} -> $count recordings"
     done
 
-Expected: 4 for a conversation with consent `true` and storage `ask`, 0 for
-every other. Then delete the manifest on both machines; the ids it holds
+Expected: 0 for every conversation. Then delete the manifest on both machines; the ids it holds
 belong to ended conversations but are not needed any more.
 
 ## After the run
@@ -111,4 +106,4 @@ that held their passwords.
 | `Keycloak rejected the credentials` | wrong password, or the user is in the other tenant |
 | `… socket acknowledged` fails with `rejected` | the WebSocket origin is not allowed; `SSF_RC_FRONTEND_ORIGIN` must be the production frontend |
 | `… message … delivered` fails, or HTTP 503 on send | translation or TTS is down; check `/health` |
-| `A1 keeps 0 messages … is the tenant's storage mode really ask?` | the tenant's storage mode is `disabled`; re-run with the right `…_STORAGE` |
+| `A1 keeps no messages` fails | the gateway predates #615's removal of `ask` storage, or termination no longer strips the record |

@@ -38,19 +38,15 @@ async def _log_in(
                 return None
             evidence.add_secret(token)
             evidence.record(f"{label} login", True)
-            conversations.append(
-                Conversation(tenant=tenant, index=index, token=token, consent=index == 1)
-            )
+            conversations.append(Conversation(tenant=tenant, index=index, token=token))
     return conversations
 
 
 def _write_manifest(path: Path, conversations: list[Conversation]) -> None:
-    """Session ids for the on-host audio retention check; owner-readable only."""
+    """Session ids for the on-host check that no audio survived; owner-readable only."""
     entries = [
         {
             "label": conversation.label,
-            "consent": conversation.consent,
-            "storage": conversation.tenant.storage_mode,
             "session_id": conversation.session_id,
             "message_ids": conversation.message_ids,
         }

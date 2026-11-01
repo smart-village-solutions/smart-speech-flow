@@ -10,6 +10,69 @@ const ACCOUNT_URL =
 const open = () => userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
 
 describe('AdminUserMenu', () => {
+  it('offers the archive keys only where a screen can open them, and closes on choosing', async () => {
+    const onOpenKeys = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Archivschlüssel' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenKeys={onOpenKeys} />, { locale: 'de' });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Archivschlüssel' }));
+    expect(onOpenKeys).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
+  });
+
+  it('offers the recording archive only where a screen can open it', async () => {
+    const onOpenArchive = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, {
+      locale: 'de',
+    });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Meine Aufzeichnungen' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenArchive={onOpenArchive} />, {
+      locale: 'de',
+    });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Aufzeichnungen' }));
+    expect(onOpenArchive).toHaveBeenCalledOnce();
+  });
+
+  it('offers recovery requests and approvals each only where its permission let a screen open it', async () => {
+    const requests = vi.fn();
+    const approvals = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryApprovals={approvals} />, {
+      locale: 'de',
+    });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Wiederherstellungsanträge' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
+    expect(approvals).toHaveBeenCalledOnce();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryRequests={requests} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Wiederherstellungsfreigaben' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsanträge' }));
+    expect(requests).toHaveBeenCalledOnce();
+  });
+
+  it('offers key recovery only where a screen can open it', async () => {
+    const onOpenKeyRecovery = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Meine Schlüsselwiederherstellung' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenKeyRecovery={onOpenKeyRecovery} />, { locale: 'de' });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Schlüsselwiederherstellung' }));
+    expect(onOpenKeyRecovery).toHaveBeenCalledOnce();
+  });
+
   it('opens and closes on the trigger', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
 

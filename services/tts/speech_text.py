@@ -4,7 +4,7 @@ Piper voices read plain integers through espeak-ng, which inflects them, so
 only what espeak misreads is rewritten: thousands separators, clock times,
 money with cents, phone numbers and German days of the month. MMS voices were
 trained on text without digits and drop or garble them, so for those every
-number is spelled out, decimals with a point word. The Amharic and Tigrinya
+number is spelled out, decimals with a point word. The Amharic
 number words await review by a native speaker.
 """
 
@@ -21,13 +21,24 @@ _EURO = {
     "uk": "євро",
     "ar": "يورو",
     "fa": "یورو",
-    "ku": "euro",
     "am": "ዩሮ",
-    "ti": "ዩሮ",
+    "bg": "евро",
+    "el": "ευρώ",
+    "fr": "euros",
+    "es": "euros",
+    "pt": "euros",
+    "hu": "euró",
+    "zh": "欧元",
+    "hi": "यूरो",
 }
 # The decimal sign where the language has a settled one; the other sign groups
 # thousands there. Elsewhere either sign may group ("0,125" stays a decimal).
-_DECIMAL_SIGN = {"de": ",", "tr": ",", "ru": ",", "uk": ",", "en": "."}
+_DECIMAL_SIGN = {
+    **dict.fromkeys(
+        ("de", "tr", "ru", "uk", "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu"), ","
+    ),
+    **dict.fromkeys(("en", "zh", "hi"), "."),
+}
 
 # Only where a time is clearly meant do clock words ("Uhr", "o'clock") get added;
 # "Ergebnis 10:15" is a score.
@@ -74,17 +85,6 @@ _ETHIOPIC = {
         "thousand": "ሺህ",
         "million": "ሚሊዮን",
         "point": "ነጥብ",
-    },
-    "ti": {
-        "zero": "ዜሮ",
-        "units": ["", "ሓደ", "ክልተ", "ሰለስተ", "ኣርባዕተ", "ሓሙሽተ", "ሽዱሽተ", "ሸውዓተ", "ሸሞንተ", "ትሽዓተ"],
-        "ten": "ዓሰርተ",
-        "teen": "ዓሰርተ",
-        "tens": ["", "", "ዕስራ", "ሰላሳ", "ኣርብዓ", "ሓምሳ", "ስሳ", "ሰብዓ", "ሰማንያ", "ቴስዓ"],
-        "hundred": "ሚእቲ",
-        "thousand": "ሽሕ",
-        "million": "ሚልዮን",
-        "point": "ነጥቢ",
     },
 }
 
@@ -259,7 +259,8 @@ def _below_100(number: int, words: dict) -> str:
     return f"{words['tens'][tens]} {words['units'][unit]}" if unit else words["tens"][tens]
 
 
-_SENTENCE_END = re.compile(r"(?<=[.!?…።؟])\s+")
+# Chinese runs sentences together with no space after the full-width stop.
+_SENTENCE_END = re.compile(r"(?<=[.!?…።؟।])\s+|(?<=[。！？])\s*")
 
 
 def split_for_synthesis(text: str, max_chars: int = 400) -> list[str]:

@@ -29,7 +29,9 @@ def polling_client(session_manager):
 
 
 @pytest.mark.parametrize("role", ["admin", "customer"])
-async def test_polling_timeout_openapi_and_request_contract(polling_client, gateway_dependencies, role):
+async def test_polling_timeout_openapi_and_request_contract(
+    polling_client, gateway_dependencies, role
+):
     path = f"/api/{role}/session/{{session_id}}/polling/{{polling_id}}"
     query = [
         parameter
@@ -79,9 +81,6 @@ async def test_polling_timeout_openapi_and_request_contract(polling_client, gate
     response = polling_client.post(path + "/recover")
     assert response.status_code == 200
     assert response.json() == {"status": "recovery_requested"}
-    response = polling_client.post(path + "/send", json={"type": "heartbeat", "content": {}})
-    assert response.status_code == 200
-    assert response.json() == {"status": "success"}
     response = polling_client.delete(path)
     assert response.status_code == 200
     assert response.json() == {"status": "disconnected"}
@@ -242,12 +241,10 @@ async def polling_http_state():
     await sessions.store.create(
         Session(id=key.session_id, tenant_id=key.tenant_id, status=SessionStatus.ACTIVE)
     )
-    manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
     endpoint_app.dependency_overrides[polling.require_admin_session_key] = lambda: key
     endpoint_app.dependency_overrides[polling.require_customer_session_key] = lambda: key
-    endpoint_app.dependency_overrides[polling.get_websocket_manager] = lambda: manager
     endpoint_app.dependency_overrides[polling.get_session_manager] = lambda: sessions
     endpoint_app.dependency_overrides[polling.get_polling_store] = lambda: store
     return SimpleNamespace(store=store, sessions=sessions, key=key, app=endpoint_app)
@@ -363,26 +360,12 @@ async def test_terminated_long_poll_does_not_release_a_deleted_client_twice(
     assert (await sessions.get_session(key)).admin_connection_count == 1
 
 
-async def test_terminated_polling_client_cannot_send_recover_or_read_status():
+async def test_terminated_polling_client_cannot_recover_or_read_status():
     client = polling.PollingClient(
         "poll-1",
         polling.TenantSessionKey("tenant-a", "SESSION1"),
         ClientType.ADMIN,
         terminated=True,
-    )
-    manager = websocket.WebSocketManager(
-        TenantSessionManager(
-            store=MemoryTenantSessionStore(),
-            audio_store=AudioStore.from_environment(),
-        ),
-        monitor=websocket_monitor(),
-    )
-    message = polling.PollingMessage(type="message", content={"text": "private"})
-    with pytest.raises(HTTPException) as sent:
-        await polling._send(polling.TenantPollingStore(), client, message, manager)
-    assert (sent.value.status_code, sent.value.detail) == (
-        404,
-        "Polling client not found",
     )
     for action in (polling._status, polling._recover):
         with pytest.raises(HTTPException) as unavailable:

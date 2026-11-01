@@ -1,6 +1,16 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ExternalLink, LogOut, User } from 'lucide-react';
+import {
+  Archive,
+  BadgeCheck,
+  ExternalLink,
+  KeyRound,
+  KeySquare,
+  LifeBuoy,
+  LogOut,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
@@ -54,14 +64,44 @@ interface AdminUserMenuProps {
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
+  /** Personal archive keys; offered where the screen can switch to them. */
+  onOpenKeys?: () => void;
+  /** The recovery-key ceremony; offered to tenant administrators and custodians. */
+  onOpenCeremony?: () => void;
+  /** The employee's own recordings; offered to holders of a recording permission. */
+  onOpenArchive?: () => void;
+  /** The employee's own key recovery (#617b); offered to holders of a recording permission. */
+  onOpenKeyRecovery?: () => void;
+  /** Exceptional access: a supervisor's requests and a custodian's approvals (#617a). */
+  onOpenRecoveryRequests?: () => void;
+  onOpenRecoveryApprovals?: () => void;
 }
 
 /** Credentials are Keycloak's concern (#396): SSF only links to its account console. */
-export function AdminUserMenu({ onSignOut, accountUrl, studioUrl }: Readonly<AdminUserMenuProps>) {
+export function AdminUserMenu({
+  onSignOut,
+  accountUrl,
+  studioUrl,
+  onOpenKeys,
+  onOpenCeremony,
+  onOpenArchive,
+  onOpenKeyRecovery,
+  onOpenRecoveryRequests,
+  onOpenRecoveryApprovals,
+}: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
+  // In menu order; a screen whose callback is missing is not offered.
+  const screens = [
+    { label: 'admin.menu.archive', onOpen: onOpenArchive, Icon: Archive },
+    { label: 'admin.menu.keyRecovery', onOpen: onOpenKeyRecovery, Icon: KeySquare },
+    { label: 'admin.menu.recoveryRequests', onOpen: onOpenRecoveryRequests, Icon: LifeBuoy },
+    { label: 'admin.menu.recoveryApprovals', onOpen: onOpenRecoveryApprovals, Icon: BadgeCheck },
+    { label: 'admin.menu.keys', onOpen: onOpenKeys, Icon: KeyRound },
+    { label: 'admin.menu.ceremony', onOpen: onOpenCeremony, Icon: ShieldCheck },
+  ].flatMap((entry) => (entry.onOpen ? [{ ...entry, onOpen: entry.onOpen }] : []));
 
   useDismissOnOutsideTap(open, close);
 
@@ -86,6 +126,20 @@ export function AdminUserMenu({ onSignOut, accountUrl, studioUrl }: Readonly<Adm
           {studioUrl && (
             <MenuLink label={t('admin.menu.openStudio')} href={studioUrl} onClick={close} />
           )}
+
+          {screens.map(({ label, onOpen, Icon }) => (
+            <MenuRow
+              key={label}
+              label={t(label)}
+              onClick={() => {
+                close();
+                onOpen();
+              }}
+              className="text-fg-body hover:bg-surface-row-hover"
+            >
+              <Icon aria-hidden size={16} strokeWidth={2} />
+            </MenuRow>
+          ))}
 
           <MenuRow
             label={t('admin.menu.signOut')}

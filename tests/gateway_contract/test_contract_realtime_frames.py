@@ -6,8 +6,7 @@ sockets, and pollers where the frame also reaches them. Timestamps and ids are
 checked for presence and type only.
 
 The heartbeat's `connection_status` frame and its close are pinned in
-test_contract_heartbeat.py, and the polled `send` envelope in
-test_contract_polling.py.
+test_contract_heartbeat.py, and the recording frames in test_contract_recording.py.
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ from tests.gateway_contract.contract_support import ALLOWED_ORIGIN
 from tests.guest_access import ensure_guest, open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
-RELAY_KEYS = {"type", "from", "session_id", "content", "timestamp"}
 TYPING_KEYS = {"type", "from", "session_id", "is_typing", "timestamp"}
 # `role` is what the frontend transport routes on; frames without one are dropped there.
 JOINED_KEYS = {"type", "session_id", "client_type", "connection_id", "timestamp", "role"}
@@ -277,17 +275,12 @@ def test_a_customer_language_change_reaches_the_admin_socket_and_poller(client, 
 
 
 @pytest.mark.parametrize(
-    ("sent", "content"),
-    [
-        ({"type": "message", "content": {"text": "hallo"}}, {"text": "hallo"}),
-        ({"type": "message", "content": "plain"}, "plain"),
-        ({"type": "message"}, None),
-    ],
-    ids=["object", "string", "missing"],
+    "sent",
+    [{"type": "message", "content": {"text": "hallo"}}, {"type": "message", "content": "plain"}],
+    ids=["object", "string"],
 )
-def test_a_relayed_message_reaches_the_peer_and_the_pollers_but_not_the_sender(
-    client, conversations, sent, content
-):
+def test_a_client_message_frame_is_not_relayed(client, conversations, sent):
+    """Content travels only by HTTP, the path recording archives (spec §5.2)."""
     session_id = conversations.create()
     conversations.activate(session_id, "en")
     poller = _customer_poller(client, session_id)
@@ -298,25 +291,12 @@ def test_a_relayed_message_reaches_the_peer_and_the_pollers_but_not_the_sender(
             customer.receive_json()
             admin.receive_json()
             admin.send_json(sent)
-            relayed = customer.receive_json()
-            echoed = _before_a_sentinel(admin)
-            _polled(client, "customer", session_id, poller)
-            customer.send_json(sent)
-            admin_received = admin.receive_json()
-            polled_relay = _polled(client, "customer", session_id, poller)
+            admin_echo = _before_a_sentinel(admin)
+            customer_received = _before_a_sentinel(customer)
+            polled = _polled(client, "customer", session_id, poller)
 
-    assert set(relayed) == RELAY_KEYS
-    assert _without(relayed, "timestamp") == {
-        "type": "message",
-        "from": "admin",
-        "session_id": session_id,
-        "content": content,
-    }
-    assert _is_timestamp(relayed["timestamp"])
-    assert echoed == []
-    # A poller receives the relay whichever socket sent it, its own role's included.
-    assert polled_relay == [admin_received]
-    assert admin_received["from"] == "customer"
+    assert admin_echo == customer_received == []
+    assert [frame for frame in polled if frame.get("type") == "message"] == []
 
 
 @pytest.mark.parametrize(
@@ -324,9 +304,10 @@ def test_a_relayed_message_reaches_the_peer_and_the_pollers_but_not_the_sender(
     [
         ({"type": "typing_indicator", "is_typing": True}, True),
         ({"type": "typing_indicator", "is_typing": False}, False),
+        ({"type": "typing_indicator", "is_typing": "words"}, False),
         ({"type": "typing_indicator"}, False),
     ],
-    ids=["typing", "stopped", "missing"],
+    ids=["typing", "stopped", "non-boolean", "missing"],
 )
 def test_typing_reaches_the_peer_and_the_pollers(client, conversations, sent, is_typing):
     session_id = conversations.create()

@@ -100,8 +100,20 @@ export class AppError extends Error {
   }
 }
 
+/** A JSON error body that arrived as bytes, as it does for a binary download. */
+function decodedBody(data: unknown): unknown {
+  // A tag check, not instanceof: the buffer may come from another realm (a worker, a test).
+  if (Object.prototype.toString.call(data) !== '[object ArrayBuffer]') return data;
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data as ArrayBuffer));
+  } catch {
+    return undefined;
+  }
+}
+
 /** The gateway's `detail.error_code`, when `detail` is its error envelope. */
-function serverErrorCode(data: unknown): string | undefined {
+function serverErrorCode(raw: unknown): string | undefined {
+  const data = decodedBody(raw);
   if (typeof data !== 'object' || data === null) {
     return undefined;
   }
@@ -167,5 +179,10 @@ export function toAppError(error: unknown): AppError {
     return new AppError(kind, { status, correlationId, serverCode, cause: error });
   }
 
-  return new AppError('server', { status, correlationId, cause: error });
+  return new AppError('server', {
+    status,
+    correlationId,
+    serverCode: serverErrorCode(error.response.data),
+    cause: error,
+  });
 }

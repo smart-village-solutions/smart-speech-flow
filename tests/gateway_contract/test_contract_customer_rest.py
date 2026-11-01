@@ -164,3 +164,24 @@ def test_supported_language_lists_agree(client):
         assert response.status_code == 200
         assert response.json() == customer.json()
     assert {"languages", "admin_default", "popular"} <= set(customer.json())
+
+
+@pytest.mark.parametrize("language", ["ti", "ku", "kmr", "ti-ER", "ku-TR", "kmr-TR"])
+@pytest.mark.parametrize("active", [False, True])
+def test_removed_languages_cannot_activate_or_change_a_conversation(
+    client, conversations, language, active
+):
+    session_id = conversations.create()
+    if active:
+        conversations.activate(session_id, "en")
+
+    response = client.post(
+        "/api/customer/session/activate",
+        json={"session_id": session_id, "customer_language": language},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "UNSUPPORTED_LANGUAGE"}
+    body = client.get(f"/api/customer/session/{session_id}").json()
+    assert body["status"] == ("active" if active else "pending")
+    assert body["customer_language"] == ("en" if active else None)

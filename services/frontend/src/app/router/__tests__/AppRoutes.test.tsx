@@ -1,4 +1,4 @@
-import { HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, useLocation } from 'react-router-dom';
@@ -7,11 +7,15 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
 import {
   getAccountConsoleUrl,
+  getAdminIdentity,
   getStudioAdministrationUrl,
+  hasPermission,
   requireKeycloakLogin,
   logoutFromKeycloak,
 } from '@/app/auth/keycloak';
 import type { AdminSession } from '@/domain/admin/admin.types';
+import { toBase64Url } from '@/core/crypto/bytes';
+import { publicPoint } from '@/core/crypto/curve';
 import { KASSEL_REVISION } from '@/test/contentFixtures';
 import { feedbackHandler } from '@/test/handlers';
 import { recordRequests } from '@/test/recordRequests';
@@ -26,6 +30,10 @@ vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
   getStudioAdministrationUrl: vi.fn(),
+  hasPermission: vi.fn(),
+  getAdminIdentity: vi.fn(),
+  hasFreshStepUp: () => false,
+  requestStepUp: vi.fn(),
   getAccountConsoleUrl: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   subscribeToKeycloakAuthorization: (listener: () => void) => {
@@ -65,6 +73,8 @@ describe('tenant login routes', () => {
     vi.mocked(logoutFromKeycloak).mockReset().mockResolvedValue(undefined);
     vi.mocked(getStudioAdministrationUrl).mockReset().mockReturnValue(null);
     vi.mocked(getAccountConsoleUrl).mockReset().mockReturnValue(null);
+    vi.mocked(hasPermission).mockReset().mockReturnValue(false);
+    vi.mocked(getAdminIdentity).mockReset().mockReturnValue(null);
     sessionStorage.clear();
   });
 
@@ -154,6 +164,125 @@ describe('tenant login routes', () => {
       'href',
       accountUrl
     );
+  });
+
+  it('brings a custodian back to the ceremony after they open their archive keys from it', async () => {
+    vi.mocked(hasPermission).mockReturnValue(true);
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'anna' });
+    const point = toBase64Url(publicPoint(2n));
+    server.use(
+      http.get('*/api/admin/recording/ceremony', () =>
+        HttpResponse.json({
+          recovery_key: null,
+          ceremony: {
+            ceremony_id: '0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a',
+            k: 1,
+            status: 'dealing',
+            started_by: 'olga',
+            started_at: '2026-10-26T09:00:00+00:00',
+            expires_at: '2026-10-27T09:00:00+00:00',
+            gateway_keys: [],
+            participants: [
+              { holder_index: 1, holder_ref: 'anna', kind: 'custodian', display_name: 'Anna', enc_pub: point, sig_pub: point, fingerprint: toBase64Url(new Uint8Array(32)) },
+            ],
+            dealings: [],
+            confirmed: [],
+            paper_confirmed: false,
+            transcript_hash: null,
+            kind: 'generation',
+            recovery_key_id: null,
+            previous_transcript_hash: null,
+            dealers: [{ dealer_index: 1, holder_ref: 'anna', kind: 'custodian' }],
+          },
+          holders: [],
+          previous_had_paper: false,
+          chain: [],
+        })
+      ),
+      http.get('*/api/admin/recording/keys/me', () =>
+        HttpResponse.json({ detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } }, { status: 404 })
+      )
+    );
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsschlüssel' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Archivschlüssel öffnen' }));
+    expect(await screen.findByRole('heading', { name: 'Archivschlüssel' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(await screen.findByRole('heading', { name: 'Wiederherstellungsschlüssel' })).toBeInTheDocument();
+  });
+
+  it('opens the recording archive for a recording permission, and its unlock comes back to it', async () => {
+    vi.mocked(hasPermission).mockImplementation(
+      (permission) => permission === 'ssf.recording.request'
+    );
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
+    server.use(
+      http.get('*/api/admin/recording/keys/me', () =>
+        HttpResponse.json(
+          { detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } },
+          { status: 404 }
+        )
+      )
+    );
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Aufzeichnungen' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Meine Aufzeichnungen' })
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Schlüssel entsperren' }));
+    expect(await screen.findByRole('heading', { name: 'Archivschlüssel' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Meine Aufzeichnungen' })
+    ).toBeInTheDocument();
+  });
+
+  it('opens recovery approvals for a custodian only, and its back returns to the dashboard', async () => {
+    vi.mocked(hasPermission).mockImplementation(
+      (permission) => permission === 'ssf.recording.recovery.custodian'
+    );
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
+    server.use(
+      http.get('*/api/admin/recording/recovery/approvals', () =>
+        HttpResponse.json({ requests: [], share_stale: false })
+      )
+    );
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.queryByRole('button', { name: 'Wiederherstellungsanträge' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Wiederherstellungsfreigaben' })
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Es warten keine Anträge auf Sie.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(await screen.findByRole('button', { name: 'Neues Gespräch starten' })).toBeInTheDocument();
+  });
+
+  it('opens key recovery for a recording permission from the menu', async () => {
+    vi.mocked(hasPermission).mockImplementation((permission) => permission === 'ssf.recording.request');
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Schlüsselwiederherstellung' }));
+    expect(await screen.findByRole('heading', { name: 'Meine Schlüsselwiederherstellung' })).toBeInTheDocument();
+  });
+
+  it('offers no recording archive without a recording permission', async () => {
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.queryByRole('button', { name: 'Meine Aufzeichnungen' })).not.toBeInTheDocument();
   });
 
   it('does not render the dashboard while Keycloak redirects', async () => {

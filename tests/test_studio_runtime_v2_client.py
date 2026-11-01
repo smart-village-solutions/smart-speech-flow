@@ -76,7 +76,6 @@ async def test_fetches_the_v2_path_with_the_v1_headers() -> None:
     read = await runtime_client.fetch("tenant-kassel", "c-1")
 
     assert read.policy.tenant_id == "tenant-kassel"
-    assert read.policy.retention_hours == 4320
     assert transport.calls == [
         (
             f"https://studio.test{RUNTIME_V2_PATH}",
@@ -99,12 +98,12 @@ async def test_invalid_content_does_not_fail_the_fetch() -> None:
     read = await runtime_client.fetch("tenant-kassel", "c-1")
 
     assert read.content.guest_languages == ()
-    assert read.policy.mode == "ask"
+    assert read.policy.configuration_revision == body["configurationRevision"]
 
 
 async def test_an_invalid_policy_is_a_response_invalid_error() -> None:
     body = load_fixture(KASSEL)
-    body["conversationContentStorage"]["retentionHours"] = None
+    body["configurationRevision"] = "sha256:ABC"
 
     error = await fetch_error(StudioV1HttpResponse(200, body))
 

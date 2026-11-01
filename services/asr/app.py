@@ -47,8 +47,10 @@ def _persist_upload_to_temp(file_obj) -> str:
         return tmp.name
 
 
+import hashlib
 import logging
 import os
+import re
 import shutil
 import tempfile
 from typing import Any, Dict
@@ -123,16 +125,53 @@ def _build_debug_info(lang: str) -> Dict[str, Any]:
     }
 
 
+_CHECKPOINT_HASH = re.compile(r"/([0-9a-f]{64})/")
+
+
+def _model_version() -> str:
+    """The checkpoint's SHA-256, which Whisper's download URL names and verifies.
+
+    Archived with every recorded message (spec §7), so a transcript can be tied
+    to the exact weights that produced it.
+    """
+    url = getattr(whisper, "_MODELS", {}).get(ASR_MODEL_NAME, "")
+    match = _CHECKPOINT_HASH.search(url)
+    return match.group(1) if match else "unknown"
+
+
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 16), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _build_asr_response(
-    text: str, fallback: bool, debug_active: bool, debug_info: Dict[str, Any]
+    text: str,
+    fallback: bool,
+    debug_active: bool,
+    debug_info: Dict[str, Any],
+    input_sha256: str,
 ) -> Dict[str, Any]:
+    response: Dict[str, Any] = {
+        "text": text,
+        "fallback": fallback,
+        "model": f"whisper-{ASR_MODEL_NAME}",
+        "model_version": _model_version(),
+        # The normalised audio the model heard, which is not the upload's bytes.
+        "input_sha256": input_sha256,
+    }
     if debug_active:
-        return {"text": text, "fallback": fallback, "debug": debug_info}
-    return {"text": text, "fallback": fallback}
+        response["debug"] = debug_info
+    return response
 
 
 app = FastAPI(title="ASR Service")
-SUPPORTED_LANGS = ["de", "en", "ar", "tr", "am", "fa", "ru", "uk", "ku", "ti"]
+SUPPORTED_LANGS = [
+    "de", "en", "ar", "tr", "am", "fa", "ru", "uk",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+]  # fmt: skip
 requests_total = Counter("asr_requests_total", "Total ASR requests")
 health_status = Gauge("asr_health_status", "Health status of ASR service")
 
@@ -207,6 +246,7 @@ async def transcribe(
     norm_path = None
     try:
         norm_path = await asyncio.to_thread(normalize_to_wav16k, tmp_path)
+        input_sha256 = await asyncio.to_thread(_file_sha256, norm_path)
         result = await asyncio.to_thread(model.transcribe, norm_path, language=lang)
         text = result.get("text", "")
         debug_info["output"] = text
@@ -225,4 +265,4 @@ async def transcribe(
         if norm_path and os.path.exists(norm_path):
             os.remove(norm_path)
     debug_info["duration"] = round(time.perf_counter() - start, 3)
-    return _build_asr_response(text, False, debug_active, debug_info)
+    return _build_asr_response(text, False, debug_active, debug_info, input_sha256)

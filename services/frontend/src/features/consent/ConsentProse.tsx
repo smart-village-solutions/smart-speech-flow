@@ -4,12 +4,10 @@ import { RichText } from '@/ui/patterns/RichText';
 interface ConsentProseProps {
   /** Studio's explanation; undefined means the bundled paragraphs. */
   explanationHtml: string | undefined;
-  /** The bundled opt-in paragraph offers storage, so it shows only when storage is asked. */
-  showsOptIn: boolean;
 }
 
-/** Studio's explanation is one block and renders as delivered, its opt-in paragraph included. */
-export function ConsentProse({ explanationHtml, showsOptIn }: Readonly<ConsentProseProps>) {
+/** Studio's explanation is one block and renders as delivered. */
+export function ConsentProse({ explanationHtml }: Readonly<ConsentProseProps>) {
   const { t } = useTranslation();
 
   return (
@@ -19,7 +17,6 @@ export function ConsentProse({ explanationHtml, showsOptIn }: Readonly<ConsentPr
           <p>{t('consent.intro')}</p>
           <p>{t('consent.howTo')}</p>
           <p>{t('consent.retention')}</p>
-          {showsOptIn && <p className="opacity-65">{t('consent.optIn')}</p>}
         </>
       ) : (
         <RichText html={explanationHtml} />

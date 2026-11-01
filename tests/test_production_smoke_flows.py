@@ -13,8 +13,10 @@ import os
 import httpx
 import pytest
 
-
-REQUIRED_LANGUAGES = {"de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa"}
+REQUIRED_LANGUAGES = {
+    "de", "en", "ar", "tr", "ru", "uk", "am", "fa",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+}  # fmt: skip
 SAMPLE_TEXTS = {
     "de": "Hallo und guten Tag.",
     "en": "Hello and good day.",
@@ -23,9 +25,19 @@ SAMPLE_TEXTS = {
     "ru": "Здравствуйте, добрый день.",
     "uk": "Добрий день.",
     "am": "ሰላም እንደምን አለህ።",
-    "ti": "ሰላም ከመይ ኣለኻ።",
-    "ku": "Silav, roj bas.",
     "fa": "سلام، روز بخیر.",
+    "it": "Buongiorno e buona giornata.",
+    "ro": "Bună ziua și o zi bună.",
+    "pl": "Dzień dobry i miłego dnia.",
+    "bg": "Добър ден и приятен ден.",
+    "el": "Καλημέρα και καλή σας μέρα.",
+    "fr": "Bonjour et bonne journée.",
+    "es": "Hola y buenos días.",
+    "pt": "Olá e bom dia.",
+    "sq": "Përshëndetje dhe ditë të mbarë.",
+    "hu": "Jó napot kívánok.",
+    "zh": "您好，祝您今天愉快。",
+    "hi": "नमस्ते, आपका दिन शुभ हो।",
 }
 
 SKIP_SERVICE_TESTS = os.getenv("TEST_SERVICES", "false").lower() != "true"

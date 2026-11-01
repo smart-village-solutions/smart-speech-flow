@@ -38,6 +38,7 @@ Input consists of text (a string or list of strings), a source-language code, a 
 ```json
 {
   "model": "facebook/m2m100_1.2B",
+  "model_version": "<commit hash of the loaded snapshot>",
   "device": "cuda:0",
   "dtype": "fp16",
   "source_lang": "en",

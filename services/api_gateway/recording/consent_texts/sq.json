@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Punonjësi dëshiron ta regjistrojë këtë bisedë. Që tani e tutje, çdo mesazh do të ruhej i enkriptuar derisa ju ose punonjësi ta ndaloni regjistrimin. Mund ta ndaloni në çdo kohë.</p><p>Vetëm personat e autorizuar mund ta hapin regjistrimin. Ai fshihet kur mbaron afati i ruajtjes.</p><p>Pëlqimi juaj është vullnetar. Nëse refuzoni, biseda vazhdon pa regjistrim. Mesazhet e ruajtura tashmë mbeten të ruajtura edhe pas ndalimit.</p>",
+    "resume": "<p>Regjistrimi u ndal. A mund të vazhdojë që tani? Mund ta ndaloni përsëri në çdo kohë.</p>"
+  },
+  "statutory": {
+    "first": "<p>Punonjësi dëshiron ta regjistrojë këtë bisedë. Që tani e tutje, çdo mesazh do të ruhej i enkriptuar derisa ju ose punonjësi ta ndaloni regjistrimin. Mund ta ndaloni në çdo kohë.</p><p>Regjistrimi bëhet mbi një bazë ligjore. Vetëm personat e autorizuar mund ta hapin regjistrimin. Ai fshihet kur mbaron afati i ruajtjes.</p><p>Ju lutemi konfirmoni që jeni informuar dhe që regjistrimi mund të fillojë.</p>",
+    "resume": "<p>Regjistrimi u ndal. Që tani ai do të vazhdojë mbi të njëjtën bazë ligjore. Mund ta ndaloni përsëri në çdo kohë.</p>"
+  }
+}

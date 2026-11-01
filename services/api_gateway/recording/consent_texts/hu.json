@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Az ügyintéző szeretné rögzíteni ezt a beszélgetést. Mostantól minden üzenet titkosítva kerülne tárolásra, amíg Ön vagy az ügyintéző le nem állítja a felvételt. Bármikor leállíthatja.</p><p>A felvételt csak jogosult személyek nyithatják meg. A megőrzési idő lejártakor törlődik.</p><p>Hozzájárulása önkéntes. Ha elutasítja, a beszélgetés felvétel nélkül folytatódik. A már tárolt üzenetek a leállítás után is tárolva maradnak.</p>",
+    "resume": "<p>A felvétel leállt. Folytatódhat mostantól? Bármikor újra leállíthatja.</p>"
+  },
+  "statutory": {
+    "first": "<p>Az ügyintéző szeretné rögzíteni ezt a beszélgetést. Mostantól minden üzenet titkosítva kerülne tárolásra, amíg Ön vagy az ügyintéző le nem állítja a felvételt. Bármikor leállíthatja.</p><p>A felvétel jogszabályi alapon készül. A felvételt csak jogosult személyek nyithatják meg. A megőrzési idő lejártakor törlődik.</p><p>Kérjük, erősítse meg, hogy tájékoztatást kapott, és a felvétel elkezdődhet.</p>",
+    "resume": "<p>A felvétel leállt. Mostantól ugyanazon a jogalapon folytatódik. Bármikor újra leállíthatja.</p>"
+  }
+}

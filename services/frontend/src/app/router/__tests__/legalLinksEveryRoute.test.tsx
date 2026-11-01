@@ -16,6 +16,7 @@ vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
   getStudioAdministrationUrl: vi.fn(),
+  hasPermission: () => false,
   getAccountConsoleUrl: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   subscribeToKeycloakAuthorization: () => () => undefined,
@@ -62,7 +63,11 @@ const ROUTES: {
     route: '/s/A1B2C3D4/language',
     arrive: () => screen.findByRole('heading', { name: 'Choose your language' }),
   },
-  { name: 'consent', route: '/s/A1B2C3D4/info/en', arrive: () => screen.findByRole('checkbox') },
+  {
+    name: 'consent',
+    route: '/s/A1B2C3D4/info/en',
+    arrive: () => screen.findByRole('button', { name: 'Get started' }),
+  },
   {
     name: 'guest conversation',
     route: '/s/A1B2C3D4/live',

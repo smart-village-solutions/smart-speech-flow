@@ -84,6 +84,8 @@ def _primary_refinement_status(outcome: RefinementOutcome) -> str:
         return "error"
     if outcome.skipped_reason:
         return "skipped"
+    if outcome.rejected_reason:
+        return "rejected"
     return "success"
 
 
@@ -193,6 +195,10 @@ class _PipelineRun:
     start_total: float
     source_text: Optional[str] = None
     translation_text: Optional[str] = None
+    # The machine translation before refinement, which a recorded message keeps.
+    raw_translation_text: Optional[str] = None
+    # A recorded session's telemetry names no language (spec §5.5).
+    withhold_languages: bool = False
 
 
 def _start_run(
@@ -203,6 +209,7 @@ def _start_run(
     session_id: Optional[str],
     debug: bool,
     input_size: Dict[str, int],
+    withhold_languages: bool = False,
 ) -> _PipelineRun:
     started_at = utc_now()
     debug_info: Dict[str, Any] = {
@@ -218,6 +225,7 @@ def _start_run(
         debug=debug,
         debug_info=debug_info,
         start_total=time.perf_counter(),
+        withhold_languages=withhold_languages,
     )
 
 
@@ -241,6 +249,8 @@ def _translate(run: _PipelineRun, speech: SpeechServices) -> Tuple[Any, Dict[str
             "name": "translation",
             "input": payload,
             "output": body.get("translations", ""),
+            "model": body.get("model"),
+            "model_version": body.get("model_version"),
             "error": body.get("error"),
             "duration": round(time.perf_counter() - start, 3),
             "started_at": started_at.isoformat() + "Z",
@@ -259,7 +269,11 @@ def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
         run.translation_text,
         run.source_lang,
         run.target_lang,
-        context={"original_text": run.source_text, "pipeline": run.mode},
+        context={
+            "original_text": run.source_text,
+            "pipeline": run.mode,
+            "withhold_languages": run.withhold_languages,
+        },
     )
     completed_at = utc_now()
     run.translation_text = outcome.text
@@ -275,6 +289,9 @@ def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
             "completed_at": completed_at.isoformat() + "Z",
             "duration_ms": int(outcome.latency_ms or 0),
             "model": outcome.model,
+            "status": _primary_refinement_status(outcome),
+            "rejected_reason": outcome.rejected_reason,
+            "skipped_reason": outcome.skipped_reason,
             "refinement_comparison": {
                 "primary_model": outcome.model,
                 "primary_status": _primary_refinement_status(outcome),
@@ -324,6 +341,7 @@ def _run_translation_tail(
             upstream_response=response,
         )
     run.translation_text = body.get("translations", "")
+    run.raw_translation_text = run.translation_text
 
     _refine(run, refiner)
 
@@ -344,6 +362,7 @@ def _run_translation_tail(
         "error": False,
         "asr_text": run.source_text,
         "translation_text": run.translation_text,
+        "raw_translation_text": run.raw_translation_text,
         "audio_bytes": tts_call[0].content,
         "debug": run.debug_info,
     }
@@ -427,7 +446,10 @@ def _transcribe(
             "name": "asr",
             "input": {"lang": run.source_lang},
             "output": run.source_text,
-            "model": body.get("debug", {}).get("model"),
+            "model": body.get("model") or body.get("debug", {}).get("model"),
+            "model_version": body.get("model_version"),
+            # The normalised audio the model heard; the upload's own hash is the gateway's.
+            "input_sha256": body.get("input_sha256"),
             "error": body.get("error"),
             "duration": round(time.perf_counter() - start, 3),
             "started_at": started_at.isoformat() + "Z",
@@ -475,6 +497,7 @@ def process_text_pipeline(
     *,
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
+    withhold_languages: bool = False,
 ) -> Dict[str, Any]:
     """
     Optimized text processing pipeline that skips ASR
@@ -501,6 +524,7 @@ def process_text_pipeline(
         session_id=session_id,
         debug=debug,
         input_size={"text_length": len(text)},
+        withhold_languages=withhold_languages,
     )
     try:
         if validate_text:
@@ -526,6 +550,7 @@ def process_wav(
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
     session_id: Optional[str] = None,
+    withhold_languages: bool = False,
 ):
     """
     Run ASR, translation, refinement and TTS on already-validated WAV bytes.
@@ -549,6 +574,7 @@ def process_wav(
         session_id=session_id,
         debug=debug,
         input_size={"file_size": len(file_bytes)},
+        withhold_languages=withhold_languages,
     )
     try:
         asr_failure = _transcribe(run, file_bytes, speech)

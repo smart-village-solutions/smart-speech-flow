@@ -1,4 +1,4 @@
-"""The message-history response must not leak the authorization outcome."""
+"""The message-history response carries the public message fields and nothing else."""
 
 from datetime import datetime, timezone
 
@@ -13,7 +13,7 @@ REVISION = f"sha256:{'a' * 64}"
 
 
 @pytest.fixture
-async def granted_session_with_message(session_manager):
+async def session_with_message(session_manager):
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", REVISION)
     await session_manager.add_message(
@@ -27,18 +27,16 @@ async def granted_session_with_message(session_manager):
             source_lang="de",
             target_lang="en",
             timestamp=datetime.now(timezone.utc),
-            record_authorized=True,
-            translated_audio_authorized=True,
         ),
     )
     return session.key, ClientType.ADMIN
 
 
-async def test_history_response_has_no_authorization_field(
+async def test_history_response_holds_only_the_public_message_fields(
     session_manager,
-    granted_session_with_message,
+    session_with_message,
 ):
-    key, role = granted_session_with_message
+    key, role = session_with_message
     items = await ConversationService(
         session_manager,
         pipeline=speech_pipeline(),
@@ -46,6 +44,13 @@ async def test_history_response_has_no_authorization_field(
     ).messages(key, role)
     assert items
     for item in items:
-        assert "record_authorized" not in item
-        assert "original_audio_authorized" not in item
-        assert "translated_audio_authorized" not in item
+        assert set(item) == {
+            "id",
+            "sender",
+            "original_text",
+            "translated_text",
+            "source_lang",
+            "target_lang",
+            "timestamp",
+            "translated_audio_available",
+        }

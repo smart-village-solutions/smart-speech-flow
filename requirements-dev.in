@@ -1,13 +1,13 @@
 # Code Quality Tools
 setuptools<85  # flake8-import-order still requires pkg_resources
-black==26.5.1
-isort==9.0.1
-flake8==7.3.0
-mypy==2.3.1
+black==26.10.1
+isort==9.0.2
+flake8==7.4.1
+mypy==2.4.1
 
 # Security Tools
 bandit==1.9.4
-cryptography>=50.0.1
+cryptography>=50.0.2
 safety==3.6.2
 pip-audit==2.7.3
 
@@ -19,18 +19,18 @@ httpx==0.28.1
 
 # Pre-commit Hooks
 pre-commit==4.6.2
-virtualenv>=21.7.9
+virtualenv>=21.15.2
 
 # Code Quality Extensions
 flake8-docstrings==1.7.0
 flake8-import-order==0.18.2
-flake8-bugbear==26.9.9
+flake8-bugbear==26.10.27
 pep8-naming==0.15.1
 
 # Type Stubs
-types-requests==2.33.0.20260402
+types-requests==2.33.0.20261006
 types-redis==4.6.0.20241004
 
 # Development Utilities
-pip-tools==7.6.1  # For dependency management
+pip-tools==7.6.2  # For dependency management
 psutil==7.2.2

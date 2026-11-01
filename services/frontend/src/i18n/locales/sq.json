@@ -1,0 +1,144 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Prapa",
+    "home": "Kreu",
+    "feedback": "Komente",
+    "theme": "Ndrysho temën"
+  },
+  "accessCode": {
+    "title": "Vendosni kodin",
+    "continue": "Vazhdo",
+    "digitLabel": "Karakteri {{position}}",
+    "notFound": "Ky kod nuk përputhet me asnjë seancë të hapur.",
+    "sessionHasGuest": "Kjo bisedë ka tashmë një mysafir."
+  },
+  "language": {
+    "title": "Zgjidhni gjuhën tuaj",
+    "loadFailed": "Lista e gjuhëve nuk mund të ngarkohej.",
+    "retry": "Provoni përsëri"
+  },
+  "consent": {
+    "intro": "$t(app.name) është një shërbim automatik përkthimi në kohë reale, i krijuar për të mbështetur bisedat mes njerëzve që flasin gjuhë të ndryshme. Shërbimi funksionon vetëm në një server privat të dedikuar.",
+    "howTo": "Për të filluar regjistrimin, prekni butonin e mikrofonit. Pastaj do të keni 20 sekonda për të folur. Mund ta përfundoni regjistrimin edhe më herët me një prekje tjetër. Si alternativë, mund ta shkruani tekstin.",
+    "retention": "Si parazgjedhje, të dhënat audio dhe të transkriptimit përpunohen vetëm gjatë seancës aktive dhe nuk ruhen më pas. Pasi mbaron biseda, të dhënat fshihen automatikisht. Në çdo kohë mund të raportoni probleme ose të ndani ide për përmirësim përmes funksionit të komenteve në aplikacion.",
+    "getStarted": "Fillo",
+    "loading": "Po ngarkohen informacionet"
+  },
+  "conversation": {
+    "record": "Regjistro",
+    "sendRecording": "Dërgo regjistrimin",
+    "openKeyboard": "Hap tastierën",
+    "sendText": "Dërgo tekstin",
+    "placeholder": "Shkruani mesazhin tuaj…",
+    "play": "Luaj",
+    "pause": "Pauzë",
+    "sendFailed": "Mesazhi nuk mund të dërgohej.",
+    "notSent": "Nuk u dërgua",
+    "retry": "Riprovo",
+    "micDenied": "Qasja në mikrofon u refuzua. Në vend të kësaj, mund ta shkruani mesazhin.",
+    "reconnecting": "Po rilidhet…",
+    "ended": "Kjo bisedë ka përfunduar.",
+    "timeoutWarning": "Kjo bisedë do të përfundojë në orën {{time}}."
+  },
+  "recording": {
+    "label": "Po regjistrohet",
+    "starting": "Regjistrimi po fillon…",
+    "paused": "Regjistrimi është në pauzë",
+    "stop": "Ndalo regjistrimin",
+    "error": "Regjistrimi nuk mund të ndryshohej. Ju lutemi provoni përsëri.",
+    "reason": {
+      "liveness": "lidhja u ndërpre",
+      "unacknowledged": "në pritje të të dy ekraneve",
+      "storage": "ruajtja nuk është e disponueshme",
+      "policy": "nuk lejohet për momentin"
+    },
+    "ask": {
+      "title": "A mund të regjistrohet kjo bisedë?",
+      "resumeTitle": "Të vazhdojë regjistrimi?",
+      "yes": "Po, regjistro",
+      "no": "Jo"
+    },
+    "consent": {
+      "readAloud": "Lexo me zë",
+      "stopReading": "Ndalo leximin",
+      "loading": "Teksti po ngarkohet…",
+      "unavailable": "Teksti nuk mund të ngarkohet tani. Ju lutemi drejtojuni punonjësit.",
+      "name": "Emri juaj",
+      "nameProposed": "Futur nga punonjësi. Ju lutemi kontrollojeni.",
+      "signature": "Nënshkrimi juaj",
+      "optional": "opsionale",
+      "clear": "Fshi",
+      "cannotSign": "Nuk mund të nënshkruaj dhe konfirmoj me prekje.",
+      "nameRequired": "Ju lutemi shkruani emrin tuaj.",
+      "signatureRequired": "Ju lutemi nënshkruani ose konfirmoni që nuk mund të nënshkruani.",
+      "textChanged": "Teksti ka ndryshuar. Ju lutemi lexojeni përsëri para se të përgjigjeni.",
+      "originalLanguage": "Gjuha origjinale: {{language}}",
+      "documentationRequired": "Ju lutemi konfirmoni veçmas pëlqimin për dokumentimin.",
+      "staffReleaseChanged": "Teksti i miratimit të punonjësit ka ndryshuar. Kërkojini punonjësit ta tërheqë këtë kërkesë dhe të dërgojë një të re."
+    }
+  },
+  "feedback": {
+    "title": "Ndani mendimin tuaj",
+    "close": "Mbyll",
+    "quality": {
+      "label": "Cilësia e përkthimit",
+      "question": "Sa të sakta ishin përkthimet?"
+    },
+    "performance": {
+      "label": "Performanca",
+      "question": "Sa i shpejtë dhe reagues ju dukej aplikacioni?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "Sa e lehtë dhe e këndshme ishte ndërfaqja për t'u përdorur?"
+    },
+    "nps": {
+      "label": "Rekomandim",
+      "question": "Sa të ngjarë është që t'ia rekomandoni $t(app.name) një kolegu?",
+      "low": "Aspak e mundshme",
+      "high": "Shumë e mundshme",
+      "option": "Pikët {{score}}"
+    },
+    "improvements": {
+      "label": "Ide për përmirësim",
+      "question": "Çfarë do ta bënte $t(app.name) edhe më të mirë?",
+      "placeholder": "Idetë tuaja, kërkesa për funksione ose çdo gjë që ju ka shqetësuar…"
+    },
+    "notice": {
+      "purpose": "Përgjigjet tuaja përdoren vetëm për të përmirësuar $t(app.name).",
+      "retention": "Komentet i ruajmë për dymbëdhjetë muaj dhe pastaj i fshijmë automatikisht.",
+      "withdrawal": "Mund të kërkoni tërheqjen e komenteve tuaja në çdo kohë — thjesht pyesni një punonjës."
+    },
+    "stars": "{{count}} yje",
+    "required": "E detyrueshme",
+    "submit": "Dërgo komentet",
+    "submitting": "Po dërgohet…",
+    "retry": "Dërgo përsëri",
+    "failed": "Komentet tuaja nuk mund të dërgoheshin. Përgjigjet tuaja janë ruajtur.",
+    "formChanged": "Ndërkohë formulari ka ndryshuar. Ngarkoni formularin e ri; përgjigjet që ende përshtaten ruhen.",
+    "reload": "Ngarko formularin e ri",
+    "loading": "Po ngarkohet formulari i komenteve",
+    "thanksTitle": "Faleminderit!",
+    "thanksBody": "Komentet tuaja na ndihmojnë të përmirësojmë $t(app.name) për të gjithë."
+  },
+  "errors": {
+    "network": "Nuk ka lidhje me serverin.",
+    "timeout": "Zgjati shumë. Ju lutemi provoni përsëri.",
+    "notFound": "Nuk u gjet.",
+    "validation": "Kërkesa nuk mund të përpunohej.",
+    "server": "Diçka shkoi keq nga ana jonë.",
+    "noSpeech": "Nuk u njoh asgjë. Ju lutemi provoni përsëri.",
+    "unknown": "Diçka shkoi keq.",
+    "languageChanged": "Gjuha e bisedës ndryshoi. Ju lutemi dërgojeni përsëri."
+  },
+  "legal": {
+    "label": "Informacione ligjore",
+    "imprint": "Botuesi",
+    "privacyPolicy": "Privatësia",
+    "accessibilityStatement": "Aksesueshmëria",
+    "opensInNewTab": "(hapet në një skedë të re)"
+  }
+}

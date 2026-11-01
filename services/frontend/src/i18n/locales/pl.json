@@ -1,0 +1,144 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Wstecz",
+    "home": "Strona główna",
+    "feedback": "Opinia",
+    "theme": "Zmień motyw"
+  },
+  "accessCode": {
+    "title": "Proszę wpisać kod",
+    "continue": "Dalej",
+    "digitLabel": "Znak {{position}}",
+    "notFound": "Ten kod nie pasuje do żadnej otwartej sesji.",
+    "sessionHasGuest": "Ta rozmowa ma już gościa."
+  },
+  "language": {
+    "title": "Proszę wybrać język",
+    "loadFailed": "Nie udało się wczytać listy języków.",
+    "retry": "Ponów próbę"
+  },
+  "consent": {
+    "intro": "$t(app.name) to automatyczna usługa tłumaczenia w czasie rzeczywistym, która wspiera rozmowy osób mówiących różnymi językami. Usługa działa wyłącznie na dedykowanym, prywatnym serwerze.",
+    "howTo": "Aby rozpocząć nagrywanie, należy dotknąć przycisku mikrofonu. Na wypowiedź jest wtedy 20 sekund. Nagrywanie można też zakończyć wcześniej, dotykając przycisku ponownie. Zamiast tego można również skorzystać z pola tekstowego.",
+    "retention": "Domyślnie dane audio i transkrypcje są przetwarzane wyłącznie w trakcie aktywnej sesji i nie są później przechowywane. Po zakończeniu rozmowy dane są automatycznie usuwane. Problemy lub pomysły na ulepszenia można w każdej chwili zgłosić za pomocą funkcji opinii w aplikacji.",
+    "getStarted": "Rozpocznij",
+    "loading": "Wczytywanie informacji"
+  },
+  "conversation": {
+    "record": "Nagraj",
+    "sendRecording": "Wyślij nagranie",
+    "openKeyboard": "Otwórz klawiaturę",
+    "sendText": "Wyślij tekst",
+    "placeholder": "Wpisz wiadomość…",
+    "play": "Odtwórz",
+    "pause": "Wstrzymaj",
+    "sendFailed": "Nie udało się wysłać wiadomości.",
+    "notSent": "Nie wysłano",
+    "retry": "Ponów",
+    "micDenied": "Odmówiono dostępu do mikrofonu. Zamiast tego można wpisać wiadomość.",
+    "reconnecting": "Ponowne łączenie…",
+    "ended": "Ta rozmowa została zakończona.",
+    "timeoutWarning": "Ta rozmowa zakończy się o {{time}}."
+  },
+  "recording": {
+    "label": "Nagrywanie",
+    "starting": "Rozpoczynanie nagrywania…",
+    "paused": "Nagrywanie wstrzymane",
+    "stop": "Zatrzymaj nagrywanie",
+    "error": "Nie udało się zmienić nagrywania. Proszę spróbować ponownie.",
+    "reason": {
+      "liveness": "połączenie przerwane",
+      "unacknowledged": "oczekiwanie na oba ekrany",
+      "storage": "magazyn niedostępny",
+      "policy": "obecnie niedozwolone"
+    },
+    "ask": {
+      "title": "Czy tę rozmowę można nagrać?",
+      "resumeTitle": "Kontynuować nagrywanie?",
+      "yes": "Tak, nagrywaj",
+      "no": "Nie"
+    },
+    "consent": {
+      "readAloud": "Przeczytaj na głos",
+      "stopReading": "Zatrzymaj czytanie",
+      "loading": "Wczytywanie tekstu…",
+      "unavailable": "Nie można teraz wczytać tekstu. Prosimy zwrócić się do pracownika.",
+      "name": "Imię i nazwisko",
+      "nameProposed": "Wpisane przez pracownika. Prosimy sprawdzić.",
+      "signature": "Podpis",
+      "optional": "opcjonalnie",
+      "clear": "Wyczyść",
+      "cannotSign": "Nie mogę się podpisać i potwierdzam dotknięciem.",
+      "nameRequired": "Prosimy wpisać imię i nazwisko.",
+      "signatureRequired": "Prosimy złożyć podpis lub potwierdzić, że nie można się podpisać.",
+      "textChanged": "Tekst się zmienił. Prosimy przeczytać go ponownie przed udzieleniem odpowiedzi.",
+      "originalLanguage": "Język oryginału: {{language}}",
+      "documentationRequired": "Potwierdź osobno zgodę na dokumentowanie.",
+      "staffReleaseChanged": "Treść zgody pracownika uległa zmianie. Poproś pracownika o wycofanie tej prośby i wysłanie nowej."
+    }
+  },
+  "feedback": {
+    "title": "Podziel się opinią",
+    "close": "Zamknij",
+    "quality": {
+      "label": "Jakość tłumaczenia",
+      "question": "Jak dokładne były tłumaczenia?"
+    },
+    "performance": {
+      "label": "Wydajność",
+      "question": "Jak szybko i sprawnie działała aplikacja?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "Jak łatwy i przyjemny w obsłudze był interfejs?"
+    },
+    "nps": {
+      "label": "Rekomendacja",
+      "question": "Jak bardzo prawdopodobne jest polecenie $t(app.name) współpracownikowi?",
+      "low": "Zupełnie nieprawdopodobne",
+      "high": "Bardzo prawdopodobne",
+      "option": "Ocena {{score}}"
+    },
+    "improvements": {
+      "label": "Pomysły na ulepszenia",
+      "question": "Co sprawiłoby, że $t(app.name) byłby jeszcze lepszy?",
+      "placeholder": "Pomysły, propozycje funkcji lub wszystko, co przeszkadzało…"
+    },
+    "notice": {
+      "purpose": "Odpowiedzi są wykorzystywane wyłącznie do ulepszania $t(app.name).",
+      "retention": "Opinie przechowujemy przez dwanaście miesięcy, a następnie automatycznie je usuwamy.",
+      "withdrawal": "Wycofanie opinii jest możliwe w każdej chwili — wystarczy poprosić pracownika."
+    },
+    "stars": "Gwiazdki: {{count}}",
+    "required": "Wymagane",
+    "submit": "Wyślij opinię",
+    "submitting": "Wysyłanie…",
+    "retry": "Wyślij ponownie",
+    "failed": "Nie udało się wysłać opinii. Odpowiedzi zostały zachowane.",
+    "formChanged": "W międzyczasie formularz się zmienił. Proszę wczytać nowy formularz; pasujące odpowiedzi zostaną zachowane.",
+    "reload": "Wczytaj nowy formularz",
+    "loading": "Wczytywanie formularza opinii",
+    "thanksTitle": "Dziękujemy!",
+    "thanksBody": "Opinia pomaga nam ulepszać $t(app.name) dla wszystkich."
+  },
+  "errors": {
+    "network": "Brak połączenia z serwerem.",
+    "timeout": "Trwało to zbyt długo. Proszę spróbować ponownie.",
+    "notFound": "Nie znaleziono.",
+    "validation": "Nie udało się przetworzyć żądania.",
+    "server": "Wystąpił błąd po naszej stronie.",
+    "noSpeech": "Niczego nie rozpoznano. Proszę spróbować ponownie.",
+    "unknown": "Coś poszło nie tak.",
+    "languageChanged": "Język rozmowy się zmienił. Proszę wysłać ponownie."
+  },
+  "legal": {
+    "label": "Informacje prawne",
+    "imprint": "Nota prawna",
+    "privacyPolicy": "Prywatność",
+    "accessibilityStatement": "Dostępność",
+    "opensInNewTab": "(otwiera się w nowej karcie)"
+  }
+}

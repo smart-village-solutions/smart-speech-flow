@@ -57,18 +57,14 @@ async def session():
 
 
 class TestTheSenderIsExcludedFromItsOwnBroadcast:
-    async def test_a_chat_message_does_not_come_back_to_its_sender(self, session):
-        await session["manager"]._handle_client_message(
-            session["customer"], {"content": "hallo"}
-        )
+    async def test_a_customers_typing_indicator_does_not_come_back_to_it(self, session):
+        await session["manager"]._handle_typing_indicator(session["customer"], {"is_typing": True})
 
         assert session["customer_socket"].send_json.await_count == 0
         assert session["admin_socket"].send_json.await_count == 1
 
     async def test_a_typing_indicator_does_not_come_back_to_its_sender(self, session):
-        await session["manager"]._handle_typing_indicator(
-            session["admin"], {"is_typing": True}
-        )
+        await session["manager"]._handle_typing_indicator(session["admin"], {"is_typing": True})
 
         assert session["admin_socket"].send_json.await_count == 0
         assert session["customer_socket"].send_json.await_count == 1

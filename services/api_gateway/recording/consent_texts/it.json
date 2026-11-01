@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Il suo interlocutore desidera registrare questa conversazione. Da ora in poi ogni messaggio verrebbe salvato in forma cifrata finché lei o il suo interlocutore non interrompete la registrazione. Può interromperla in qualsiasi momento.</p><p>Solo le persone autorizzate possono aprire la registrazione. Viene cancellata alla scadenza del periodo di conservazione.</p><p>Il suo consenso è volontario. Se rifiuta, la conversazione prosegue senza registrazione. I messaggi già salvati restano salvati anche dopo l'interruzione.</p>",
+    "resume": "<p>La registrazione è stata interrotta. Può riprendere da adesso? Può interromperla di nuovo in qualsiasi momento.</p>"
+  },
+  "statutory": {
+    "first": "<p>Il suo interlocutore desidera registrare questa conversazione. Da ora in poi ogni messaggio verrebbe salvato in forma cifrata finché lei o il suo interlocutore non interrompete la registrazione. Può interromperla in qualsiasi momento.</p><p>La registrazione avviene sulla base di una disposizione di legge. Solo le persone autorizzate possono aprire la registrazione. Viene cancellata alla scadenza del periodo di conservazione.</p><p>La preghiamo di confermare di aver ricevuto queste informazioni e che la registrazione può iniziare.</p>",
+    "resume": "<p>La registrazione è stata interrotta. Da adesso deve riprendere sulla stessa base giuridica. Può interromperla di nuovo in qualsiasi momento.</p>"
+  }
+}

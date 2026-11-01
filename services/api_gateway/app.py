@@ -42,13 +42,21 @@ from .gateway_metrics import GatewayMetrics
 from .logging_setup import configure_logging
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware, RateLimits
+from .recording.wiring import (
+    close_recording,
+    connect_recording,
+    recording_connect_task,
+    recording_dsn,
+    recording_retention_status_task,
+    recording_stamp_task,
+    recording_tick_task,
+)
 from .refinement_metrics import RefinementMetrics
 from .unhandled_errors import UnhandledErrorMiddleware
 
 if TYPE_CHECKING:
     from .quality_telemetry import QualityTelemetry
     from .quality_telemetry_schema import TelemetryMode
-    from .runtime_policy import RuntimePolicyGate
     from .studio_content_metrics import StudioContentMetrics
     from .studio_content_service import StudioContentService
     from .studio_policy_reads import StudioPolicyReadMetrics
@@ -114,15 +122,14 @@ def _announce(line: str) -> None:
 
 
 def _build_studio(
-    registry: CollectorRegistry,
     token_provider: "StudioRuntimeTokenProvider | None",
     content_metrics: "StudioContentMetrics",
     policy_reads: "StudioPolicyReadMetrics",
 ) -> "StudioWiring":
-    """The Studio flow, the persistence gate built on it, and the content service.
+    """The Studio flow and the content service.
 
-    No gate refuses every write, so a failure to build one is a safe state,
-    not a startup error. Studio credentials are absent in local development
+    Without a runtime client no session can be created, which is a safe state,
+    not a startup error: Studio credentials are absent in local development
     and CI. Every read through the flow also refreshes display content.
     """
     from .studio_content import StudioContentCache
@@ -133,16 +140,15 @@ def _build_studio(
     try:
         runtime_client = runtime_client_from_environment(token_provider)
     except StudioRuntimeFlowError as error:
-        _announce(f"Runtime policy gate unbound ({error.code}); persistence refused")
+        _announce(f"Studio runtime client unbound ({error.code}); sessions refused")
         runtime_client = None
     else:
-        _announce("Runtime policy gate ready")
+        _announce("Studio runtime client ready")
     policy_reads.gate_bound(runtime_client is not None)
     return wire_studio(
         runtime_client,
         installation_client_from_environment(token_provider),
         StudioContentCache(on_skip=content_metrics.skipped),
-        policy_registry=registry,
         content_metrics=content_metrics,
         policy_reads=policy_reads,
         cache_seconds=content_cache_seconds(),
@@ -153,7 +159,6 @@ def _build_dependencies(
     app: FastAPI,
     persistence: "TenantPersistenceBinding | None",
     runtime_flow: "StudioRuntimeFlow | None",
-    runtime_policy: "RuntimePolicyGate | None",
     pipeline: "_PipelineCollaborators",
     studio_token_provider: "StudioRuntimeTokenProvider | None",
     studio_content: "StudioContentService",
@@ -167,10 +172,10 @@ def _build_dependencies(
         studio_runtime_flow=runtime_flow,
         studio_token_provider=studio_token_provider,
         studio_content=studio_content,
-        runtime_policy=runtime_policy,
         polling_messages_dropped=metrics.polling_messages_dropped,
         websocket_metrics=metrics.websocket,
         audio_storage_metrics=metrics.audio_storage,
+        retention_worker_metrics=metrics.retention_workers,
         translation_refiner=pipeline.refiner,
         pipeline_admission=pipeline.admission,
         quality_telemetry=pipeline.quality_telemetry,
@@ -309,6 +314,10 @@ def _start_background_tasks(
         asyncio.create_task(
             feedback_connect_task(dependencies, feedback_dsn, maintenance_dsn, sessions, read_dsn)
         ),
+        asyncio.create_task(recording_connect_task(dependencies, recording_dsn())),
+        asyncio.create_task(recording_tick_task(dependencies)),
+        asyncio.create_task(recording_stamp_task(dependencies)),
+        asyncio.create_task(recording_retention_status_task(dependencies)),
     ]
 
 
@@ -340,8 +349,6 @@ async def _shut_down(
     dependencies.session_manager.attach_quality_telemetry(None)
     refiner.attach_refinement_metrics(None)
     refiner.shutdown()
-    # A handler still holding the manager after shutdown persists nothing.
-    dependencies.session_manager.runtime_policy = None
     if persistence is not None:
         # A cancelled poll's shielded presence release may still be writing
         # through this connection.
@@ -358,6 +365,7 @@ async def _shut_down(
         )
 
     await _close_feedback(dependencies)
+    await close_recording(dependencies)
     app.state.dependencies = None
 
     print("Shutdown complete", flush=True)
@@ -375,7 +383,6 @@ async def _start_serving(
     # One per app: every Studio client shares its cached service token.
     studio_token_provider = token_provider_from_environment()
     studio = _build_studio(
-        app.state.prometheus_registry,
         studio_token_provider,
         metrics.studio_content,
         metrics.studio_policy_reads,
@@ -388,7 +395,6 @@ async def _start_serving(
         app,
         tenant_persistence,
         studio.runtime_flow,
-        studio.runtime_policy,
         pipeline,
         studio_token_provider,
         studio.content,
@@ -410,6 +416,9 @@ async def _start_serving(
     await _wire_feedback(
         dependencies, feedback_dsn, maintenance_dsn, dependencies.session_manager, read_dsn
     )
+
+    # Recording mode (#614): optional and non-fatal for the same reason.
+    await connect_recording(dependencies, recording_dsn())
 
     # The hourly loop's first pass would be an hour away: run one now, so
     # content that expired during downtime goes and the audio series have
@@ -521,7 +530,23 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
 
 # === Module Imports ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-from .routes import admin, circuit_breaker, content, customer, feedback, login, session
+from .routes import (
+    admin,
+    circuit_breaker,
+    content,
+    customer,
+    feedback,
+    login,
+    recording,
+    recording_archive,
+    recording_ceremony,
+    recording_leavers,
+    recording_recovery,
+    recording_resharing,
+    recording_retention,
+    recording_session,
+    session,
+)
 from .routes.health import router as health_router
 from .routes.metrics import metrics
 
@@ -543,6 +568,14 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
     app.include_router(feedback.router, tags=["feedback"])
+    app.include_router(recording.router)
+    app.include_router(recording_ceremony.router)
+    app.include_router(recording_resharing.router)
+    app.include_router(recording_leavers.router)
+    app.include_router(recording_session.router)
+    app.include_router(recording_retention.router)
+    app.include_router(recording_archive.router)
+    app.include_router(recording_recovery.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)
@@ -615,4 +648,8 @@ if __name__ == "__main__":
         host=os.environ.get("SSF_LOCAL_BIND_HOST", "127.0.0.1"),
         port=8000,
         reload=True,
+        # Match the container's fragment-limited WebSocket backend.
+        ws="websockets",
+        # This backend's INFO connection logs contain ticket-bearing URLs.
+        log_level="warning",
     )

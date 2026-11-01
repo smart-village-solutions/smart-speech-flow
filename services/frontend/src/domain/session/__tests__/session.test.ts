@@ -58,7 +58,6 @@ describe('session repository', () => {
         expect(body).toEqual({
           session_id: 'A1B2C3D4',
           customer_language: 'ar',
-          data_retention_consent: true,
         });
         return HttpResponse.json({
           session_id: 'A1B2C3D4',
@@ -70,7 +69,7 @@ describe('session repository', () => {
       })
     );
 
-    const session = await repository.activate('A1B2C3D4', 'ar', true);
+    const session = await repository.activate('A1B2C3D4', 'ar');
 
     expect(session.status).toBe('active');
     expect(session.customerLanguage).toBe('ar');

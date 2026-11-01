@@ -51,18 +51,13 @@ export type GuestLanguage =
   | (GuestLanguageNames & { provided: false })
   | (GuestLanguageNames & { provided: true; nativeName: string; icon: ContentMedia | null });
 
-/** `unknown` when the gateway could not read the mode live. */
-export type StorageMode = 'ask' | 'disabled' | 'unknown';
-
 export type GuestContent =
-  | { storage: { mode: StorageMode }; provided: false }
+  | { provided: false; recordingStatus?: RecordingStatusCopy | null }
   | {
-      storage: { mode: StorageMode };
       provided: true;
+      recordingStatus?: RecordingStatusCopy | null;
       revision: string;
       explanationHtml: string;
-      /** Null when the tenant's mode is `disabled`. */
-      storageQuestionHtml: string | null;
       feedback: StudioFeedbackForm | null;
     };
 
@@ -79,6 +74,7 @@ export interface StaffTexts {
 }
 
 export interface StaffContent {
+  recordingStatus?: RecordingStatusCopy | null;
   revision: string;
   /** IANA zone; null when Studio sends none or this browser does not know it. */
   timeZone: string | null;
@@ -86,4 +82,13 @@ export interface StaffContent {
   staff: StaffTexts | null;
   /** SSF language code to its name in the staff language. */
   guestLanguageNames: Record<string, string>;
+}
+
+/** Tenant recording display wording; it does not authorize recording. */
+export interface RecordingStatusCopy {
+  locale: string;
+  waiting: string;
+  running: string;
+  stopped: string;
+  renewedReleaseRequired: string;
 }

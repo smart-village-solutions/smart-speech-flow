@@ -24,8 +24,6 @@
     "intro": "$t(app.name) is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.",
     "howTo": "To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.",
     "retention": "By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.",
-    "optIn": "If you would like to help us improve $t(app.name), you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the $t(app.name) project.",
-    "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving $t(app.name).",
     "getStarted": "Get started",
     "loading": "Loading the information"
   },
@@ -44,6 +42,43 @@
     "reconnecting": "Reconnecting…",
     "ended": "This conversation has ended.",
     "timeoutWarning": "This conversation will end at {{time}}."
+  },
+  "recording": {
+    "label": "Recording",
+    "starting": "Recording is starting…",
+    "paused": "Recording paused",
+    "stop": "Stop recording",
+    "error": "The recording could not be changed. Please try again.",
+    "reason": {
+      "liveness": "connection interrupted",
+      "unacknowledged": "waiting for both screens",
+      "storage": "storage unavailable",
+      "policy": "not permitted at the moment"
+    },
+    "ask": {
+      "title": "May this conversation be recorded?",
+      "resumeTitle": "Continue recording?",
+      "yes": "Yes, record",
+      "no": "No"
+    },
+    "consent": {
+      "readAloud": "Read aloud",
+      "stopReading": "Stop reading",
+      "loading": "Loading the text…",
+      "unavailable": "The text cannot be loaded right now. Please ask the staff member.",
+      "name": "Your name",
+      "nameProposed": "Entered by the staff member. Please check it.",
+      "signature": "Your signature",
+      "optional": "optional",
+      "clear": "Clear",
+      "cannotSign": "I cannot sign and confirm by tapping.",
+      "nameRequired": "Please enter your name.",
+      "signatureRequired": "Please sign, or confirm that you cannot sign.",
+      "textChanged": "The text has changed. Please read it again before you answer.",
+      "originalLanguage": "Original language: {{language}}",
+      "documentationRequired": "Please confirm the documentation consent separately.",
+      "staffReleaseChanged": "The employee release has changed. Please ask the staff member to withdraw this request and send a new one."
+    }
   },
   "feedback": {
     "title": "Share your feedback",
@@ -120,7 +155,13 @@
       "accountSettings": "Account settings",
       "openStudio": "Manage organization",
       "opensInNewTab": "(opens in a new tab)",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "keys": "Archive keys",
+      "ceremony": "Recovery key",
+      "archive": "My recordings",
+      "recoveryRequests": "Recovery requests",
+      "recoveryApprovals": "Recovery approvals",
+      "keyRecovery": "My key recovery"
     },
     "dashboard": {
       "welcome": {
@@ -188,6 +229,472 @@
       },
       "terminateFailed": "The conversation could not be ended.",
       "backToDashboard": "Back to the overview"
+    },
+    "keys": {
+      "title": "Archive keys",
+      "intro": "Your personal keys open recorded conversations. They are protected by a passphrase that only you know; SSF never sees it and cannot reset it. Recording works without them.",
+      "stepUpTitle": "Confirm your identity",
+      "stepUpBody": "Setting up keys needs a fresh sign-in with your second factor.",
+      "stepUpAction": "Sign in again",
+      "enrolTitle": "Set up your keys",
+      "enrolBody": "Choose a passphrase of at least 12 characters, for example four or five unrelated words. It is not your sign-in password.",
+      "passphrase": "Passphrase",
+      "passphraseConfirm": "Repeat the passphrase",
+      "passphraseMismatch": "The two entries differ.",
+      "passphraseWeak": "This passphrase is too easy to guess. Use more or less common words.",
+      "enrolFailed": "Your keys could not be saved. Please try again.",
+      "enrolAction": "Create keys",
+      "enrolPending": "Creating keys…",
+      "unlockTitle": "Unlock your keys",
+      "fingerprintLabel": "Fingerprint:",
+      "unlockFailed": "The passphrase does not open these keys.",
+      "unlockAction": "Unlock",
+      "unlockPending": "Unlocking…",
+      "unlockedTitle": "Your keys are unlocked",
+      "fingerprintHint": "Compare this fingerprint by phone or in person when someone asks you to confirm your key.",
+      "lockAction": "Lock",
+      "unavailable": "Archive keys are not available right now.",
+      "reenrol": {
+        "start": "Forgot your passphrase? Set up a new key",
+        "warningTitle": "Before you set up a new key",
+        "warningLocked": "Your conversations stay locked until key recovery completes.",
+        "warningRecovered": "Access you recovered as a supervisor, and grants, need new requests.",
+        "warningRequests": "Your open requests are cancelled.",
+        "warningCustodian": "Your custodian share cannot be used until an administrator changes the custodians (Change custodians). {{usable}} of the {{k}} shares needed stay usable.",
+        "continue": "Continue",
+        "cancel": "Cancel",
+        "submit": "Set up a new key",
+        "pending": "Please open the confirmation link we emailed you. Your previous key stays in use until then.",
+        "done": "Your new key is active.",
+        "changed": "Your key has been replaced in the meantime. Please reload the page.",
+        "ceremony": "Not possible while a key ceremony you take part in is running.",
+        "failed": "The new key could not be set up."
+      }
+    },
+    "ceremony": {
+      "title": "Recovery key",
+      "intro": "The recovery key lets the organisation open a recorded conversation when the responsible person no longer can – but only when enough custodians agree together. No device and no person ever holds the whole key.",
+      "unavailable": "The recovery key is not available right now.",
+      "stepUpBody": "For this step, please sign in again with your second factor.",
+      "noCeremony": "This organisation has no recovery key yet. The organisation administrator starts the ceremony.",
+      "lastAborted": "The last ceremony was aborted ({{reason}}). There is no recovery key yet; the ceremony must be started again from the beginning.",
+      "lastExpired": "The last ceremony lapsed after 24 hours without finishing. It must be started again from the beginning.",
+      "keyActiveTitle": "The recovery key is active",
+      "keyActiveBody": "{{k}} of {{n}} shares open a conversation together.",
+      "modeStandard": "Standard mode: any single share is enough. The protection is organisational and only as strong as the weakest passphrase.",
+      "modeEnhanced": "Enhanced mode: no single person can open a conversation.",
+      "transcriptLabel": "Transcript:",
+      "startTitle": "Start the ceremony",
+      "startBody": "Choose the custodians and how many shares open a conversation. All custodians then meet in person or by video and compare their fingerprints.",
+      "custodiansLabel": "Custodians",
+      "notEnrolled": "no archive keys yet",
+      "thresholdLabel": "Shares needed",
+      "paperLabel": "Print a paper backup on this device",
+      "startAction": "Start ceremony",
+      "startPending": "Starting …",
+      "startInvalid": "This choice is not possible. Choose at least one custodian more than the shares needed, all with archive keys.",
+      "startFailed": "The ceremony could not be started. Please try again.",
+      "directoryUnavailable": "The list of custodians is not available right now.",
+      "participantsTitle": "Participants and fingerprints",
+      "paperHolder": "Paper share {{ref}}",
+      "statusWaiting": "pending",
+      "statusDealt": "contribution made",
+      "statusSigned": "signed",
+      "statusPrinted": "printed",
+      "fingerprintMismatch": "A fingerprint does not match its key. Abort the ceremony.",
+      "custodianTitle": "Your part",
+      "unlockFirst": "Unlock your archive keys first, then come back here.",
+      "openKeys": "Open archive keys",
+      "compareAttest": "I have compared every fingerprint above in person with its holder.",
+      "dealAction": "Make my contribution",
+      "confirmAction": "Check and sign",
+      "working": "Working …",
+      "waitForOthers": "Done. Waiting for the other participants …",
+      "checkFailed": "A check failed ({{reason}}). The ceremony was aborted and must be started again.",
+      "stepFailed": "This step failed. Please try again.",
+      "paperTitle": "Paper backup",
+      "deviceFingerprint": "This device's fingerprint:",
+      "deviceLost": "This device no longer holds the paper key, for example after a reload. Abort the ceremony and start again.",
+      "paperDone": "The paper backup is finished. Waiting for the custodians' signatures …",
+      "paperWaiting": "Waiting for every custodian to make their contribution …",
+      "verifyPaperAction": "Check and create paper shares",
+      "printAction": "Print",
+      "sealedAttest": "Each share is printed separately, sealed and handed to a different person.",
+      "paperConfirmAction": "Finish the paper backup",
+      "sheetTitle": "Recovery key paper share",
+      "sheetWarning": "Confidential. {{k}} such shares together open every recorded conversation. Keep sealed and apart from other shares.",
+      "sheetTenant": "Organisation",
+      "sheetKey": "Key",
+      "sheetHolder": "Share",
+      "sheetHolderValue": "{{ref}} (number {{index}} of {{n}})",
+      "abortAction": "Abort ceremony",
+      "abortTitle": "Abort the ceremony?",
+      "abortBody": "Every contribution so far is lost. The ceremony must then be started again from the beginning.",
+      "abortFailed": "The ceremony could not be aborted. Please try again.",
+      "keepGoing": "Keep going",
+      "usableShares": "{{usable}} of {{k}} needed shares usable",
+      "reshare": {
+        "start": "Change custodians",
+        "voidSheets": "The custodians were changed. Destroy the old paper sheets: together with others from the old set they would still open the archive.",
+        "lastAborted": "The last change of custodians was aborted ({{reason}}). The current custodians keep their shares.",
+        "lastExpired": "The last change of custodians lapsed after 24 hours. The current custodians keep their shares.",
+        "title": "Change custodians",
+        "intro": "Name the new custodians and how many shares open a conversation. Current holders hand their part over; the key and every archive stay as they are.",
+        "dealers": "Choose {{k}} current holders to hand over their shares",
+        "state": {
+          "fresh": "usable",
+          "kept": "usable with an earlier key",
+          "lost": "cannot be used",
+          "paper": "paper sheet"
+        },
+        "holderPaper": "Paper sheet {{ref}}",
+        "submit": "Start the change",
+        "pending": "Starting …",
+        "cancel": "Cancel",
+        "errorDealers": "Choose exactly as many current holders as shares are needed today.",
+        "errorUnusable": "One of the chosen holders can no longer open their share.",
+        "dealerTitle": "Hand over your share",
+        "newHolders": "Compare each new holder's fingerprint with them in person:",
+        "compared": "compared",
+        "retiredKey": "Your share is bound to your earlier key. Enter its passphrase.",
+        "unlockRetired": "Unlock the earlier key",
+        "unlockFailed": "This passphrase does not open the earlier key.",
+        "deal": "Hand over my share",
+        "paperTitle": "Paper sheets that hand over their shares",
+        "sheet": "Sheet {{ref}}",
+        "sheetValue": "The 64 characters printed on the sheet",
+        "sheetMismatch": "This does not match the sheet's share. Check what you typed.",
+        "dealSheet": "Hand over this sheet",
+        "sheetsDone": "Every sheet has handed over its share.",
+        "chainPending": "Checking the current custodians' transcripts …",
+        "sheetCeremony": "Issued by",
+        "errorChanged": "The custodians changed in the meantime. Close this form and choose again.",
+        "leftNotice": "Left: {{names}}. Their shares remain valid until the custodians are changed. Change the custodians.",
+        "left": "has left"
+      },
+      "leavers": {
+        "title": "Leavers",
+        "intro": "People with an archive key whom Studio no longer gives a recording permission. Remove the permissions there first. Only then does the person appear here.",
+        "none": "Nobody: everyone with an archive key still has a recording permission in Studio.",
+        "custodian": "Custodian",
+        "copySub": "Copy ID",
+        "copied": "Copied",
+        "copyFailed": "Cannot copy",
+        "fingerprint": "Fingerprint",
+        "activity": "Enrolled on {{enrolled}} · Conversations: {{conversations}} ·",
+        "lastConversation": "last on {{date}}",
+        "noConversation": "no conversation yet",
+        "mark": "Mark as leaver",
+        "confirmBody": "This person's archive key and all their access are deleted. Their conversations stay reachable through exceptional access.",
+        "confirmCustodian": "This person is a custodian. Their share stays until the custodians are changed. Change the custodians afterwards.",
+        "confirm": "Mark for good",
+        "cancel": "Cancel",
+        "errorDirectory": "The Studio directory is unreachable or incomplete right now. Try again later.",
+        "errorStillListed": "This person has a recording permission in Studio again.",
+        "errorAlreadyLeft": "This person is already marked as a leaver.",
+        "errorNoKey": "This person no longer has an active archive key.",
+        "errorKeyChanged": "This person's key has changed in the meantime. Reload the list.",
+        "errorCeremony": "This person takes part in a running key ceremony. Abort it first.",
+        "errorFailed": "That did not work. Please try again."
+      }
+    },
+    "recording": {
+      "off": "Not recording",
+      "request": "Request recording",
+      "waiting": "Waiting for the guest's answer…",
+      "cancel": "Withdraw request",
+      "reason": {
+        "declined": "The guest declined the recording.",
+        "unanswered": "The guest did not answer.",
+        "stopped_by_guest": "The guest stopped the recording."
+      },
+      "error": {
+        "GUEST_NOT_CONNECTED": "The guest is not connected.",
+        "RECORDING_DISABLED": "Recording is not enabled for this organisation.",
+        "RECOVERY_KEY_MISSING": "This organisation has no recovery key yet.",
+        "RECORDING_POLICY_UNAVAILABLE": "The recording settings cannot be reached right now. Please try again.",
+        "RECORDING_BUSY": "Recording is already requested or running.",
+        "ARCHIVE_UNAVAILABLE": "No recording archive is set up for this installation.",
+        "ARCHIVE_WRITE_FAILED": "The guest's consent could not be saved. The guest can try again.",
+        "generic": "The recording could not be changed.",
+        "ID_CHECK_REQUIRED": "Please check the guest's ID document first.",
+        "STAFF_RELEASE_TEXT_MISMATCH": "The release text has changed. Withdraw any open request, then review the text and request recording again."
+      },
+      "ask": {
+        "title": "Request recording",
+        "body": "The guest will be asked on their screen to consent to the recording.",
+        "name": "Guest's name (optional)",
+        "nameHint": "The guest confirms or corrects it on their screen.",
+        "idChecked": "Identity checked with ID document",
+        "idRequired": "This organisation requires the ID check before recording.",
+        "cancel": "Cancel"
+      }
+    },
+    "archive": {
+      "title": "My recordings",
+      "intro": "Conversations you recorded. Content is decrypted only in this browser, after you unlock your keys.",
+      "locked": "Unlock your keys first.",
+      "unlock": "Unlock keys",
+      "unavailable": "The archive is not reachable right now.",
+      "empty": "No finished recordings yet.",
+      "more": "Load more",
+      "messages": "Messages: {{count}}",
+      "duration": "{{minutes}} min",
+      "incomplete": "Incomplete",
+      "hold": "Legal hold",
+      "retention": "Kept until {{date}}",
+      "verification": {
+        "not_verified": "Not verified"
+      },
+      "checking": "Checking integrity …",
+      "integrity": {
+        "title": "Integrity error",
+        "trust": "The signing keys could not be confirmed. Content is not shown.",
+        "wrap": "A key of this conversation is not signed correctly. Content is not shown.",
+        "chain": "The chain of entries is damaged or altered. Content is not shown.",
+        "stamp": "A timestamp does not match the entries. Content is not shown.",
+        "object": "An entry is damaged."
+      },
+      "field": {
+        "guest": "Guest",
+        "languages": "Languages",
+        "basis": "Legal basis",
+        "retention": "Retention",
+        "verification": "Verification",
+        "stamp": "Timestamp"
+      },
+      "basis": {
+        "consent": "consent",
+        "statutory": "statutory"
+      },
+      "stamp": {
+        "at": "{{time}}",
+        "unverified": "(authority signature not checked)",
+        "pending": "pending"
+      },
+      "gaps": {
+        "title": "Gaps",
+        "pause": "Paused: {{reason}}",
+        "failed": "Message failed",
+        "notStored": "Not stored yet",
+        "noKey": "No key for this part",
+        "damaged": "Damaged"
+      },
+      "kind": {
+        "message": "Message",
+        "failed": "Failed",
+        "consent": "Consent",
+        "playback": "Playback",
+        "amendment": "Amendment"
+      },
+      "sender": {
+        "admin": "Employee",
+        "customer": "Guest"
+      },
+      "entry": {
+        "damaged": "This entry is damaged.",
+        "noKey": "No key for this part.",
+        "notStored": "Not stored yet."
+      },
+      "message": {
+        "asr": "Recognised",
+        "rawMt": "Machine translation",
+        "refined": "Refined",
+        "changed": "(changed)",
+        "final": "Delivered"
+      },
+      "failed": "Error in {{stage}} ({{code}})",
+      "audio": {
+        "original": "Play original",
+        "translated": "Play translation",
+        "loading": "Loading …"
+      },
+      "consent": {
+        "yes": "Agreed",
+        "no": "Declined",
+        "kind": {
+          "first": "First consent",
+          "resume": "Resume"
+        },
+        "signature": "Signature",
+        "idCheck": "ID checked",
+        "idNotChecked": "ID not checked",
+        "citedText": "Text: {{language}}, {{source}}, {{version}}, {{hash}}",
+        "text": "Text shown",
+        "enteredBy": {
+          "employee": "(entered by the employee)",
+          "guest": "(entered by the guest)"
+        }
+      },
+      "playback": {
+        "started": "Playback started {{time}}",
+        "completed": "Playback finished {{time}}"
+      },
+      "window": {
+        "opened": "Recording started {{time}}",
+        "closed": "Recording ended {{time}}: {{reason}}"
+      },
+      "closeReason": {
+        "declined": "declined",
+        "cancelled": "cancelled",
+        "unanswered": "unanswered",
+        "stopped_by_guest": "stopped by the guest",
+        "stopped_by_employee": "stopped by the employee",
+        "session_ended": "conversation ended",
+        "liveness": "connection lost",
+        "unacknowledged": "not acknowledged",
+        "storage": "storage unreachable",
+        "policy": "not allowed"
+      },
+      "amend": "Amend",
+      "amendment": {
+        "label": "Amendment {{time}}",
+        "superseded": "(superseded)",
+        "foreignAuthor": "(other author)",
+        "unattached": "Amendment to an unknown entry",
+        "title": "Add an amendment",
+        "references": "To: {{entries}}",
+        "text": "Amendment",
+        "count": "{{count}} / 4000",
+        "cancel": "Cancel",
+        "submit": "Save amendment",
+        "retry": "Send again",
+        "pending": "An amendment has not been confirmed as saved. Send it again while this page is open.",
+        "error": {
+          "notStored": "Saved in the chain, but not in the archive yet. Please send again.",
+          "failed": "The amendment was not saved.",
+          "noKey": "No key suitable for an amendment."
+        }
+      },
+      "recovered": "Recovered: {{name}}"
+    },
+    "recovery": {
+      "locked": "Unlock your archive key first.",
+      "unlock": "Unlock key",
+      "stepUpBody": "Recovery steps need a fresh sign-in with your second factor.",
+      "unavailable": "Recovery is not available right now.",
+      "requests": {
+        "title": "Recovery requests",
+        "intro": "Ask the custodians for access to conversations of an employee who is unavailable. Every step is recorded.",
+        "empty": "No requests yet.",
+        "conversations": "Conversations: {{count}}"
+      },
+      "status": {
+        "open": "Open",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "expired": "Expired",
+        "scope_gone": "Nothing left to recover"
+      },
+      "new": {
+        "action": "New request",
+        "title": "New recovery request",
+        "employee": "Employee",
+        "chooseEmployee": "Choose an employee",
+        "from": "From",
+        "to": "To",
+        "none": "No conversations of this employee can be recovered in this period.",
+        "limit": "At most 50 conversations per request.",
+        "reason": "Reason",
+        "used": "{{used}} / 1000",
+        "submit": "Sign and file request"
+      },
+      "detail": {
+        "title": "Request",
+        "progress": "{{valid}} of {{k}} approvals",
+        "combine": "Open conversations",
+        "combining": "Checking and combining…",
+        "cancel": "Cancel request",
+        "created": "Filed",
+        "expires": "Expires",
+        "reason": "Reason",
+        "status": "Status",
+        "conversations": "Conversations",
+        "decisions": "Decisions",
+        "noDecisions": "No custodian has decided yet."
+      },
+      "decision": {
+        "approved": "Approved",
+        "declined": "Declined",
+        "rejected": "Partial rejected"
+      },
+      "combine": {
+        "done": "Access restored. The conversations are now in your archive.",
+        "waiting": "Not enough valid approvals yet.",
+        "damaged": "The served data failed a check. Nothing was stored; the failure was recorded.",
+        "rejectedCustodian": "The partial from {{name}} did not verify and was rejected.",
+        "failed": "Combining failed. Try again."
+      },
+      "approvals": {
+        "title": "Recovery approvals",
+        "intro": "Requests waiting for your decision as custodian. You never see a conversation's content.",
+        "empty": "No requests are waiting for you."
+      },
+      "approve": {
+        "fingerprint": "Requester's key fingerprint",
+        "fingerprintHint": "Read it out to the requester by phone or in person and compare every group.",
+        "confirmed": "I confirmed this fingerprint with the requester by phone or in person.",
+        "action": "Approve",
+        "approving": "Checking and approving…",
+        "askFiled": "Also ask whether they filed this request themselves. If not, decline it."
+      },
+      "decline": {
+        "action": "Decline",
+        "reason": "Reason for declining",
+        "submit": "Decline request"
+      },
+      "fault": {
+        "self_approval": "You filed this request, so you cannot approve it.",
+        "not_listed": "Your key does not match the recovery transcript. Do not approve; tell the other custodians.",
+        "request_signature": "The request's signature does not verify. Do not approve.",
+        "out_of_scope": "The request lists a conversation its requester did not sign. Do not approve.",
+        "wrap_signature": "A recovery key wrap is not signed by a certified gateway key. Do not approve.",
+        "share_mismatch": "Your share does not match the transcript. Do not approve.",
+        "custodians_changed": "The custodians changed since this request was filed. File it again.",
+        "trust": "The recovery transcript does not verify. Do not approve; tell the other custodians.",
+        "step_up": "Sign in again with your second factor first.",
+        "unavailable": "Recovery is not available right now.",
+        "fingerprint_changed": "The requester's keys changed after you confirmed the fingerprint. Do not approve; compare again."
+      },
+      "error": {
+        "REQUEST_EXISTS": "One of these conversations is already in an open request of yours.",
+        "ALREADY_ACCESSIBLE": "You can already open one of these conversations.",
+        "KEY_NOT_ENROLLED": "Set up your archive key first.",
+        "CONVERSATION_NOT_FOUND": "One of these conversations can no longer be recovered.",
+        "RECOVERY_KEY_MISSING": "This organisation has no recovery key.",
+        "SIGNATURE_INVALID": "The signature did not verify. Unlock your key again and retry.",
+        "REQUESTER_CANNOT_APPROVE": "You filed this request, so you cannot approve it.",
+        "ALREADY_DECIDED": "You have already decided on this request.",
+        "REQUEST_CLOSED": "This request is closed.",
+        "NOT_ENOUGH_APPROVALS": "Not enough custodians have approved yet.",
+        "SCOPE_NOT_COVERED": "Not every conversation of the request was covered. Try again.",
+        "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer.",
+        "SHARE_STALE": "Your share belongs to an earlier key and opens nothing any more. Ask an administrator to change the custodians (Change custodians); you can still hand this share over there with your earlier key.",
+        "KEY_CHANGED": "Your key has been replaced in the meantime. Please reload the page.",
+        "PERMISSION_REQUIRED": "You no longer hold the permission this needs."
+      },
+      "retry": "Try again",
+      "kind": {
+        "access": "Access",
+        "key_recovery": "Key recovery"
+      }
+    },
+    "keyRecovery": {
+      "title": "My key recovery",
+      "intro": "Custodians recover the conversations your current key cannot open. Nobody but you sees any content.",
+      "batch": "Conversations in this request: {{count}}",
+      "remaining": "{{conversations}} conversations remain for another request after this one.",
+      "fingerprint": "Your key fingerprint",
+      "fingerprintHint": "The custodians ask you for this value by phone or in person. Only give it if you filed this request yourself.",
+      "reason": "Reason",
+      "file": "Sign and request",
+      "next": "File the next request",
+      "progress": "{{done}} of {{total}}",
+      "unrecoverable": "Keys that could not be recovered: {{count}}",
+      "none": "Your key opens all your conversations.",
+      "stepUpBody": "Requesting needs a fresh sign-in with your second factor.",
+      "open": "Recover access",
+      "banner": "Conversations your key can't open: {{count}}"
     }
   }
 }
