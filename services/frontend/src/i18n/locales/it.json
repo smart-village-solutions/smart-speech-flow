@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) è un servizio automatico di traduzione linguistica in tempo reale, pensato per facilitare le conversazioni tra persone che parlano lingue diverse. Il servizio funziona esclusivamente su un server privato dedicato.",
     "howTo": "Per avviare la registrazione, tocchi il pulsante del microfono. Avrà quindi 20 secondi per parlare. Può anche terminare prima la registrazione toccando di nuovo. In alternativa, può usare l'inserimento di testo.",
-    "retention": "Per impostazione predefinita, i dati audio e di trascrizione vengono elaborati solo durante la sessione attiva e non vengono conservati in seguito. Al termine della conversazione, i dati vengono eliminati automaticamente. Può segnalare problemi o condividere idee di miglioramento in qualsiasi momento tramite la funzione di feedback dell'app.",
     "optIn": "Se desidera aiutarci a migliorare $t(app.name), può consentire che i dati della sua conversazione vengano conservati fino a 180 giorni. Questi dati possono essere utilizzati esclusivamente a fini di analisi e di miglioramento della qualità nell'ambito del progetto $t(app.name).",
     "checkbox": "Acconsento alla conservazione dei dati della mia conversazione fino a 180 giorni allo scopo di migliorare $t(app.name).",
     "getStarted": "Inizia",

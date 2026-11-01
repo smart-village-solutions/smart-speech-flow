@@ -212,8 +212,7 @@ describe('ConsentScreen', () => {
 
       expect(document.documentElement).toHaveAttribute('dir', 'rtl');
       const block = prose(ar.consent.howTo);
-      expect(within(block).getByText(ar.consent.retention)).toBeInTheDocument();
-      expect(block.children).toHaveLength(4);
+      expect(block.children).toHaveLength(3);
       expect(block.lastElementChild).toHaveClass('opacity-65');
       // The bundled label names the app through $t(app.name), so match its fixed start.
       expect(
@@ -287,7 +286,7 @@ describe('ConsentScreen', () => {
         renderWithProviders(tree(undefined, 'ar'), { route: '/s/A1B2C3D4/info/ar' });
         await settled();
 
-        expect(prose(ar.consent.howTo).children).toHaveLength(3);
+        expect(prose(ar.consent.howTo).children).toHaveLength(2);
         expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       }
     );
@@ -326,7 +325,7 @@ describe('ConsentScreen', () => {
         });
         await settled();
 
-        expect(prose(howTo).children).toHaveLength(3);
+        expect(prose(howTo).children).toHaveLength(2);
         expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       }
     );
@@ -362,7 +361,7 @@ describe('ConsentScreen', () => {
         { route }
       );
       await settled();
-      expect(prose(en.consent.howTo).children).toHaveLength(3);
+      expect(prose(en.consent.howTo).children).toHaveLength(2);
 
       server.use(studioEnglish());
       try {
@@ -373,7 +372,7 @@ describe('ConsentScreen', () => {
         onlineManager.setOnline(true);
       }
 
-      expect(prose(en.consent.howTo).children).toHaveLength(3);
+      expect(prose(en.consent.howTo).children).toHaveLength(2);
       expect(screen.queryByText('Studio explains the service.')).not.toBeInTheDocument();
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument();
@@ -389,7 +388,7 @@ describe('ConsentScreen', () => {
 
       try {
         expect(await screen.findByRole('button', { name: 'Get started' })).toBeInTheDocument();
-        expect(prose(en.consent.howTo).children).toHaveLength(3);
+        expect(prose(en.consent.howTo).children).toHaveLength(2);
         expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       } finally {
         release();
@@ -397,8 +396,19 @@ describe('ConsentScreen', () => {
       await settled();
 
       // The late answer asks; the screen must not swap to it.
-      expect(prose(en.consent.howTo).children).toHaveLength(3);
+      expect(prose(en.consent.howTo).children).toHaveLength(2);
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('entry content fallback', () => {
+  it('keeps service instructions without the retired bundled retention claim', async () => {
+    server.use(guestContentHandler(() => HttpResponse.json({}, { status: 503 })));
+    renderWithProviders(tree(), { route });
+    await settled();
+    expect(screen.getByText(en.consent.howTo)).toBeInTheDocument();
+    expect(screen.queryByText(/By default, audio and transcription data/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 });

@@ -18,7 +18,6 @@ export function ConsentProse({ explanationHtml, showsOptIn }: Readonly<ConsentPr
         <>
           <p>{t('consent.intro')}</p>
           <p>{t('consent.howTo')}</p>
-          <p>{t('consent.retention')}</p>
           {showsOptIn && <p className="opacity-65">{t('consent.optIn')}</p>}
         </>
       ) : (

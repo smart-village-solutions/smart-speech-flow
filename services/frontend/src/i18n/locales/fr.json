@@ -23,7 +23,6 @@
   "consent": {
     "intro": "$t(app.name) est un service automatique de traduction en temps réel, conçu pour faciliter les conversations entre des personnes qui parlent des langues différentes. Le service fonctionne exclusivement sur un serveur privé dédié.",
     "howTo": "Pour lancer l'enregistrement, appuyez sur le bouton du microphone. Vous disposez alors de 20 secondes pour parler. Vous pouvez aussi arrêter l'enregistrement plus tôt en appuyant à nouveau. Vous pouvez également utiliser la saisie de texte.",
-    "retention": "Par défaut, les données audio et de transcription ne sont traitées que pendant la session active et ne sont pas conservées ensuite. À la fin de la conversation, les données sont supprimées automatiquement. Vous pouvez à tout moment signaler un problème ou proposer des améliorations grâce à la fonction d'avis de l'application.",
     "optIn": "Si vous souhaitez nous aider à améliorer $t(app.name), vous pouvez autoriser la conservation des données de votre conversation pendant 180 jours au maximum. Ces données ne peuvent être utilisées qu'à des fins d'analyse et d'amélioration de la qualité dans le cadre du projet $t(app.name).",
     "checkbox": "J'accepte que les données de ma conversation soient conservées pendant 180 jours au maximum afin d'améliorer $t(app.name).",
     "getStarted": "Commencer",
