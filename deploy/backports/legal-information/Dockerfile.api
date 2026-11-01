@@ -1,0 +1,5 @@
+# Build only from release/kassel-legal-information-20261101. The operator must
+# verify this local base tag against the running image ID before building.
+ARG BASE_GATEWAY_IMAGE=ssf-backend-api_gateway:prod-2acde0bd
+FROM ${BASE_GATEWAY_IMAGE}
+COPY --chown=app:app services/api_gateway/studio_legal.py services/api_gateway/legal_information.py services/api_gateway/studio_v2.py services/api_gateway/studio_content.py services/api_gateway/content_responses.py /app/services/api_gateway/
