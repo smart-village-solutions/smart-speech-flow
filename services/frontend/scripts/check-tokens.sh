@@ -134,6 +134,16 @@ assert '--text-title: 24px'
 # Typing dots are graphic geometry, not another text role.
 assert '--text-dots: 20px'
 
+# Keyboard focus must survive compilation, including controls that suppress
+# the browser outline and the visible box beside a screen-reader-only input.
+assert '--focus-visible-on-light: #1d538b'
+assert '--focus-visible: #79b8f6'
+assert '.focus-ring:focus-visible'
+assert 'outline: 2px solid var(--focus-visible)'
+assert 'outline-offset: 2px'
+assert 'transition-property: color, background-color, border-color, box-shadow, opacity, transform'
+assert '.peer-focus-visible'
+
 # Phase 3 tokens.
 assert '--spacing-admin-content: 128px'
 assert '--spacing-status-top: 80px'

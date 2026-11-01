@@ -21,7 +21,7 @@ export function Checkbox({ checked, onCheckedChange, children, className, disabl
         <input
           id={id}
           type="checkbox"
-          className="sr-only"
+          className="peer sr-only"
           checked={checked}
           disabled={disabled}
           onChange={(event) => onCheckedChange(event.target.checked)}
@@ -29,7 +29,7 @@ export function Checkbox({ checked, onCheckedChange, children, className, disabl
         <span
           aria-hidden="true"
           className={cn(
-            'flex size-5 items-center justify-center rounded-box border-2 transition-colors duration-150',
+            'flex size-5 items-center justify-center rounded-box border-2 transition-colors duration-150 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus',
             checked
               ? 'border-accent bg-accent'
               : 'border-border-checkbox bg-transparent group-hover:border-border-checkbox-hover'

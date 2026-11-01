@@ -21,7 +21,7 @@ export function IconButton({
       type={type}
       aria-label={label}
       className={cn(
-        'flex items-center justify-center rounded-full transition-colors duration-150',
+        'focus-ring flex items-center justify-center rounded-full transition-colors duration-150',
         tone === 'default'
           ? 'size-9 text-fg-icon hover:bg-surface-icon-hover hover:text-fg-strong'
           : 'size-8 text-fg-icon-close hover:bg-surface-icon-hover hover:text-fg-strong',

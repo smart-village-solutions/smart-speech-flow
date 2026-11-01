@@ -45,7 +45,7 @@ export function QuestionDialog({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-surface-scrim" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed inset-x-5 top-1/2 z-50 mx-auto max-h-consent-dialog max-w-dialog -translate-y-1/2 overflow-y-auto rounded-2xl border border-border-card bg-surface-card p-5"
+          className="fixed inset-x-5 top-1/2 z-50 mx-auto max-h-consent-dialog max-w-dialog -translate-y-1/2 overflow-y-auto rounded-2xl border border-border-card bg-surface-card p-5 font-sans text-body"
         >
           <Dialog.Title className="text-thanks font-semibold text-fg-strong">{title}</Dialog.Title>
           {children}

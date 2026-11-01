@@ -42,7 +42,8 @@ export function LegalLinks({ links, tone = 'themed', className }: Readonly<Legal
               target="_blank"
               rel="noopener noreferrer"
               className={cn(
-                'text-label leading-snug tracking-link underline underline-offset-2 transition-colors duration-200',
+                'focus-ring text-label leading-snug tracking-link underline underline-offset-2 transition-colors duration-200',
+                tone === 'light' && '[--focus-visible:var(--focus-visible-on-light)]',
                 TONE[tone]
               )}
             >

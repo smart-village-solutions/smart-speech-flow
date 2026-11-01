@@ -43,7 +43,7 @@ export function ConfirmDialog({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-surface-scrim" />
-        <Dialog.Content className="fixed inset-x-5 top-1/2 z-50 mx-auto max-w-dialog -translate-y-1/2 rounded-2xl border border-border-card bg-surface-card p-5">
+        <Dialog.Content className="fixed inset-x-5 top-1/2 z-50 mx-auto max-w-dialog -translate-y-1/2 rounded-2xl border border-border-card bg-surface-card p-5 font-sans text-body">
           <Dialog.Title className="text-thanks font-semibold text-fg-strong">{title}</Dialog.Title>
           <Dialog.Description className="mt-2 text-note leading-chat text-fg-muted">
             {body}
