@@ -13,7 +13,7 @@ from pathlib import Path
 import asyncpg
 import pytest
 
-from services.api_gateway.recording.archive_access_repository import _APPROVED
+from services.api_gateway.recording.verification_sql import APPROVED as _APPROVED
 from services.api_gateway.recording.audit import AuditEvent, chain_is_intact
 from services.api_gateway.recording.ceremony import CeremonyService, StartRequest
 from services.api_gateway.recording.ceremony_model import CeremonyError, CeremonyRecord

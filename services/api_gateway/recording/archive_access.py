@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 RECENT_OPEN: Final[timedelta] = timedelta(hours=1)
 MAX_AMENDMENT_BYTES: Final[int] = 32 * 1024
 REPORT_INTERVAL: Final[timedelta] = timedelta(minutes=10)
-INTEGRITY_STAGES: Final[frozenset[str]] = frozenset({"trust", "wrap", "chain", "stamp", "object"})
+INTEGRITY_STAGES: Final[frozenset[str]] = frozenset(
+    {"trust", "wrap", "chain", "stamp", "object", "verification"}
+)
 AMENDMENT: Final[str] = "amendment.json"
 # Version byte, nonce and tag: the smallest envelope A.3 can produce.
 _ENVELOPE_MIN: Final[int] = 1 + 12 + 16
@@ -80,6 +82,7 @@ class AccessRepository(Protocol):
         now: datetime,
         *,
         supervisor: bool = False,
+        reviewer: bool = False,
     ) -> bool: ...
 
     async def object_location(
@@ -92,6 +95,7 @@ class AccessRepository(Protocol):
         now: datetime,
         *,
         supervisor: bool = False,
+        reviewer: bool = False,
     ) -> ObjectLocation | None: ...
 
     async def existing_amendment(
@@ -181,6 +185,14 @@ class ArchiveAccess:
             return {}
         return await self._names.names(tenant_id, correlation_id)
 
+    async def names_of(
+        self, tenant_id: str, subs: set[str], correlation_id: str
+    ) -> Mapping[str, str]:
+        """Reviewers' names for the results (§10.7); the directory is not read without any."""
+        if self._names is None or not subs:
+            return {}
+        return await self._names.names(tenant_id, correlation_id)
+
     async def open(
         self, tenant_id: str, sub: str, conversation_id: str, *, supervisor: bool = False
     ) -> OpenedConversation:
@@ -194,6 +206,19 @@ class ArchiveAccess:
         self._opened[(tenant_id, sub, conversation_id)] = now
         return opened
 
+    async def require_openable(
+        self, tenant_id: str, sub: str, conversation_id: str, *, supervisor: bool = False
+    ) -> None:
+        """The opening rule without an open: refused as every refusal is (§17)."""
+        openable = self._repository.openable(
+            tenant_id, sub, conversation_id, self._clock(), supervisor=supervisor
+        )
+        if not await _guard(openable):
+            raise await self._not_found(tenant_id, sub, conversation_id)
+
+    async def refuse(self, tenant_id: str, sub: str, conversation_ref: str) -> ArchiveAccessError:
+        return await self._not_found(tenant_id, sub, conversation_ref)
+
     async def _not_found(
         self, tenant_id: str, sub: str, conversation_ref: str
     ) -> ArchiveAccessError:
@@ -202,6 +227,12 @@ class ArchiveAccess:
             self._repository.record_not_found(tenant_id, sub, conversation_ref, self._clock())
         )
         return ArchiveAccessError("not_found")
+
+    def mark_opened(self, tenant_id: str, sub: str, conversation_id: str) -> None:
+        """A review open (§10.7) starts the same object window as an archive open."""
+        now = self._clock()
+        self._prune(now)
+        self._opened[(tenant_id, sub, conversation_id)] = now
 
     def _recently_opened(self, tenant_id: str, sub: str, conversation_id: str) -> bool:
         at = self._opened.get((tenant_id, sub, conversation_id))
@@ -221,6 +252,7 @@ class ArchiveAccess:
         object_type: str,
         *,
         supervisor: bool = False,
+        reviewer: bool = False,
     ) -> bytes:
         if not self._recently_opened(tenant_id, sub, conversation_id):
             raise await self._not_found(tenant_id, sub, conversation_id)
@@ -233,6 +265,7 @@ class ArchiveAccess:
                 object_type,
                 self._clock(),
                 supervisor=supervisor,
+                reviewer=reviewer,
             )
         )
         if location is None:
@@ -380,6 +413,7 @@ class ArchiveAccess:
         stage: str,
         *,
         supervisor: bool = False,
+        reviewer: bool = False,
     ) -> None:
         """A browser's integrity failure (§10.6): a signal, audited and logged with IDs only."""
         if stage not in INTEGRITY_STAGES:
@@ -390,7 +424,7 @@ class ArchiveAccess:
         if last is not None and now - last < REPORT_INTERVAL:
             return
         openable = self._repository.openable(
-            tenant_id, sub, conversation_id, now, supervisor=supervisor
+            tenant_id, sub, conversation_id, now, supervisor=supervisor, reviewer=reviewer
         )
         if not await _guard(openable):
             raise await self._not_found(tenant_id, sub, conversation_id)

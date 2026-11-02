@@ -13,6 +13,7 @@ export const TAGS = {
   reshareDealingSig: 'ssf-rec/reshare-dealing-sig/v1',
   chainSig: 'ssf-rec/chain-sig/v1',
   verificationSig: 'ssf-rec/verification-sig/v1',
+  verificationNote: 'ssf-rec/verification-note/v1',
   transcript: 'ssf-rec/transcript/v1',
   dleq: 'ssf-rec/dleq/v1',
   pok: 'ssf-rec/pok/v1',

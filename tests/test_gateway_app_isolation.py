@@ -77,6 +77,10 @@ RECORDING = (
     "recording_spools",
     "recording_archive_client",
     "recording_archive_access",
+    "recording_verifications",
+    "recording_decision_stamper",
+    "recording_revocation",
+    "revocation_metrics",
     "recording_stamper",
 )
 

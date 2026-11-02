@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
     from .recording.retention.metrics import RetentionWorkerMetrics
+    from .recording.revocation import RevocationMetrics
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -102,6 +103,12 @@ class GatewayDependencies:
     recording_stamper: Any = None
     # The employee's own archive (#616), wired with the archive.
     recording_archive_access: Any = None
+    # Verification by assigned reviewers (#619), wired with the archive.
+    recording_verifications: Any = None
+    recording_decision_stamper: Any = None
+    # The nightly revocation check (#619): (check, runs, writer tenants), wired with the archive.
+    recording_revocation: Any = None
+    revocation_metrics: Any = None
     # Exceptional access through custodian approval (#617a), wired with the keys.
     recording_recovery_requests: Any = None
     # Employee key recovery's re-enrolment (#617b), wired with the keys.
@@ -131,6 +138,7 @@ def build_gateway_dependencies(
     audio_store: AudioStore | None = None,
     audio_storage_metrics: AudioStorageMetrics | None = None,
     retention_worker_metrics: RetentionWorkerMetrics | None = None,
+    revocation_metrics: RevocationMetrics | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -168,6 +176,7 @@ def build_gateway_dependencies(
         RedisRealtimeTicketBackend,
     )
     from .recording.retention.metrics import RetentionWorkerMetrics
+    from .recording.revocation import RevocationMetrics
     from .recording.session_store import MemoryRecordingStateStore, RedisRecordingStateStore
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
@@ -261,6 +270,7 @@ def build_gateway_dependencies(
         retention_worker_metrics=(
             retention_worker_metrics or RetentionWorkerMetrics(CollectorRegistry())
         ),
+        revocation_metrics=revocation_metrics or RevocationMetrics(CollectorRegistry()),
     )
 
 

@@ -28,6 +28,7 @@ from .archive_repository import PostgresArchiveRepository
 from .archive_service import ChainStamper, ConversationArchive, stored_recorder
 from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
+from .decision_stamps import DecisionStamper
 from .directory import StudioCustodianDirectory
 from .key_confirmation import KeyConfirmations
 from .key_confirmation_repository import PostgresKeyConfirmations
@@ -43,12 +44,16 @@ from .reenrolment_repository import PostgresKeyReenrolment
 from .resharing import ResharingService
 from .retention.decisions_repository import PostgresRetentionDecisions
 from .retention.metrics import SITES as RETENTION_SITES
+from .revocation import RevocationCheck
+from .revocation_repository import PostgresRevocations
 from .secrets import MissingRecordingSecrets, RecordingSecrets
 from .session_service import TICK_SECONDS, RecordingSessions
 from .storage.s3 import S3ArchiveStore, S3Client
 from .storage.settings import ArchiveConfigError, ArchiveSettings
 from .storage.tenant_spools import TenantSpools
 from .timestamps import TimestampAuthority
+from .verification import Verifications
+from .verification_repository import PostgresVerifications
 
 RECORDING_DSN_ENV: Final[str] = "SSF_RECORDING_DATABASE_URL"
 RECORDING_PASSWORD_ENV: Final[str] = "SSF_RECORDING_DATABASE_PASSWORD"
@@ -64,6 +69,11 @@ def recording_dsn() -> str:
 
 def _password() -> str | None:
     return os.environ.get(RECORDING_PASSWORD_ENV, "").strip() or None
+
+
+def recording_directory(state: Any) -> StudioCustodianDirectory:
+    """Public for the revocation CLI, which builds its own token provider."""
+    return _custodian_directory(state)
 
 
 def _custodian_directory(state: Any) -> StudioCustodianDirectory:
@@ -167,6 +177,21 @@ def _connect_archive(
         secrets=secrets,
         names=_custodian_directory(state),
     )
+    verifications = PostgresVerifications(repository.pool)
+    state.recording_verifications = Verifications(
+        store=verifications,
+        directory=_custodian_directory(state),
+        access=state.recording_archive_access,
+    )
+    state.recording_decision_stamper = DecisionStamper(
+        verifications, TimestampAuthority(), lambda: tuple(settings.writers)
+    )
+    revocations = PostgresRevocations(repository.pool)
+    state.recording_revocation = (
+        RevocationCheck(revocations, _custodian_directory(state)),
+        revocations,
+        lambda: tuple(settings.writers),
+    )
     state.recording_spools = spools
     state.recording_archive_client = client
     state.recording_stamper = ChainStamper(
@@ -260,6 +285,9 @@ async def stamp_once(state: Any) -> None:
     # Before stamping, so a conversation whose session is gone is stamped in this pass.
     await archive.end_orphaned(stamper.tenants())
     await stamper.run_once()
+    decisions = getattr(state, "recording_decision_stamper", None)
+    if decisions is not None:
+        await decisions.run_once()
 
 
 async def connect_recording(state: Any, dsn: str) -> bool:
@@ -360,6 +388,9 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     spools, client = dependencies.recording_spools, dependencies.recording_archive_client
     dependencies.recording_archive = None
     dependencies.recording_archive_access = None
+    dependencies.recording_verifications = None
+    dependencies.recording_decision_stamper = None
+    dependencies.recording_revocation = None
     dependencies.recording_spools = None
     dependencies.recording_archive_client = None
     dependencies.recording_stamper = None

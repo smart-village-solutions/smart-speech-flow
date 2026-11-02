@@ -147,7 +147,7 @@ def _wrap(key_id, epoch, kind, ref_="rk-1") -> dict:
 
 
 async def test_the_list_reads_counts_and_clear_metadata():
-    row = _conversation_row() | {"messages": 3, "amendments": 1}
+    row = _conversation_row() | {"messages": 3, "amendments": 1, "verification_statuses": None}
     repository, _ = access({"FROM conversations c WHERE": [row]})
     [own] = await repository.own_conversations(
         TENANT, "alice", NOW, limit=50, started_before=None, before_id=None
@@ -158,8 +158,29 @@ async def test_the_list_reads_counts_and_clear_metadata():
         1,
         True,
     )
-    assert own.public("alice")["verification"] == "not_verified"
+    assert own.public("alice")["verification"] == {
+        "status": "not_verified",
+        "approved": 0,
+        "not_approved": 0,
+    }
     assert (own.employee_sub, own.public("alice")["recovered"]) == ("alice", False)
+
+
+async def test_the_list_derives_the_summary_from_its_records():
+    row = _conversation_row() | {
+        "messages": 1,
+        "amendments": 0,
+        "verification_statuses": ["approved", "not_approved", "declined"],
+    }
+    repository, _ = access({"FROM conversations c WHERE": [row]})
+    [own] = await repository.own_conversations(
+        TENANT, "alice", NOW, limit=50, started_before=None, before_id=None
+    )
+    assert own.public("alice")["verification"] == {
+        "status": "decided",
+        "approved": 1,
+        "not_approved": 1,
+    }
 
 
 async def test_a_refused_open_reads_nothing_and_is_audited_as_not_found():
@@ -219,6 +240,13 @@ async def test_openable_says_whether_the_rule_holds():
     assert await allowed.openable(TENANT, "alice", CONVERSATION, NOW)
     assert not await refused.openable(TENANT, "bob", CONVERSATION, NOW)
     assert audited(connection) == 0
+
+
+async def test_the_supervisor_branch_requires_wraps_the_supervisor_made():
+    """A reviewer grant is assigner-made, so it never opens a recovered conversation (§10.7)."""
+    repository, connection = access({})
+    await repository.openable(TENANT, "sam", CONVERSATION, NOW, supervisor=True)
+    assert "w.creator_ref <> $1" in connection.calls[-1]
 
 
 async def test_an_object_is_located_by_its_listed_type():

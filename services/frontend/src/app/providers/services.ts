@@ -27,6 +27,8 @@ import type { ContentSource } from '@/domain/content/content.port';
 import type { ArchiveCrypto, KeyVault, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
 import { createArchiveRepository } from '@/domain/archive/archive.repository';
 import type { ArchiveRepository } from '@/domain/archive/archive.repository';
+import { createReviewRepository } from '@/domain/review/review.repository';
+import type { ReviewRepository } from '@/domain/review/review.repository';
 import type { CeremonyCrypto, PaperDeviceHolder } from '@/core/crypto/ceremony-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { createPaperDeviceHolder } from '@/core/crypto/paper-device-holder';
@@ -66,6 +68,7 @@ export interface Services {
   keyConfirmation: KeyConfirmationRepository;
   recordingSession: RecordingSessionRepository;
   archive: ArchiveRepository;
+  reviews: ReviewRepository;
   archiveCrypto: ArchiveCrypto;
   keyVault: KeyVault;
   passphraseStrength: PassphraseStrength;
@@ -106,6 +109,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     keyConfirmation: createKeyConfirmationRepository(http),
     recordingSession: createRecordingSessionRepository(http),
     archive: createArchiveRepository(http),
+    reviews: createReviewRepository(http),
     archiveCrypto: createWebArchiveCrypto(),
     // Lives as long as these services: a reload or sign-out locks the keys.
     keyVault: createKeyVault(),

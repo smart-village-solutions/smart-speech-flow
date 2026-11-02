@@ -164,7 +164,8 @@
       "archive": "Meine Aufzeichnungen",
       "recoveryRequests": "Wiederherstellungsanträge",
       "recoveryApprovals": "Wiederherstellungsfreigaben",
-      "keyRecovery": "Meine Schlüsselwiederherstellung"
+      "keyRecovery": "Meine Schlüsselwiederherstellung",
+      "reviews": "Prüfungen"
     },
     "dashboard": {
       "welcome": {
@@ -468,7 +469,67 @@
       "hold": "Aufbewahrungspflicht",
       "retention": "Aufbewahrt bis {{date}}",
       "verification": {
-        "not_verified": "Nicht geprüft"
+        "status": {
+          "not_verified": "Nicht geprüft",
+          "in_review": "In Prüfung",
+          "decided": "{{approved}} bestätigt, {{notApproved}} nicht bestätigt"
+        },
+        "state": {
+          "awaiting": "Wartet auf Prüfung",
+          "in_review": "In Prüfung",
+          "approved": "Bestätigt",
+          "not_approved": "Nicht bestätigt",
+          "declined": "Abgelehnt",
+          "withdrawn": "Zurückgezogen"
+        },
+        "category": {
+          "translation_error": "Übersetzungsfehler",
+          "omission": "Auslassung",
+          "asr_error": "Fehler der Spracherkennung",
+          "meaning_altered": "Sinnverändernde Umformulierung",
+          "misunderstanding": "Missverständnis",
+          "suggestion": "Korrekturvorschlag",
+          "limitation": "Einschränkung der Bewertung"
+        },
+        "suggestion": "Vorschlag:",
+        "sworn": "Vereidigt",
+        "broken": "Dieser Prüfvermerk hat die Integritätsprüfung nicht bestanden. Sein Ergebnis wird nicht angezeigt.",
+        "requested": "Angefragt {{time}}",
+        "decided": "entschieden {{time}}",
+        "closeReason": {
+          "declined": "von der prüfenden Person abgelehnt",
+          "key_retired": "zurückgezogen: der Schlüssel der prüfenden Person wurde ersetzt oder stillgelegt",
+          "permission_revoked": "zurückgezogen: die prüfende Person hat die Prüfberechtigung nicht mehr"
+        },
+        "olderHead": "nach dieser Prüfung hinzugefügte Einträge: {{count}}",
+        "stampAt": "Zeitstempel {{time}}",
+        "missingKeyNotes": "einige Anmerkungen liegen unter Schlüsseln, für die Sie keinen Zugang haben",
+        "reassign": "Andere prüfende Person beauftragen",
+        "records": "Prüfung",
+        "request": "Prüfung anfragen",
+        "missingKeys": "Eine Prüfung kann erst angefragt werden, wenn alle Teile dieses Gesprächs für Sie geöffnet sind. Stellen Sie die fehlenden Teile zuerst wieder her.",
+        "noneMatch": "Keine prüfende Person deckt alle Sprachen dieses Gesprächs ab.",
+        "allReviewers": "Alle prüfenden Personen anzeigen",
+        "dialogTitle": "Prüfung anfragen",
+        "next": "Weiter",
+        "assign": "Beauftragen",
+        "cancel": "Abbrechen",
+        "error": {
+          "NOT_A_REVIEWER": "Diese Person hat die Prüfberechtigung nicht mehr.",
+          "REVIEWER_NOT_ELIGIBLE": "Diese Person kann für dieses Gespräch nicht beauftragt werden.",
+          "ASSIGNMENT_EXISTS": "Diese Person hat für dieses Gespräch bereits einen offenen Auftrag.",
+          "KEY_CHANGED": "Ihr Schlüssel hat sich geändert. Entsperren Sie ihn erneut und versuchen Sie es noch einmal.",
+          "REVIEWER_KEY_CHANGED": "Der Schlüssel der prüfenden Person hat sich geändert. Wählen Sie sie erneut.",
+          "SIGNATURE_INVALID": "Die Schlüsselumschläge konnten nicht geprüft werden. Laden Sie neu und versuchen Sie es noch einmal.",
+          "SCOPE_NOT_COVERED": "Nicht alle Teile des Gesprächs konnten verschlüsselt werden. Laden Sie neu und versuchen Sie es noch einmal.",
+          "DIRECTORY_UNAVAILABLE": "Die Liste der prüfenden Personen konnte nicht aus dem Studio gelesen werden. Versuchen Sie es später erneut.",
+          "FAILED": "Die Prüfung konnte nicht angefragt werden. Versuchen Sie es erneut.",
+          "FINGERPRINT_MISMATCH": "Die Schlüssel der prüfenden Person passen nicht zum angezeigten Fingerabdruck. Beauftragen Sie sie nicht und informieren Sie Ihre Administration."
+        },
+        "fingerprint": "Fingerabdruck von {{name}}",
+        "fingerprintHint": "Vergleichen Sie ihn vor der Beauftragung telefonisch mit der prüfenden Person. Nur diese Person kann das Gespräch dann öffnen.",
+        "wrapping": "Die Gesprächsschlüssel werden verschlüsselt …",
+        "stepUpBody": "Mit der Beauftragung erhält die prüfende Person Zugang zu diesem Gespräch. Dafür ist eine frische Anmeldung mit zweitem Faktor nötig."
       },
       "checking": "Integrität wird geprüft …",
       "integrity": {
@@ -695,7 +756,8 @@
         "SCOPE_TOO_LARGE": "Diese Gespräche haben mehr Schlüssel, als ein Antrag tragen kann. Wählen Sie weniger aus.",
         "SHARE_STALE": "Ihr Anteil gehört zu einem früheren Schlüssel und öffnet nichts mehr. Bitten Sie die Verwaltung, die Verwahrenden zu ändern (Verwahrende ändern); dabei können Sie diesen Anteil mit Ihrem früheren Schlüssel noch weitergeben.",
         "KEY_CHANGED": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
-        "PERMISSION_REQUIRED": "Dafür fehlt Ihnen inzwischen die Berechtigung."
+        "PERMISSION_REQUIRED": "Dafür fehlt Ihnen inzwischen die Berechtigung.",
+        "REVIEW_IN_PROGRESS": "Sie prüfen eines dieser Gespräche gerade. Schließen Sie diese Prüfung zuerst ab oder lehnen Sie sie ab."
       },
       "retry": "Erneut versuchen",
       "kind": {
@@ -719,6 +781,68 @@
       "stepUpBody": "Für den Antrag ist eine frische Anmeldung mit zweitem Faktor nötig.",
       "open": "Zugang wiederherstellen",
       "banner": "Gespräche, die sich mit Ihrem Schlüssel nicht öffnen lassen: {{count}}"
+    },
+    "review": {
+      "title": "Prüfungen",
+      "intro": "Gespräche, die Ihnen zur Prüfung zugewiesen wurden. Sie sehen alle Verarbeitungsschritte, notieren Anmerkungen je Nachricht und halten eine signierte Entscheidung fest. Mit der Entscheidung endet Ihr Zugang.",
+      "locked": "Entsperren Sie Ihren Archivschlüssel, um einen Auftrag zu öffnen.",
+      "unlock": "Schlüssel entsperren",
+      "unavailable": "Die Prüfungen konnten nicht geladen werden. Versuchen Sie es später erneut.",
+      "empty": "Ihnen sind keine Gespräche zugewiesen.",
+      "requestedBy": "angefragt von {{name}}",
+      "status": {
+        "awaiting": "Wartet auf Prüfung",
+        "in_review": "In Prüfung",
+        "approved": "Bestätigt",
+        "not_approved": "Nicht bestätigt",
+        "declined": "Abgelehnt",
+        "withdrawn": "Zurückgezogen",
+        "closed": "Geschlossen"
+      },
+      "assignedBy": "Beauftragt von {{name}}, Fingerabdruck:",
+      "start": "Prüfung beginnen",
+      "decline": "Ablehnen",
+      "afterHead": "Nach Beginn Ihrer Prüfung hinzugefügt: nicht Teil dieser Prüfung.",
+      "category": "Kategorie",
+      "findingText": "Anmerkung",
+      "findingSuggestion": "Korrekturvorschlag (optional)",
+      "removeFinding": "Entfernen",
+      "addFinding": "Anmerkung hinzufügen",
+      "overall": "Gesamtvermerk",
+      "overallCount": "{{used}} / 8000",
+      "saved": "Alle Anmerkungen gespeichert (verschlüsselt).",
+      "unsaved": "Nicht gespeicherte Änderungen.",
+      "save": "Entwurf speichern",
+      "decide": "Entscheiden",
+      "decision": {
+        "title": "Entscheidung festhalten",
+        "submit": "Signieren und absenden",
+        "approved": "Bestätigt: die Übersetzungsqualität ist ausreichend",
+        "not_approved": "Nicht bestätigt: ich kann die Übersetzungsqualität nicht bestätigen",
+        "hint": "Ihre Entscheidung wird mit Ihrem Schlüssel signiert und mit einem Zeitstempel versehen. Sie lässt sich danach nicht ändern, und Ihr Zugang zum Gespräch endet."
+      },
+      "cancel": "Abbrechen",
+      "error": {
+        "NOT_A_REVIEWER": "Sie haben die Prüfberechtigung nicht mehr.",
+        "VERIFICATION_CLOSED": "Dieser Auftrag ist geschlossen.",
+        "KEY_CHANGED": "Ihr Schlüssel hat sich geändert. Der Auftrag geht an die beauftragende Person zurück.",
+        "SIGNATURE_INVALID": "Die Signatur konnte nicht geprüft werden. Entsperren Sie Ihren Schlüssel erneut und versuchen Sie es noch einmal.",
+        "BAD_NOTES": "Einige Anmerkungen konnten nicht gespeichert werden. Laden Sie neu und versuchen Sie es noch einmal.",
+        "DIRECTORY_UNAVAILABLE": "Ihre Berechtigungen konnten nicht aus dem Studio gelesen werden. Versuchen Sie es später erneut.",
+        "PERMISSIONS_CHANGED": "Ihre Berechtigungen haben sich während der Prüfung geändert. Versuchen Sie es erneut.",
+        "FAILED": "Das hat nicht geklappt. Versuchen Sie es erneut.",
+        "SAVE_FAILED": "Der Entwurf konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+        "NOT_STARTED": "Beginnen Sie zuerst die Prüfung.",
+        "VERIFICATION_NOT_FOUND": "Dieser Auftrag ist für Sie nicht mehr offen.",
+        "HEAD_CHANGED": "Das Gespräch hat sich geändert, seit Sie es geöffnet haben. Es wurde neu geladen; beginnen Sie erneut."
+      },
+      "declineTitle": "Diesen Auftrag ablehnen?",
+      "declineBody": "Das Gespräch geht an die beauftragende Person zurück, die jemand anderen beauftragen kann. Ihre Anmerkungen werden gelöscht.",
+      "declineConfirm": "Ablehnen",
+      "done": {
+        "decided": "Ihre Entscheidung wurde festgehalten.",
+        "declined": "Sie haben den Auftrag abgelehnt."
+      }
     }
   }
 }

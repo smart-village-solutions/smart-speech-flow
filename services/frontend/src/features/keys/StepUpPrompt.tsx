@@ -11,6 +11,7 @@ const BODY = {
   recoveryRequests: 'admin.recovery.stepUpBody',
   recoveryApprovals: 'admin.recovery.stepUpBody',
   keyRecovery: 'admin.keyRecovery.stepUpBody',
+  archive: 'admin.archive.verification.stepUpBody',
 } as const;
 
 interface StepUpPromptProps {

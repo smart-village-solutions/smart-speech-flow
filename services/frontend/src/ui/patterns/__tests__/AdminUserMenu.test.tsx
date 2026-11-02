@@ -73,6 +73,19 @@ describe('AdminUserMenu', () => {
     expect(onOpenKeyRecovery).toHaveBeenCalledOnce();
   });
 
+  it('offers reviews only where a screen can open them (#619)', async () => {
+    const onOpenReviews = vi.fn();
+    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('button', { name: 'Prüfungen' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenReviews={onOpenReviews} />, { locale: 'de' });
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: 'Prüfungen' }));
+    expect(onOpenReviews).toHaveBeenCalledOnce();
+  });
+
   it('opens and closes on the trigger', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
 

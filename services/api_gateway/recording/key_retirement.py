@@ -69,6 +69,7 @@ async def retire_key(
     custodian_of = await connection.fetchval(CUSTODIAN_OF, sub, bytes(old["fingerprint"]))
     await _retire(connection, sub, old["key_version"], custodian_of, now, left)
     events += await _cancel_pending(connection, tenant_id, sub, actor, now)
+    events += await _withdraw_assignments(connection, tenant_id, sub, actor, now)
     deleted = await _delete_user_wraps(connection, tenant_id, sub, actor, now)
     return Retired(events + deleted, custodian_of, len(deleted))
 
@@ -174,3 +175,34 @@ async def _delete_user_wraps(
     )
     deleted = sorted(str(row["key_id"]) for row in rows)
     return [AuditEvent(tenant_id, actor, "key_wrap.deleted", key_id, now) for key_id in deleted]
+
+
+async def _withdraw_assignments(
+    connection: asyncpg.Connection, tenant_id: str, sub: str, actor: str, now: datetime
+) -> list[AuditEvent]:
+    """A retired key can never decide: its open reviews return to the employee (§10.7, §17)."""
+    rows = await connection.fetch(
+        "SELECT verification_id FROM verifications WHERE reviewer_sub = $1"
+        " AND status IN ('awaiting', 'in_review') ORDER BY verification_id FOR UPDATE",
+        sub,
+    )
+    if not rows:
+        return []
+    ids = [row["verification_id"] for row in rows]
+    # Drafts first: they may change only while their record is in review.
+    await connection.execute(
+        "DELETE FROM verification_notes WHERE verification_id = ANY($1::uuid[])", ids
+    )
+    await connection.execute(
+        "UPDATE verifications SET status = 'withdrawn', closed_at = $2,"
+        " close_reason = 'key_retired', overall_note = NULL"
+        " WHERE verification_id = ANY($1::uuid[])",
+        ids,
+        now,
+    )
+    return [
+        AuditEvent(
+            tenant_id, actor, "recording.verification.withdrawn.key_retired", f"{vid}:{sub}", now
+        )
+        for vid in ids
+    ]

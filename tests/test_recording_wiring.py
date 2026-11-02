@@ -44,6 +44,9 @@ def _state() -> SimpleNamespace:
         recording_spools=None,
         recording_archive_client=None,
         recording_archive_access=None,
+        recording_verifications=None,
+        recording_decision_stamper=None,
+        recording_revocation=None,
         recording_stamper=None,
         websocket_manager=SimpleNamespace(recording=None),
         session_manager=SimpleNamespace(
@@ -198,6 +201,9 @@ async def test_an_archive_store_wires_spools_that_stop_with_recording(
     access = state.recording_archive_access
     assert access is not None
     assert access._spools is state.recording_spools
+    assert state.recording_verifications._access is access
+    check, runs, tenants = state.recording_revocation
+    assert tenants() == ("tenant-test",) and state.recording_decision_stamper is not None
     assert (tmp_path / "spool").is_dir()
     spools = state.recording_spools
     spools.spool("tenant-test")
@@ -205,6 +211,8 @@ async def test_an_archive_store_wires_spools_that_stop_with_recording(
     await wiring.close_recording(state)
     assert spools._tasks == {} and state.recording_archive is None
     assert state.recording_archive_access is None
+    assert state.recording_verifications is None and state.recording_revocation is None
+    assert state.recording_decision_stamper is None
     assert state.recording_recovery_requests is None
     assert state.recording_reenrolment is None
     assert state.recording_resharing is None
@@ -266,6 +274,13 @@ async def test_a_stamp_pass_ends_orphans_before_it_stamps():
     await wiring.stamp_once(state)
 
     assert calls == ["retry", ("orphans", ("tenant-test",)), "stamp"]
+
+    async def decisions():
+        calls.append("decisions")
+
+    state.recording_decision_stamper = SimpleNamespace(run_once=decisions)
+    await wiring.stamp_once(state)
+    assert calls[-2:] == ["stamp", "decisions"]  # decisions after the chain heads (#619)
 
 
 async def test_a_tenant_missing_from_the_writers_file_cannot_record(

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import {
   Archive,
   BadgeCheck,
+  ClipboardCheck,
   ExternalLink,
   KeyRound,
   KeySquare,
@@ -61,7 +62,7 @@ function MenuLink({ label, href, onClick }: Readonly<MenuLinkProps>) {
   );
 }
 
-interface AdminUserMenuProps {
+export interface AdminUserMenuProps {
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
@@ -76,6 +77,8 @@ interface AdminUserMenuProps {
   /** Exceptional access: a supervisor's requests and a custodian's approvals (#617a). */
   onOpenRecoveryRequests?: () => void;
   onOpenRecoveryApprovals?: () => void;
+  /** A reviewer's assignments (#619); offered to holders of `ssf.recording.review`. */
+  onOpenReviews?: () => void;
 }
 
 /** Credentials are Keycloak's concern (#396): SSF only links to its account console. */
@@ -89,6 +92,7 @@ export function AdminUserMenu({
   onOpenKeyRecovery,
   onOpenRecoveryRequests,
   onOpenRecoveryApprovals,
+  onOpenReviews,
 }: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -100,6 +104,7 @@ export function AdminUserMenu({
     { label: 'admin.menu.keyRecovery', onOpen: onOpenKeyRecovery, Icon: KeySquare },
     { label: 'admin.menu.recoveryRequests', onOpen: onOpenRecoveryRequests, Icon: LifeBuoy },
     { label: 'admin.menu.recoveryApprovals', onOpen: onOpenRecoveryApprovals, Icon: BadgeCheck },
+    { label: 'admin.menu.reviews', onOpen: onOpenReviews, Icon: ClipboardCheck },
     { label: 'admin.menu.keys', onOpen: onOpenKeys, Icon: KeyRound },
     { label: 'admin.menu.ceremony', onOpen: onOpenCeremony, Icon: ShieldCheck },
   ].flatMap((entry) => (entry.onOpen ? [{ ...entry, onOpen: entry.onOpen }] : []));

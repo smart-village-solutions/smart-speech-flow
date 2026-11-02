@@ -104,12 +104,13 @@ def _new_request(conversations=(CONVERSATION,)) -> NewRequest:
     )
 
 
-def _check(recoverable=True, accessible=False, requested=False) -> dict:
+def _check(recoverable=True, accessible=False, requested=False, reviewing=False) -> dict:
     return {
         "conversation_id": uuid.UUID(CONVERSATION),
         "recoverable": recoverable,
         "accessible": accessible,
         "requested": requested,
+        "reviewing": reviewing,
     }
 
 
@@ -150,6 +151,7 @@ async def test_employees_and_candidates_read_their_rows():
     [
         (_check(recoverable=False), "not_found"),
         (_check(accessible=True), "already_accessible"),
+        (_check(accessible=True, reviewing=True), "review_in_progress"),
         (_check(requested=True), "request_exists"),
     ],
 )
@@ -488,6 +490,23 @@ async def test_storing_wraps_completes_and_lists_the_dropped_keys():
     )
     assert dropped == ("gone",)
     assert any("SET status = $2" in call for call in connection.calls)
+
+
+async def test_wraps_are_refused_while_the_requester_reviews_a_scoped_conversation():
+    """An assignment slipped in after filing: its wraps must not become recovered ones (§10.7)."""
+    requests, connection = repository(
+        {
+            LOCK: _row(),
+            "FROM verifications WHERE reviewer_sub": True,
+            REMAINING: SCOPE,
+            K: 1,
+            VALID: [{"holder_index": 1}],
+        }
+    )
+    assert await requests.store_wraps(
+        TENANT, "sam", REQUEST, [_wrap()], 1, _always, NOW, may_supervise=True
+    ) == Refused("review_in_progress")
+    assert not any("INSERT INTO key_wraps" in call for call in connection.calls)
 
 
 async def test_cancel_needs_an_open_request():

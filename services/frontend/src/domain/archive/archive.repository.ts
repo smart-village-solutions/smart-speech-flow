@@ -2,7 +2,15 @@ import type { AxiosInstance } from 'axios';
 import { type Bytes, toBase64Url } from '@/core/crypto/bytes';
 import { AppError } from '@/core/http/AppError';
 import { toOpened, toOwnConversations, toTrust } from './archive.mapper';
-import type { ArchiveTrust, OpenedConversation, OwnConversation } from './archive.types';
+import type {
+  ArchiveTrust,
+  AssignPost,
+  OpenedConversation,
+  OwnConversation,
+  ReviewerCandidate,
+  VerificationRecord,
+} from './archive.types';
+import { toAssigned, toCandidates } from './verification.mapper';
 
 const BASE = '/api/admin/recording/archive';
 
@@ -30,7 +38,7 @@ export class AmendmentNotStoredError extends Error {
   }
 }
 
-export type IntegrityStage = 'trust' | 'wrap' | 'chain' | 'stamp' | 'object';
+export type IntegrityStage = 'trust' | 'wrap' | 'chain' | 'stamp' | 'object' | 'verification';
 
 export interface ArchiveCursor {
   startedBefore: string;
@@ -53,6 +61,10 @@ export interface ArchiveRepository {
     post: Readonly<AmendmentPost>
   ): Promise<{ entryId: string; seq: number }>;
   reportIntegrity(conversationId: string, stage: IntegrityStage): Promise<void>;
+  /** Reviewers eligible for this conversation, with their keys (spec §10.7). */
+  reviewers(conversationId: string): Promise<ReviewerCandidate[]>;
+  /** Needs step-up; the wraps were made and signed in the browser. */
+  assign(conversationId: string, post: Readonly<AssignPost>): Promise<VerificationRecord>;
 }
 
 function hasCode(error: unknown, code: string): boolean {
@@ -111,6 +123,24 @@ export function createArchiveRepository(http: AxiosInstance): ArchiveRepository 
 
     async reportIntegrity(conversationId, stage) {
       await http.post(`${BASE}/${conversationId}/integrity-failures`, { stage });
+    },
+
+    async reviewers(conversationId) {
+      return toCandidates((await http.get<unknown>(`${BASE}/${conversationId}/reviewers`)).data);
+    },
+
+    async assign(conversationId, post) {
+      const response = await http.post<unknown>(`${BASE}/${conversationId}/verifications`, {
+        key_version: post.keyVersion,
+        reviewer_sub: post.reviewerSub,
+        reviewer_key_version: post.reviewerKeyVersion,
+        wraps: post.wraps.map((w) => ({
+          key_id: w.keyId,
+          blob: w.blob,
+          signature: toBase64Url(w.signature),
+        })),
+      });
+      return toAssigned(response.data);
     },
   };
 }

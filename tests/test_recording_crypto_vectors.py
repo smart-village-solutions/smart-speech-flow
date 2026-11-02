@@ -233,16 +233,78 @@ def test_a_resharing_keeps_x_and_its_new_holders_prove_their_shares():
         index = dealing["dealer_index"]
         assert b(dealing["commitments"][0]) == b(case["contributions"][str(index)])
         assert verify_schnorr(
-            "tenant-kassel", case["ceremony_id"], index, b(dealing["commitments"][0]),
-            n(dealing["c"]), n(dealing["s"]),
+            "tenant-kassel",
+            case["ceremony_id"],
+            index,
+            b(dealing["commitments"][0]),
+            n(dealing["c"]),
+            n(dealing["s"]),
         )
     proof = case["share_proof"]
     public = b(case["holder_shares"][proof["holder_index"] - 1])
     assert verify_share_proof(
-        "tenant-kassel", case["ceremony_id"], proof["holder_index"], public,
-        n(proof["c"]), n(proof["s"]),
+        "tenant-kassel",
+        case["ceremony_id"],
+        proof["holder_index"],
+        public,
+        n(proof["c"]),
+        n(proof["s"]),
     )
     digest = participants_digest(
         [(p["index"], p["holder_ref"], b(p["fingerprint"])) for p in case["participants"]]
     )
     assert digest == b(case["participants_digest"])
+
+
+def test_the_verification_vector_opens_digests_and_verifies():
+    from services.api_gateway.recording.crypto import tags
+    from services.api_gateway.recording.crypto.verification import (
+        decision_imprint,
+        note_aad,
+        notes_digest,
+        verification_fields,
+    )
+
+    v = VECTORS["verification"]
+    key = from_b64url(v["key"])
+    for note in v["notes"]:
+        aad = note_aad(
+            v["tenant_id"],
+            v["conversation_id"],
+            v["verification_id"],
+            "note",
+            note["entry_id"],
+            note["key_id"],
+        )
+        assert aead.open_(key, from_b64url(note["envelope"]), aad) == from_b64url(note["plaintext"])
+    overall = from_b64url(v["overall"]["envelope"])
+    digest = notes_digest(
+        overall, [(n["entry_id"], n["key_id"], from_b64url(n["envelope"])) for n in v["notes"]]
+    )
+    assert digest == from_b64url(v["digest"])
+    fields = verification_fields(
+        v["tenant_id"],
+        v["verification_id"],
+        v["conversation_id"],
+        from_b64url(v["reviewed_head"]),
+        v["outcome"],
+        digest,
+        v["snapshot"],
+    )
+    signature = from_b64url(v["signature"])
+    assert signatures.verify_fields(
+        from_b64url(v["signer"]), signature, tags.VERIFICATION_SIG, *fields
+    )
+    tampered = verification_fields(
+        v["tenant_id"],
+        v["verification_id"],
+        v["conversation_id"],
+        from_b64url(v["reviewed_head"]),
+        "approved",
+        digest,
+        v["snapshot"],
+    )
+    assert not signatures.verify_fields(
+        from_b64url(v["signer"]), signature, tags.VERIFICATION_SIG, *tampered
+    )
+    assert decision_imprint(from_b64url(v["signed_digest"]), signature) == from_b64url(v["imprint"])

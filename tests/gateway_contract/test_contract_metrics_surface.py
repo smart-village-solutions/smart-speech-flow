@@ -138,6 +138,11 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "1 while a site's worker holds destructive steps back after a database restore",
         frozenset({"site"}),
     ),
+    "ssf_recording_revocation_last_success_timestamp_seconds": (
+        "gauge",
+        "When the nightly revocation check last succeeded, for the tenant it is oldest for",
+        frozenset(),
+    ),
     "ssf_retention_worker_last_beat_timestamp_seconds": (
         "gauge",
         "When each site's retention worker last finished a pass",

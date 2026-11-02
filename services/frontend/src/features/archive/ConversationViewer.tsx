@@ -6,9 +6,13 @@ import type { OpenedConversation } from '@/domain/archive/archive.types';
 import { AmendmentDialog } from './AmendmentDialog';
 import { AmendmentNote } from './AmendmentNote';
 import { EntryCard } from './EntryCard';
+import { FindingsColumns } from './FindingsColumns';
 import { GapList } from './GapList';
+import { OpeningState } from './OpeningState';
+import { verifiedSummary } from './summary';
 import { PendingAmendment } from './PendingAmendment';
 import { useAmend } from './useAmend';
+import { VerificationPanel } from './VerificationPanel';
 import { type Opened, useOpenedConversation } from './useArchive';
 import { ViewerHeader } from './ViewerHeader';
 
@@ -21,6 +25,7 @@ interface ConversationViewerProps {
 
 interface ReadyViewerProps {
   state: Extract<Opened, { status: 'ready' }>;
+  unlocked: UnlockedKeys;
   onAdded: () => void;
 }
 
@@ -29,7 +34,7 @@ function amendable(opened: Readonly<OpenedConversation>, unconfirmed: boolean): 
   return opened.conversation.employeeSub === getAdminIdentity()?.userSub && !unconfirmed;
 }
 
-function ReadyViewer({ state, onAdded }: Readonly<ReadyViewerProps>) {
+function ReadyViewer({ state, unlocked, onAdded }: Readonly<ReadyViewerProps>) {
   const { t } = useTranslation();
   const { opened, view, keys, stamps } = state;
   const [amending, setAmending] = useState<string | null>(null);
@@ -46,7 +51,9 @@ function ReadyViewer({ state, onAdded }: Readonly<ReadyViewerProps>) {
         header={view.header}
         stamps={stamps}
         lastSeq={opened.entries.at(-1)?.seq ?? 0}
+        summary={verifiedSummary(state.records)}
       />
+      <VerificationPanel state={state} unlocked={unlocked} onChanged={onAdded} />
       {view.gaps.length > 0 && <GapList gaps={view.gaps} />}
       {amending === null && amend.unconfirmed && <PendingAmendment amend={amend} />}
       <ol className="flex flex-col">
@@ -57,7 +64,9 @@ function ReadyViewer({ state, onAdded }: Readonly<ReadyViewerProps>) {
             opened={opened}
             keys={keys}
             onAmend={onAmend}
-          />
+          >
+            <FindingsColumns entryId={entry.entry.entryId} records={state.records} />
+          </EntryCard>
         ))}
       </ol>
       {view.unattached.map((amendment) => (
@@ -89,28 +98,16 @@ export function ConversationViewer({
   employeeSub,
   unlocked,
 }: Readonly<ConversationViewerProps>) {
-  const { t } = useTranslation();
   const [version, setVersion] = useState(0);
   const state = useOpenedConversation(conversationId, unlocked, version, employeeSub);
 
-  if (state.status === 'checking')
-    return <p className="text-note text-fg-muted">{t('admin.archive.checking')}</p>;
-  if (state.status === 'unavailable') {
-    return (
-      <p role="alert" className="text-note text-fg-status-alert">
-        {t('admin.archive.unavailable')}
-      </p>
-    );
-  }
-  if (state.status === 'broken') {
-    return (
-      <div role="alert" className="rounded-2xl border border-border-status bg-surface-card p-5">
-        <h2 className="mb-1.5 text-body font-semibold text-fg-strong">
-          {t('admin.archive.integrity.title')}
-        </h2>
-        <p className="text-note text-fg-muted">{t(`admin.archive.integrity.${state.stage}`)}</p>
-      </div>
-    );
-  }
-  return <ReadyViewer state={state} onAdded={() => setVersion((value) => value + 1)} />;
+  if (state.status !== 'ready')
+    return <OpeningState state={state} unavailable="admin.archive.unavailable" />;
+  return (
+    <ReadyViewer
+      state={state}
+      unlocked={unlocked}
+      onAdded={() => setVersion((value) => value + 1)}
+    />
+  );
 }

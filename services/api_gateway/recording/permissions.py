@@ -20,6 +20,8 @@ PERMISSIONS_CLAIM: Final[str] = "ssf_permissions"
 REQUEST: Final[str] = "ssf.recording.request"
 REVIEW: Final[str] = "ssf.recording.review"
 REVIEW_SWORN: Final[str] = "ssf.recording.review.sworn"
+# What a verification decision snapshots (spec A.3a).
+REVIEW_PERMISSIONS: Final[tuple[str, ...]] = (REVIEW, REVIEW_SWORN)
 SUPERVISE: Final[str] = "ssf.recording.supervise"
 CUSTODIAN: Final[str] = "ssf.recording.recovery.custodian"
 # The tenant administrator's existing Studio permission (keycloak.ts reads it too).

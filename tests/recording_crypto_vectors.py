@@ -19,6 +19,7 @@ from typing import Any
 
 from services.api_gateway.recording.chain import GENESIS, ChainObject, seal_entry
 from services.api_gateway.recording.crypto import aead, ecies, signatures, tags
+from services.api_gateway.recording.crypto import verification as verification_aead
 from services.api_gateway.recording.crypto.curve import ORDER, decode_point
 from services.api_gateway.recording.crypto.encoding import Field, b64url, enc, from_b64url
 from services.api_gateway.recording.crypto.proofs import (
@@ -396,9 +397,7 @@ def resharing_vector(ceremony: dict[str, Any]) -> dict[str, Any]:
             for p in participants
         ],
         "lagrange": {str(i): hex32(w) for i, w in weights.items()},
-        "contributions": {
-            str(i): b64url(ref.public_point(polynomials[i][0])) for i in dealers
-        },
+        "contributions": {str(i): b64url(ref.public_point(polynomials[i][0])) for i in dealers},
         "polynomials": {str(i): [hex32(a) for a in polynomials[i]] for i in dealers},
         "pok_nonces": {str(i): hex32(scalar(f"rpok-{i}")) for i in dealers},
         "dealings": [
@@ -417,8 +416,14 @@ def resharing_vector(ceremony: dict[str, Any]) -> dict[str, Any]:
         "dealing_fields": [
             typed(f)
             for f in signatures.reshare_dealing_fields(
-                TENANT, RESHARING, 1, first.commitments, first.proof_c, first.proof_s,
-                previous, digest,
+                TENANT,
+                RESHARING,
+                1,
+                first.commitments,
+                first.proof_c,
+                first.proof_s,
+                previous,
+                digest,
             )
         ],
         "transcript_hash": b64url(transcript_hash(transcript)),
@@ -546,6 +551,87 @@ def timestamp_vector(head: bytes) -> dict[str, Any]:
     }
 
 
+def verification_vector() -> dict[str, Any]:
+    """A decided record: two notes, an overall note, its signature and imprint (A.3a)."""
+    verification = "3d2c1b0a-9f8e-4d7c-a6b5-c4d3e2f1a0b9"
+    key = label_bytes("verification-ck", 32)
+    head = label_bytes("verification-head", 32)
+    notes = []
+    for index, entry in enumerate(
+        ("e2b1c0d9-0000-4000-8000-000000000002", "a1b2c3d4-0000-4000-8000-000000000001")
+    ):
+        plaintext = json.dumps(
+            {
+                "v": 1,
+                "verification_id": verification,
+                "entry_id": entry,
+                "findings": [
+                    {"category": "omission", "text": f"Satz {index} fehlt", "suggestion": ""}
+                ],
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+        aad = verification_aead.note_aad(TENANT, CONVERSATION, verification, "note", entry, KEY_ID)
+        nonce = label_bytes(f"verification-note-{index}", 12)
+        notes.append(
+            {
+                "entry_id": entry,
+                "key_id": KEY_ID,
+                "plaintext": b64url(plaintext),
+                "nonce": b64url(nonce),
+                "aad": b64url(aad),
+                "envelope": b64url(aead.seal(key, plaintext, aad, nonce=nonce)),
+            }
+        )
+    overall_plain = json.dumps(
+        {"v": 1, "verification_id": verification, "text": "Insgesamt korrekt."},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    overall_entry = notes[0]["entry_id"]
+    overall_aad = verification_aead.note_aad(
+        TENANT, CONVERSATION, verification, "overall", overall_entry, KEY_ID
+    )
+    overall_nonce = label_bytes("verification-overall", 12)
+    overall = aead.seal(key, overall_plain, overall_aad, nonce=overall_nonce)
+    digest = verification_aead.notes_digest(
+        overall, [(n["entry_id"], n["key_id"], from_b64url(n["envelope"])) for n in notes]
+    )
+    snapshot = ["ssf.recording.review.sworn", "ssf.recording.review"]
+    fields = verification_aead.verification_fields(
+        TENANT, verification, CONVERSATION, head, "not_approved", digest, snapshot
+    )
+    signer = scalar("reviewer-sig")
+    signed = signatures.signed_digest(tags.VERIFICATION_SIG, *fields)
+    signature = signatures.sign_fields(ref.private_key(signer), tags.VERIFICATION_SIG, *fields)
+    return {
+        "tenant_id": TENANT,
+        "conversation_id": CONVERSATION,
+        "verification_id": verification,
+        "key": b64url(key),
+        "notes": notes,
+        "overall": {
+            "entry_id": overall_entry,
+            "key_id": KEY_ID,
+            "plaintext": b64url(overall_plain),
+            "nonce": b64url(overall_nonce),
+            "aad": b64url(overall_aad),
+            "envelope": b64url(overall),
+        },
+        "digest": b64url(digest),
+        "empty_digest": b64url(verification_aead.notes_digest(None, [])),
+        "reviewed_head": b64url(head),
+        "outcome": "not_approved",
+        "snapshot": snapshot,
+        "signer": b64url(ref.public_point(signer)),
+        "signer_pkcs8": b64url(ref.pkcs8(signer)),
+        "signed_digest": b64url(signed),
+        "signature": b64url(signature),
+        "imprint": b64url(verification_aead.decision_imprint(signed, signature)),
+    }
+
+
 def build_vectors() -> dict[str, Any]:
     ceremony = ceremony_vector()
     recovery = recovery_vector(ceremony)
@@ -566,6 +652,7 @@ def build_vectors() -> dict[str, Any]:
         "private_key_blob": private_key_blob_vector(),
         "chain": chain,
         "timestamp": timestamp_vector(from_b64url(chain["entries"][-1]["hash"])),
+        "verification": verification_vector(),
     }
 
 

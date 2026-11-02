@@ -44,6 +44,7 @@ class FakeService:
         self.calls: list[tuple] = []
         self.fail: str | None = None
         self.created = True
+        self.records: tuple = ()
 
     def _maybe_fail(self):
         if self.fail:
@@ -62,18 +63,44 @@ class FakeService:
     async def employee_names(self, tenant_id, sub, rows, correlation_id):
         return {"bob": "Bob Employee"}
 
+    async def names_of(self, tenant_id, subs, correlation_id):
+        self.calls.append(("names", tuple(sorted(subs))))
+        return {"rita": "Rita Reviewer"}
+
     async def open(self, tenant_id, sub, conversation_id, *, supervisor=False):
         self._maybe_fail()
         self.calls.append(("open", sub, conversation_id))
         self.supervisor = supervisor
         return OpenedConversation(
-            conversation_id, sub, "consent", NOW, NOW, NOW, False, False, (), (), {}, (), ()
+            conversation_id,
+            sub,
+            "consent",
+            NOW,
+            NOW,
+            NOW,
+            False,
+            False,
+            (),
+            (),
+            {},
+            (),
+            (),
+            self.records,
         )
 
     async def object(
-        self, tenant_id, sub, conversation_id, entry_id, object_type, *, supervisor=False
+        self,
+        tenant_id,
+        sub,
+        conversation_id,
+        entry_id,
+        object_type,
+        *,
+        supervisor=False,
+        reviewer=False,
     ):
         self._maybe_fail()
+        self.calls.append(("object", reviewer))
         return b"\x01cipher"
 
     async def amend(self, tenant_id, sub, conversation_id, entry_id, key_id, ciphertext):
@@ -81,9 +108,11 @@ class FakeService:
         self.calls.append(("amend", entry_id, key_id, ciphertext))
         return SimpleNamespace(entry_id=entry_id, seq=4), self.created
 
-    async def report(self, tenant_id, sub, conversation_id, stage, *, supervisor=False):
+    async def report(
+        self, tenant_id, sub, conversation_id, stage, *, supervisor=False, reviewer=False
+    ):
         self._maybe_fail()
-        self.calls.append(("report", stage))
+        self.calls.append(("report", stage) if not reviewer else ("report", stage, "reviewer"))
 
 
 def _claims(permissions=("ssf.recording.request",)) -> dict:
@@ -139,7 +168,7 @@ def test_the_list_and_an_open_serve_the_callers_view(client_for):
     service = FakeService()
     client = client_for(_claims(), service)
     listed = client.get(BASE, params={"limit": 10}).json()["conversations"]
-    assert listed[0]["verification"] == "not_verified"
+    assert listed[0]["verification"] == {"status": "not_verified", "approved": 0, "not_approved": 0}
     assert listed[0]["amendments"] == 1
     assert service.calls[0] == ("list", "alice", 10, None, None)
     assert client.get(BASE, params={"limit": 51}).status_code == 422
@@ -223,7 +252,18 @@ def test_an_integrity_report_names_one_of_the_stages(client_for):
     url = f"{BASE}/{CONVERSATION}/integrity-failures"
     assert client.post(url, json={"stage": "chain"}).status_code == 204
     assert client.post(url, json={"stage": "secret"}).status_code == 422
-    assert service.calls == [("report", "chain")]
+    assert client.post(url, json={"stage": "verification"}).status_code == 204
+    assert service.calls == [("report", "chain"), ("report", "verification")]
+
+
+def test_a_reviewer_reaches_objects_and_reports_through_the_reviewer_branch(client_for):
+    """Never through an open: `/archive/{id}` keeps its own rule (§10.7)."""
+    service = FakeService()
+    client = client_for(_claims(("ssf.recording.review",)), service)
+    entry = uuid.uuid4()
+    client.get(f"{BASE}/{CONVERSATION}/objects/{entry}/record.json")
+    client.post(f"{BASE}/{CONVERSATION}/integrity-failures", json={"stage": "wrap"})
+    assert service.calls == [("object", True), ("report", "wrap", "reviewer")]
 
 
 def _snapshot(encrypted_share: str) -> CeremonySnapshot:
@@ -292,3 +332,62 @@ def test_the_list_tags_recovered_rows_with_the_employees_name(client_for):
         ("alice", False, None),
         ("bob", True, "Bob Employee"),
     ]
+
+
+def test_an_open_serves_records_side_by_side_with_content_only_when_decided(client_for):
+    from services.api_gateway.recording.verification_model import (
+        KeyRow,
+        NotePost,
+        VerificationResult,
+        VerificationRow,
+    )
+
+    def row(sub, status, **changes):
+        return VerificationRow(
+            verification_id=str(uuid.uuid4()),
+            conversation_id=CONVERSATION,
+            status=status,
+            requested_by="alice",
+            requester_key_version=1,
+            requested_at=NOW,
+            directory_read_at=NOW,
+            reviewer_sub=sub,
+            reviewer_key_version=1,
+            reviewer_fingerprint=b"\x01" * 32,
+            **changes,
+        )
+
+    service = FakeService()
+    decided = row(
+        "rita",
+        "approved",
+        outcome="approved",
+        signature=b"\x02" * 64,
+        overall_note=b"\x01o",
+        reviewed_head=b"\x03" * 32,
+        decided_at=NOW,
+    )
+    note = NotePost(str(uuid.uuid4()), str(uuid.uuid4()), b"\x01n")
+    key = KeyRow("rita", 1, b"\x01" * 32, b"\x04" + bytes(64), b"\x04" + bytes(64))
+    service.records = (
+        VerificationResult(decided, (note,), key),
+        VerificationResult(row("ralf", "awaiting")),
+    )
+    client = client_for(_claims(), service)
+
+    body = client.get(f"{BASE}/{CONVERSATION}").json()
+
+    rita, ralf = body["verifications"]
+    assert (rita["reviewer_name"], rita["outcome"], len(rita["notes"])) == (
+        "Rita Reviewer",
+        "approved",
+        1,
+    )
+    assert rita["reviewer_key"]["key_version"] == 1 and rita["signature"]
+    assert "notes" not in ralf and ralf["outcome"] is None and ralf["reviewer_name"] is None
+    assert body["conversation"]["verification"] == {
+        "status": "in_review",
+        "approved": 1,
+        "not_approved": 0,
+    }
+    assert ("names", ("ralf", "rita")) in service.calls

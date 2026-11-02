@@ -1,15 +1,18 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ConversationFacts } from '@/domain/archive/archive.types';
+import type { ConversationFacts, VerificationSummary } from '@/domain/archive/archive.types';
 import { formatDate, formatTime, formatTimeRange, minutesBetween } from './format';
 import type { HeaderView } from './timeline';
 import type { StampView } from './verifyConversation';
+import { summaryLabel } from './summary';
 
 interface ViewerHeaderProps {
   conversation: ConversationFacts;
   header: HeaderView;
   stamps: readonly StampView[];
   lastSeq: number;
+  /** The verified summary; absent where it is not the reader's to see (a review). */
+  summary?: VerificationSummary;
 }
 
 function languageName(code: string, locale: string): string {
@@ -34,6 +37,7 @@ export function ViewerHeader({
   header,
   stamps,
   lastSeq,
+  summary,
 }: Readonly<ViewerHeaderProps>) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
@@ -75,9 +79,9 @@ export function ViewerHeader({
           {t('admin.archive.retention', { date: formatDate(conversation.retentionUntil, locale) })}
           {conversation.legalHold && ` · ${t('admin.archive.hold')}`}
         </Field>
-        <Field term={t('admin.archive.field.verification')}>
-          {t(`admin.archive.verification.${conversation.verification}`)}
-        </Field>
+        {summary && (
+          <Field term={t('admin.archive.field.verification')}>{summaryLabel(t, summary)}</Field>
+        )}
         <Field term={t('admin.archive.field.stamp')}>
           {stamp === undefined ? t('admin.archive.stamp.pending') : stampLine(stamp.genTime)}
         </Field>

@@ -910,3 +910,52 @@ async def test_only_custodians_see_requests_they_can_open(archive, owner, reques
     )
 
     assert await requests.approvals(TENANT, "paula", str(recovery), NOW) == []
+
+
+async def _under_review(owner, conversation, reviewer="sam"):
+    """An open assignment of `reviewer`, as #619 makes it (spec §10.7)."""
+    await owner.execute(
+        "INSERT INTO verifications (tenant_id, verification_id, conversation_id, status,"
+        " requested_by, requester_key_version, requested_at, directory_read_at, reviewer_sub,"
+        " reviewer_key_version, reviewer_fingerprint) VALUES ($1, gen_random_uuid(), $2,"
+        " 'in_review', 'alice', 1, $3, $3, $4, 1, $5)",
+        TENANT,
+        uuid.UUID(conversation.conversation_id),
+        NOW,
+        reviewer,
+        bytes(32),
+    )
+
+
+async def test_filing_skips_and_refuses_a_conversation_the_requester_reviews(
+    archive, owner, requests
+):
+    conversation, _, _ = await _ended(archive, owner)
+    await _under_review(owner, conversation)
+    recovery = await recovery_key(owner)
+
+    listed = await requests.candidates(
+        TENANT, "sam", "alice", recovery, NOW - timedelta(days=1), NOW + timedelta(days=1), NOW
+    )
+    _, refused = await _filed(requests, owner, [conversation])
+
+    assert listed == []
+    assert refused == Refused("review_in_progress")
+
+
+async def test_storing_wraps_is_refused_while_the_requester_reviews_the_conversation(
+    archive, owner, requests
+):
+    conversation, _, _ = await _ended(archive, owner)
+    request, scope = await _filed(requests, owner, [conversation])
+    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
+    await _under_review(owner, conversation)
+
+    refused = await requests.store_wraps(
+        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW,
+        may_supervise=True,
+    )
+
+    assert refused == Refused("review_in_progress")
+    assert await owner.fetchval("SELECT status FROM recovery_requests") == "open"
+    assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref = 'sam'") == 0

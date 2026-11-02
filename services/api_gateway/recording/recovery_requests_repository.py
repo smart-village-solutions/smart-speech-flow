@@ -6,6 +6,7 @@ shared writes live in `recovery_requests_writes`.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any, TypeVar
@@ -38,6 +39,7 @@ from .recovery_requests_sql import (
     OWN_CANDIDATES,
     OWN_REQUESTS,
     OWN_TOTALS,
+    REVIEWING_REMAINING,
     STALE_HOLDER,
     VALID_APPROVALS,
     candidate_of,
@@ -459,6 +461,12 @@ class PostgresRecoveryRequests:
             # The partials were sealed to the key the request names; a newer key cannot sign for it.
             if locked_version != request.requester_key_version or key_version != locked_version:
                 return Refused("key_changed")
+            if await connection.fetchval(
+                REVIEWING_REMAINING,
+                sub,
+                sorted({uuid.UUID(key.conversation_id) for key in remaining}),
+            ):
+                return Refused("review_in_progress")
             # Wraps the requester made without k approvals open nothing, but would
             # complete the request and list the conversation: refuse them (§9.5).
             if not await has_k_approvals(connection, request):

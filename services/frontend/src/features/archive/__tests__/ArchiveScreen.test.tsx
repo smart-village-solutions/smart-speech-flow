@@ -33,7 +33,7 @@ function row(overrides: Partial<OwnConversation> = {}): OwnConversation {
     incomplete: false,
     messages: 3,
     amendments: 0,
-    verification: 'not_verified',
+    verification: { status: 'not_verified', approved: 0, notApproved: 0 },
     ...overrides,
   };
 }
@@ -102,7 +102,7 @@ describe('ArchiveScreen', () => {
     });
     expect(await screen.findByText(de.admin.archive.incomplete)).toBeInTheDocument();
     expect(screen.getByText(de.admin.archive.hold)).toBeInTheDocument();
-    expect(screen.getByText(de.admin.archive.verification.not_verified)).toBeInTheDocument();
+    expect(screen.getByText(de.admin.archive.verification.status.not_verified)).toBeInTheDocument();
     expect(screen.queryByText('Amira Haddad')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /29\.10\.2026/ }));
     expect(archive.open).toHaveBeenCalledWith(row().conversationId);

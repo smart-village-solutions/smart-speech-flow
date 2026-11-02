@@ -68,8 +68,9 @@ async function conversation(): Promise<OpenedConversation> {
       retentionUntil: 'r',
       legalHold: false,
       incomplete: false,
-      verification: 'not_verified',
+      verification: { status: 'not_verified', approved: 0, notApproved: 0 },
     },
+    verifications: [],
     windows: [],
     entries: [
       await entry(1, IDS.consent, 'consent', 'consent.json'),

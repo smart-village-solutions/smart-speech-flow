@@ -37,6 +37,7 @@ from .recovery_requests_model import (
 )
 from .recovery_requests_sql import (
     FILING_CHECK,
+    FILING_LOCK,
     HOLDER,
     LATEST_DECISION,
     LISTED_HOLDER,
@@ -378,6 +379,7 @@ async def filing_refusal(connection: asyncpg.Connection, request: NewRequest) ->
         OPEN_KEY_RECOVERY, request.requester_sub, request.created_at
     ):
         return Refused("request_exists")
+    await connection.execute(FILING_LOCK, list(request.conversation_ids))
     checked = {
         str(row["conversation_id"]): row
         for row in await connection.fetch(
@@ -404,6 +406,8 @@ async def filing_refusal(connection: asyncpg.Connection, request: NewRequest) ->
             ],
         )
         return Refused("not_found")
+    if any(checked[cid]["reviewing"] for cid in request.conversation_ids):
+        return Refused("review_in_progress")
     if any(checked[cid]["accessible"] for cid in request.conversation_ids):
         return Refused("already_accessible")
     if any(checked[cid]["requested"] for cid in request.conversation_ids):

@@ -15,6 +15,7 @@ from prometheus_client import CollectorRegistry, Counter, ProcessCollector
 from .audio_storage import AudioStorageMetrics
 from .pipeline_admission import PipelineAdmissionMetrics
 from .recording.retention.metrics import RetentionWorkerMetrics
+from .recording.revocation import RevocationMetrics
 from .refinement_metrics import RefinementMetrics
 from .studio_content_metrics import StudioContentMetrics
 from .studio_policy_reads import StudioPolicyReadMetrics
@@ -35,6 +36,7 @@ class GatewayMetrics:
     studio_content: StudioContentMetrics
     studio_policy_reads: StudioPolicyReadMetrics
     retention_workers: RetentionWorkerMetrics
+    revocation: RevocationMetrics
 
     @classmethod
     def build(cls) -> GatewayMetrics:
@@ -57,4 +59,5 @@ class GatewayMetrics:
             studio_content=StudioContentMetrics(registry),
             studio_policy_reads=StudioPolicyReadMetrics(registry),
             retention_workers=RetentionWorkerMetrics(registry),
+            revocation=RevocationMetrics(registry),
         )

@@ -34,6 +34,8 @@ function ready(): Opened {
     opened,
     keys,
     stamps: [{ headSeq: 9, genTime: '2026-10-29T10:20:05.000Z' }],
+    signers: new Map(),
+    records: [],
     view: buildTimeline(opened, loadedFixture(), keys),
   };
 }

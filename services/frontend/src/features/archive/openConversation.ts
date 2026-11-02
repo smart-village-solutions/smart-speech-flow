@@ -12,7 +12,8 @@ import {
 import type { OpenedConversation } from '@/domain/archive/archive.types';
 import { JSON_OBJECT, parseRecord } from './records';
 import { type Loaded, type Timeline, buildTimeline } from './timeline';
-import { type StampView, verifyConversation } from './verifyConversation';
+import { type StampView, type Verified, verifyConversation } from './verifyConversation';
+import { type RecordView, verifyRecords } from './verifyRecords';
 
 export type Opened =
   | { status: 'checking' }
@@ -23,6 +24,9 @@ export type Opened =
       opened: OpenedConversation;
       keys: Map<string, CryptoKey>;
       stamps: StampView[];
+      /** The keys that may have made the caller's wraps: what a re-wrap accepts (A.6). */
+      signers: ReadonlyMap<string, Bytes>;
+      records: RecordView[];
       view: Timeline;
     };
 
@@ -151,13 +155,33 @@ export async function openConversation(
   }
   const verified = await verifyConversation({ ...deps, ...deps.identity, opened, trust, unlocked });
   if (!verified.ok) return broken(deps, conversationId, verified.stage);
+  return finishOpening(deps, opened, verified);
+}
+
+/** After the checks of §10.6: decrypt the records and check each verification (§10.7). */
+export async function finishOpening(
+  deps: Readonly<OpenDeps>,
+  opened: OpenedConversation,
+  verified: Extract<Verified, { ok: true }>
+): Promise<Opened> {
+  const conversationId = opened.conversation.conversationId;
   const loaded = await loadRecords(deps, opened, verified.keys);
   if ([...loaded.values()].includes('damaged')) report(deps, conversationId, 'object');
+  const records = await verifyRecords({
+    tenantId: deps.identity.tenantId,
+    opened,
+    keys: verified.keys,
+    archiveCrypto: deps.archiveCrypto,
+  });
+  if (records.some((record) => record.state === 'broken'))
+    report(deps, conversationId, 'verification');
   return {
     status: 'ready',
     opened,
     keys: verified.keys,
     stamps: verified.stamps,
+    signers: verified.signers,
+    records,
     view: buildTimeline(opened, loaded, verified.keys),
   };
 }

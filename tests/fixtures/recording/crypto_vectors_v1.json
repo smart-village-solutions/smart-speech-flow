@@ -652,5 +652,50 @@
     "der": "MIGRBgkqhkiG9w0BBwKggYMwgYACAQMxADB3BgsqhkiG9w0BCRABBKBoBGYwZAIBAQYKKwYBBAGBsjECAzAxMA0GCWCGSAFlAwQCAQUABCAkNNQWQriqZ1POaCJWoU-i9qnQJ_m_r2EFdFGo8dBGsQIBKhgSMjAyNjEwMjkxMjAwMDAuMjVaMAMCAQECBBI0VngxAA",
     "imprint": "JDTUFkK4qmdTzmgiVqFPovap0Cf5v69hBXRRqPHQRrE",
     "gen_time": "2026-10-29T12:00:00.250Z"
+  },
+  "verification": {
+    "tenant_id": "tenant-kassel",
+    "conversation_id": "6f1c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f",
+    "verification_id": "3d2c1b0a-9f8e-4d7c-a6b5-c4d3e2f1a0b9",
+    "key": "aVladVcz67We4IB7IEPtucZg4esSnlnZgzdL39sYs7I",
+    "notes": [
+      {
+        "entry_id": "e2b1c0d9-0000-4000-8000-000000000002",
+        "key_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "plaintext": "eyJ2IjoxLCJ2ZXJpZmljYXRpb25faWQiOiIzZDJjMWIwYS05ZjhlLTRkN2MtYTZiNS1jNGQzZTJmMWEwYjkiLCJlbnRyeV9pZCI6ImUyYjFjMGQ5LTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMiIsImZpbmRpbmdzIjpbeyJjYXRlZ29yeSI6Im9taXNzaW9uIiwidGV4dCI6IlNhdHogMCBmZWhsdCIsInN1Z2dlc3Rpb24iOiIifV19",
+        "nonce": "9xkb7xYQubvMH_aP",
+        "aad": "ABxzc2YtcmVjL3ZlcmlmaWNhdGlvbi1ub3RlL3YxAA10ZW5hbnQta2Fzc2VsACQ2ZjFjMWQyZS0zYTRiLTRjNWQtOGU5Zi0wYTFiMmMzZDRlNWYAJDNkMmMxYjBhLTlmOGUtNGQ3Yy1hNmI1LWM0ZDNlMmYxYTBiOQAEbm90ZQAkZTJiMWMwZDktMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyACQ5YThiN2M2ZC01ZTRmLTRhM2ItOGMyZC0xZTBmOWE4YjdjNmQ",
+        "envelope": "AfcZG-8WELm7zB_2j5LxLweCY0g-vJLcjaoRSqFEqLVD06RHLoxz3rrur5_DWiqd2B8xDV4GTPhSvJVM486HO3BgtL6U3cJMdE-F9LrN0JNwrcNzIcKZNZQIussk_6UgmmPPszz9WIVvRfCdZFyYPnK_KfytnpGPk39vqNJXPhvoT6mnc5z5AkXSRNjmYGqwfBCHh1H2cJa8LoMvCTjcL0qmDD_2dYcmv4wa8al_OzwGSQJGYBvvZPWiNtW_w1l9WNoNYE3E3pNHIG6tp2S0eBcPbp6Lw879QBw"
+      },
+      {
+        "entry_id": "a1b2c3d4-0000-4000-8000-000000000001",
+        "key_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "plaintext": "eyJ2IjoxLCJ2ZXJpZmljYXRpb25faWQiOiIzZDJjMWIwYS05ZjhlLTRkN2MtYTZiNS1jNGQzZTJmMWEwYjkiLCJlbnRyeV9pZCI6ImExYjJjM2Q0LTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsImZpbmRpbmdzIjpbeyJjYXRlZ29yeSI6Im9taXNzaW9uIiwidGV4dCI6IlNhdHogMSBmZWhsdCIsInN1Z2dlc3Rpb24iOiIifV19",
+        "nonce": "rkzAYwcgP6WXd9XP",
+        "aad": "ABxzc2YtcmVjL3ZlcmlmaWNhdGlvbi1ub3RlL3YxAA10ZW5hbnQta2Fzc2VsACQ2ZjFjMWQyZS0zYTRiLTRjNWQtOGU5Zi0wYTFiMmMzZDRlNWYAJDNkMmMxYjBhLTlmOGUtNGQ3Yy1hNmI1LWM0ZDNlMmYxYTBiOQAEbm90ZQAkYTFiMmMzZDQtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxACQ5YThiN2M2ZC01ZTRmLTRhM2ItOGMyZC0xZTBmOWE4YjdjNmQ",
+        "envelope": "Aa5MwGMHID-ll3fVzzizqvo6jwTt1H-_xLI3KRtzkMmLlN61bOWxdqOVv_ITPd1GLqceHW5yYi_1eThXODO-0oAya_BLdtIgh6rdBEl_BcvLdHW6_Sqgosdm2CfT9NvLp_8Di3vVJ0FzM2r2Z23r0zVrS0voiACAuwtiJtSiXJV1n4GgaIc4jYLUlhLPY2nvSrwQ8BzC7n8ZmUcbvDNBgMxDjbhboz0zP5Py7tVllKCqUGXvs137h8i6VIvJnMnpnfVaeXYuYbONRnDe670bWOcpVC3HUh71aL8"
+      }
+    ],
+    "overall": {
+      "entry_id": "e2b1c0d9-0000-4000-8000-000000000002",
+      "key_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "plaintext": "eyJ2IjoxLCJ2ZXJpZmljYXRpb25faWQiOiIzZDJjMWIwYS05ZjhlLTRkN2MtYTZiNS1jNGQzZTJmMWEwYjkiLCJ0ZXh0IjoiSW5zZ2VzYW10IGtvcnJla3QuIn0",
+      "nonce": "BPpaNfEUhhMAdLWJ",
+      "aad": "ABxzc2YtcmVjL3ZlcmlmaWNhdGlvbi1ub3RlL3YxAA10ZW5hbnQta2Fzc2VsACQ2ZjFjMWQyZS0zYTRiLTRjNWQtOGU5Zi0wYTFiMmMzZDRlNWYAJDNkMmMxYjBhLTlmOGUtNGQ3Yy1hNmI1LWM0ZDNlMmYxYTBiOQAHb3ZlcmFsbAAkZTJiMWMwZDktMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyACQ5YThiN2M2ZC01ZTRmLTRhM2ItOGMyZC0xZTBmOWE4YjdjNmQ",
+      "envelope": "AQT6WjXxFIYTAHS1ibHbEMQelWVRgnxiGqAZntkaILZmcjA1cUEGP16vo2LgMt-vgHq8QqYwPoSNTQ4FT4lSXZ3Al9LOiNV-eIwAnDB5bB58gqxGDWFOO0leCHnhlbmxnN0jYmAESIElx4mbc-vPX4mSwYRnuwYTaQ"
+    },
+    "digest": "3grnQE3uDOATHcp_byUXQ_P_iazUutaag65jdgF5y5U",
+    "empty_digest": "q1RNGgZS1a0nylgLFQtBJspOczaFlzoFsMBSHyKyJnc",
+    "reviewed_head": "y3J7-m3rhZC4gfaFidPyB9SUfH5-xFZGgZ2ePQ6HLFQ",
+    "outcome": "not_approved",
+    "snapshot": [
+      "ssf.recording.review.sworn",
+      "ssf.recording.review"
+    ],
+    "signer": "BJupaCKPR4M9n7Rq2Z2EEjVUCXaXqentHK3x9oj-DCcztYUHssZ0uo_Vm7owklcU-oN2FV4-iL1_P8Rzr3osCUQ",
+    "signer_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgVM3x-6h_HexL6FaCmXcWA1uL-jstRWS-nOoWDfgP-vChRANCAASbqWgij0eDPZ-0atmdhBI1VAl2l6np7Ryt8faI_gwnM7WFB7LGdLqP1Zu6MJJXFPqDdhVePoi9fz_Ec696LAlE",
+    "signed_digest": "KNUeM3t-vlNcRJ59Bb0p2FPSj4EwWExBBG8mkoZprT8",
+    "signature": "LOEd72iALBzuew4RQ1sMJ-6cx8HxCTtVUloxHbLPdidwfaYkJtRW74FXG_q74GWJdnBInscGzpAmaLdY39S4RQ",
+    "imprint": "8XbSOs-71l6M5PcIiED2KZGcB_b1Yh3U_ufOTf9_bf4"
   }
 }

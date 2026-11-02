@@ -52,7 +52,7 @@ GATEWAY_PUBLIC = ref.public_point(7)
 GATEWAY_ID = gateway_key_id(GATEWAY_PUBLIC)
 RECOVERY = Recipient("recovery", "rk-1", ref.public_point(31), b"\x31" * 32)
 _ARCHIVE_TABLES = (
-    "recovery_unrecoverable_keys, recovery_rejections, recovery_partials, recovery_decisions,"
+    "verification_notes, verifications, revocation_runs, recovery_unrecoverable_keys, recovery_rejections, recovery_partials, recovery_decisions,"
     " recovery_request_keys, recovery_requests, version_locks, site_clearances, retention_decisions, retention_worker_status,"
     " chain_stamps, stored_objects, chain_entries, key_wraps, conversation_keys,"
     " recording_windows, conversations"

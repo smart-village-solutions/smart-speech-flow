@@ -7,6 +7,7 @@ opening rule is one SQL fragment, used by each method.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -26,48 +27,22 @@ from .repository import (
     bind_tenant,
     storage_unavailable,
 )
-
-
-def _readable(sub: str, now: str) -> str:
-    """Ended, not shredded, within its date or held, and wrapped for the caller."""
-    return (
-        f"c.ended_at IS NOT NULL AND c.shredded_at IS NULL"
-        f" AND (c.retention_until > {now} OR c.legal_hold)"
-        " AND EXISTS (SELECT 1 FROM key_wraps w JOIN conversation_keys k"
-        "  ON k.tenant_id = w.tenant_id AND k.key_id = w.key_id"
-        "  WHERE k.conversation_id = c.conversation_id"
-        f"  AND w.recipient_kind = 'user' AND w.recipient_ref = {sub})"
-    )
-
-
-# The status alone is a string the requester's own call sets; k approvals are not (§9.5).
-_APPROVED = (
-    "(SELECT count(DISTINCT d.holder_index) FROM recovery_decisions d"
-    "  WHERE d.tenant_id = r.tenant_id AND d.request_id = r.request_id"
-    "  AND d.decision = 'approved' AND NOT EXISTS (SELECT 1 FROM recovery_rejections j"
-    "   WHERE j.tenant_id = d.tenant_id AND j.request_id = d.request_id"
-    "   AND j.holder_index = d.holder_index AND j.attempt = d.attempt))"
-    # The k of the holders it was filed under: a later resharing never revokes it (§9.7).
-    " >= (SELECT g.k FROM recovery_ceremonies g"
-    "  WHERE g.tenant_id = r.tenant_id AND g.ceremony_id = r.holders_ceremony_id)"
+from .verification_model import (
+    DECIDED,
+    OPEN,
+    KeyRow,
+    NotePost,
+    VerificationResult,
+    summary,
+    verification_from_row,
 )
+from .verification_sql import openable as _openable
+from .verification_sql import readable, reviewing
 
 
 def _own(sub: str, now: str) -> str:
     """The employee-only rule: amendments stay the employee's own (spec §10.4)."""
-    return f"c.employee_sub = {sub} AND {_readable(sub, now)}"
-
-
-def _openable(sub: str, now: str, supervisor: str) -> str:
-    """The opening rule (§10.6), widened by §9.5: the employee, or a supervisor
-    whose request for the conversation completed. Arguments are placeholders."""
-    return (
-        f"(c.employee_sub = {sub} OR ({supervisor} AND EXISTS (SELECT 1"
-        " FROM recovery_request_keys rk JOIN recovery_requests r"
-        "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
-        f"  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = {sub}"
-        f"  AND r.status = 'completed' AND {_APPROVED}))) AND {_readable(sub, now)}"
-    )
+    return f"c.employee_sub = {sub} AND {readable(sub, now)}"
 
 
 _LIST = (
@@ -76,7 +51,9 @@ _LIST = (
     " (SELECT count(*) FROM chain_entries e WHERE e.conversation_id = c.conversation_id"
     "  AND e.kind IN ('message', 'failed')) AS messages,"
     " (SELECT count(*) FROM chain_entries e WHERE e.conversation_id = c.conversation_id"
-    "  AND e.kind = 'amendment') AS amendments"
+    "  AND e.kind = 'amendment') AS amendments,"
+    " (SELECT array_agg(v.status) FROM verifications v"
+    "  WHERE v.conversation_id = c.conversation_id) AS verification_statuses"
     f" FROM conversations c WHERE {_openable('$1', '$2', '$6')}"
     " AND ($3::timestamptz IS NULL OR c.started_at < $3"
     "  OR (c.started_at = $3 AND c.conversation_id < $5::uuid))"
@@ -85,6 +62,11 @@ _LIST = (
 _ONE = (
     "SELECT c.* FROM conversations c WHERE c.conversation_id = $3"
     f" AND {_openable('$1', '$2', '$4')}"
+)
+# Integrity reports and object fetches also serve a reviewer (§10.7); opening never does.
+_ONE_OR_REVIEWING = (
+    "SELECT c.* FROM conversations c WHERE c.conversation_id = $3"
+    f" AND ({_openable('$1', '$2', '$4')} OR {reviewing('$1', '$2', '$5')})"
 )
 _ONE_OWN_LOCKED = (
     "SELECT c.* FROM conversations c WHERE c.conversation_id = $3"
@@ -109,6 +91,19 @@ class OwnConversation:
     incomplete: bool
     messages: int
     amendments: int
+    verification_statuses: tuple[str, ...] = ()
+
+    @property
+    def open_reviews(self) -> int:
+        return sum(status in OPEN for status in self.verification_statuses)
+
+    @property
+    def approved(self) -> int:
+        return self.verification_statuses.count("approved")
+
+    @property
+    def not_approved(self) -> int:
+        return self.verification_statuses.count("not_approved")
 
     def public(self, caller: str) -> dict[str, Any]:
         return {
@@ -122,8 +117,7 @@ class OwnConversation:
             "incomplete": self.incomplete,
             "messages": self.messages,
             "amendments": self.amendments,
-            # Derived until verification records exist (#619, spec §10.5).
-            "verification": "not_verified",
+            "verification": summary(list(self.verification_statuses)),
         }
 
 
@@ -166,6 +160,7 @@ class OpenedConversation:
     stored: Mapping[str, frozenset[str]]  # entry ID -> object types the store confirmed
     stamps: tuple[StampRow, ...]
     keys: tuple[KeyAccess, ...]
+    verifications: tuple[VerificationResult, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -255,6 +250,7 @@ class PostgresArchiveAccess:
                 incomplete=row["incomplete"],
                 messages=row["messages"],
                 amendments=row["amendments"],
+                verification_statuses=tuple(row["verification_statuses"] or ()),
             )
             for row in await self._run(tenant_id, work)
         ]
@@ -276,7 +272,7 @@ class PostgresArchiveAccess:
                     AuditEvent(tenant_id, sub, "recording.archive.not_found", conversation_id, now),
                 )
                 return None
-            opened = await _read_conversation(connection, row, sub)
+            opened = await read_conversation(connection, row, sub, with_records=True)
             await append_audit(
                 connection,
                 AuditEvent(tenant_id, sub, "recording.archive.opened", conversation_id, now),
@@ -294,9 +290,12 @@ class PostgresArchiveAccess:
         now: datetime,
         *,
         supervisor: bool = False,
+        reviewer: bool = False,
     ) -> bool:
         async def work(connection: asyncpg.Connection) -> Any:
-            return await connection.fetchrow(_ONE, sub, now, conversation_id, supervisor)
+            return await connection.fetchrow(
+                _ONE_OR_REVIEWING, sub, now, conversation_id, supervisor, reviewer
+            )
 
         return await self._run(tenant_id, work) is not None
 
@@ -310,6 +309,7 @@ class PostgresArchiveAccess:
         now: datetime,
         *,
         supervisor: bool = False,
+        reviewer: bool = False,
     ) -> ObjectLocation | None:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetchrow(
@@ -319,7 +319,7 @@ class PostgresArchiveAccess:
                 " LEFT JOIN stored_objects o ON o.tenant_id = e.tenant_id"
                 "  AND o.entry_id = e.entry_id AND o.object_type = $5"
                 f" WHERE e.conversation_id = $3 AND e.entry_id = $4"
-                f" AND {_openable('$1', '$2', '$6')}"
+                f" AND ({_openable('$1', '$2', '$6')} OR {reviewing('$1', '$2', '$7')})"
                 " AND EXISTS (SELECT 1 FROM key_wraps w WHERE w.tenant_id = e.tenant_id"
                 "  AND w.key_id = e.key_id AND w.recipient_kind = 'user' AND w.recipient_ref = $1)",
                 sub,
@@ -328,6 +328,7 @@ class PostgresArchiveAccess:
                 entry_id,
                 object_type,
                 supervisor,
+                reviewer,
             )
 
         row = await self._run(tenant_id, work)
@@ -437,8 +438,62 @@ class PostgresArchiveAccess:
         await self._run(tenant_id, work)
 
 
-async def _read_conversation(
-    connection: asyncpg.Connection, row: Any, sub: str
+_RECORDS = "SELECT * FROM verifications WHERE conversation_id = $1 ORDER BY requested_at"
+_DECIDED_NOTES = (
+    "SELECT n.verification_id, n.entry_id, n.key_id, n.ciphertext FROM verification_notes n"
+    " JOIN verifications v ON v.tenant_id = n.tenant_id AND v.verification_id = n.verification_id"
+    " WHERE v.conversation_id = $1 AND v.status IN ('approved', 'not_approved')"
+    " ORDER BY n.entry_id"
+)
+_SIGNER_KEYS = (
+    "SELECT u.user_sub, u.key_version, u.fingerprint, u.enc_pub, u.sig_pub FROM user_keys u"
+    " JOIN verifications v ON v.reviewer_sub = u.user_sub AND v.signer_key_version = u.key_version"
+    " WHERE v.conversation_id = $1 AND v.status IN ('approved', 'not_approved')"
+)
+
+
+async def read_records(
+    connection: asyncpg.Connection, conversation_id: Any
+) -> tuple[VerificationResult, ...]:
+    """Every record of a conversation; notes, overall note and keys of decided ones only."""
+    rows = [verification_from_row(row) for row in await connection.fetch(_RECORDS, conversation_id)]
+    notes: dict[str, list[NotePost]] = {}
+    for item in await connection.fetch(_DECIDED_NOTES, conversation_id):
+        notes.setdefault(str(item["verification_id"]), []).append(
+            NotePost(str(item["entry_id"]), str(item["key_id"]), bytes(item["ciphertext"]))
+        )
+    keys = {
+        (item["user_sub"], item["key_version"]): item
+        for item in await connection.fetch(_SIGNER_KEYS, conversation_id)
+    }
+    results = []
+    for record in rows:
+        if record.status not in DECIDED:
+            results.append(VerificationResult(dataclasses.replace(record, overall_note=None)))
+            continue
+        key = keys.get((record.reviewer_sub, record.signer_key_version))
+        results.append(
+            VerificationResult(
+                record,
+                tuple(notes.get(record.verification_id, ())),
+                None if key is None else _key_row(key),
+            )
+        )
+    return tuple(results)
+
+
+def _key_row(row: Any) -> KeyRow:
+    return KeyRow(
+        row["user_sub"],
+        row["key_version"],
+        bytes(row["fingerprint"]),
+        bytes(row["enc_pub"]),
+        bytes(row["sig_pub"]),
+    )
+
+
+async def read_conversation(
+    connection: asyncpg.Connection, row: Any, sub: str, *, with_records: bool = False
 ) -> OpenedConversation:
     conversation_id = row["conversation_id"]
     windows = await connection.fetch(
@@ -490,4 +545,5 @@ async def _read_conversation(
             for item in stamps
         ),
         keys=_keys(list(wraps), sub),
+        verifications=await read_records(connection, conversation_id) if with_records else (),
     )

@@ -66,6 +66,7 @@ _ANSWERS: Final[dict[str, tuple[int, str]]] = {
     "not_enough_approvals": (409, "NOT_ENOUGH_APPROVALS"),
     "request_exists": (409, "REQUEST_EXISTS"),
     "already_accessible": (409, "ALREADY_ACCESSIBLE"),
+    "review_in_progress": (409, "REVIEW_IN_PROGRESS"),
     "key_not_enrolled": (409, "KEY_NOT_ENROLLED"),
     "key_changed": (409, "KEY_CHANGED"),
     "share_stale": (409, "SHARE_STALE"),
