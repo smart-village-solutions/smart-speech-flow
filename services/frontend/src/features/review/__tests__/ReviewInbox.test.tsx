@@ -45,7 +45,9 @@ describe('ReviewInbox', () => {
     );
     expect(onOpen).toHaveBeenCalledWith('v-1');
     expect(screen.getAllByRole('button')).toHaveLength(1);
-    expect(screen.getAllByText(r.status.closed)).toHaveLength(2);
+    // Only an open record whose conversation is gone reads "closed"; a decided one says how.
+    expect(screen.getAllByText(r.status.closed)).toHaveLength(1);
+    expect(screen.getByText(r.status.approved)).toBeInTheDocument();
   });
 
   it('says when nothing is assigned, and when the list cannot be read', async () => {

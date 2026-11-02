@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, timedelta
 
 import pytest
@@ -204,3 +205,23 @@ async def test_a_revoke_never_takes_the_employees_own_self_made_wraps(archive, o
     )
     assert deleted == 0
     assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref = 'alice'") == 1
+
+
+@pytest.mark.parametrize(
+    ("change", "counted"),
+    [
+        ("shredded_at = $2", 0),
+        ("retention_until = $2", 0),
+        ("retention_until = $2, legal_hold = TRUE", 1),
+    ],
+)
+async def test_assignments_on_a_conversation_that_is_gone_are_left_to_lapse(
+    archive, owner, verifications, revocations, change, counted
+):
+    """Review finding 8: neither revoked nor counted towards the mass-removal bound."""
+    cid, key_id, row = await _assigned(archive, owner, verifications)
+    await owner.execute(
+        f"UPDATE conversations SET {change} WHERE conversation_id = $1", uuid.UUID(cid), NOW
+    )
+    grants = await revocations.grants(TENANT, NOW)
+    assert len(grants.assignments) == counted

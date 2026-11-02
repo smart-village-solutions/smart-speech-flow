@@ -47,7 +47,7 @@ class Snapshots(Protocol):
 class RevocationStore(Protocol):
     async def key_holders(self, tenant_id: str) -> frozenset[str]: ...
 
-    async def grants(self, tenant_id: str) -> Grants: ...
+    async def grants(self, tenant_id: str, now: datetime) -> Grants: ...
 
     async def revoke(
         self,
@@ -128,7 +128,7 @@ class RevocationCheck:
         trusted = await self._trusted(tenant_id, correlation_id)
         if isinstance(trusted, str):
             return await self._skip(tenant_id, trusted, actor)
-        grants = await self._store.grants(tenant_id)
+        grants = await self._store.grants(tenant_id, read_at)
         reviewers = set(trusted.holders_of(REVIEW))
         supervisors = set(trusted.holders_of(SUPERVISE))
         withdraw = [

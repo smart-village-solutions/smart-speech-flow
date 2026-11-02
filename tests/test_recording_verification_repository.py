@@ -91,7 +91,10 @@ def assignment(*keys: str, reviewer_version: int = 1) -> NewAssignment:
 def assignable(**changes) -> dict[str, object]:
     answers: dict[str, object] = {
         "FOR SHARE": [key_row("alice"), key_row("rita")],
-        "FOR UPDATE": {"conversation_id": uuid.UUID(CONVERSATION)},
+        "FOR UPDATE": None,
+        "SELECT c.conversation_id FROM conversations c": {
+            "conversation_id": uuid.UUID(CONVERSATION)
+        },
         "c.employee_sub = $2": False,
         "FROM conversation_keys WHERE": [
             {"key_id": uuid.UUID(KEY_1)},
@@ -119,7 +122,7 @@ async def test_an_assignment_inserts_the_record_the_wraps_and_its_audits():
     [
         ({"FOR SHARE": [key_row("rita")]}, 1, "key_changed"),
         ({}, 2, "reviewer_key_changed"),
-        ({"FOR UPDATE": None}, 1, "not_found"),
+        ({"SELECT c.conversation_id FROM conversations c": None}, 1, "not_found"),
         ({"c.employee_sub = $2": True}, 1, "reviewer_not_eligible"),
         ({"FROM conversation_keys WHERE": [{"key_id": uuid.UUID(KEY_1)}]}, 1, "scope_not_covered"),
         (
@@ -149,7 +152,10 @@ async def test_candidate_reads_map_their_rows():
             "FROM conversation_keys WHERE": [{"key_id": uuid.UUID(KEY_1)}],
         }
     )
-    assert await repo.excluded(TENANT, CONVERSATION, ["alice", "sam", "rita"]) == {"alice", "sam"}
+    assert await repo.excluded(TENANT, CONVERSATION, ["alice", "sam", "rita"], NOW) == {
+        "alice",
+        "sam",
+    }
     keys = await repo.active_keys(TENANT, ["rita"])
     assert keys["rita"].key_version == 3 and keys["rita"].fingerprint == bytes([3]) * 32
     assert await repo.conversation_keys(TENANT, CONVERSATION) == (KEY_1,)
@@ -242,7 +248,7 @@ def _locked(status="in_review", reviewing=True, **changes) -> dict[str, object]:
 )
 async def test_review_writes_are_refused_before_any_write(answers, code):
     repo, connection = repository(answers if "FOR UPDATE" in answers else _locked(**answers))
-    assert await repo.decline(TENANT, "rita", VERIFICATION, NOW) == Refused(code)
+    assert await repo.save_draft(TENANT, "rita", VERIFICATION, None, [], NOW) == Refused(code)
     assert not any(call.startswith(("UPDATE", "DELETE", "INSERT")) for call in connection.calls)
 
 
@@ -430,3 +436,18 @@ async def test_a_decision_signed_over_another_snapshot_or_head_is_refused_under_
             "permissions_changed"
         )
         assert not any("INSERT INTO verification_notes" in call for call in connection.calls)
+
+
+async def test_an_assignment_locks_the_conversation_before_reading_the_rule():
+    """Review of #675: a lock and a rule in one statement read the rule from before the wait."""
+    repo, connection = repository(assignable())
+    await repo.assign(assignment(KEY_1, KEY_2), NOW, supervisor=False)
+    lock = next(i for i, c in enumerate(connection.calls) if c.endswith("FOR UPDATE"))
+    rule = next(i for i, c in enumerate(connection.calls) if "SELECT c.conversation_id" in c)
+    assert lock < rule and "FOR UPDATE" not in connection.calls[rule]
+
+
+async def test_a_decline_does_not_need_a_readable_conversation():
+    repo, connection = repository(_locked(reviewing=False) | {"RETURNING w.key_id": []})
+    assert await repo.decline(TENANT, "rita", VERIFICATION, NOW) is None
+    assert not any("still_reviewing" in call for call in connection.calls)

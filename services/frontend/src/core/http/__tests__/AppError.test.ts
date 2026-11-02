@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders } from 'axios';
 import { describe, expect, it } from 'vitest';
-import { AppError, isSessionGone, toAppError } from '@/core/http/AppError';
+import { AppError, isSessionGone, knownServerCode, toAppError } from '@/core/http/AppError';
 
 function axiosErrorWithStatus(status: number, data: unknown = {}): AxiosError {
   const error = new AxiosError('boom', 'ERR_BAD_RESPONSE');
@@ -190,5 +190,22 @@ describe('isSessionGone', () => {
 
     expect(isSessionGone(error)).toBe(false);
     expect(isSessionGone(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('knownServerCode', () => {
+  const known = new Set(['KEY_CHANGED']);
+
+  it('passes through a code the screen knows', () => {
+    const error = new AppError('validation', { serverCode: 'KEY_CHANGED' });
+    expect(knownServerCode(error, known, 'FAILED')).toBe('KEY_CHANGED');
+  });
+
+  it('falls back for unknown codes, missing codes and foreign errors', () => {
+    expect(knownServerCode(new AppError('validation', { serverCode: 'OTHER' }), known, 'FAILED')).toBe(
+      'FAILED'
+    );
+    expect(knownServerCode(new AppError('validation'), known, 'FAILED')).toBe('FAILED');
+    expect(knownServerCode(new Error('KEY_CHANGED'), known, 'FAILED')).toBe('FAILED');
   });
 });

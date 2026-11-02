@@ -34,10 +34,12 @@ request a verification the same way.
 2. Open an assignment. You see every message with its original audio and
    speech recognition, the raw and refined machine translation, the final text
    and the translated audio, plus pauses, failed messages and amendments.
-3. Choose **Start review**, or **Decline** to return the assignment.
+3. Choose **Start review**. **Decline** returns the assignment, before or
+   during the review.
 4. Add findings to any message: a category, a description and an optional
    correction. Add an overall note. **Save draft** stores your notes encrypted.
-   They are also saved when you leave the screen.
+   They are also saved when you leave the screen. If you close the tab with
+   unsaved notes, the browser asks first.
 5. Choose **Decide**, pick *Approved* or *Not approved*, and submit. Your browser
    signs the decision with your key, and SSF timestamps it. The decision cannot
    be changed, and your access to the conversation ends with it.
@@ -53,8 +55,9 @@ example a later amendment, are marked and are not part of your review.
 - The **Verification** card lists each record, with reviewer, sworn status,
   times and outcome. The overall note sits under it.
 - Each message shows every reviewer's findings side by side.
-- Before showing a decision, your browser checks its signature against the
-  reviewer's key and the exact conversation version it reviewed. A record that
+- Before showing a decision, your browser checks that it is intact: the
+  signature matches the reviewer key stored with the record, and the record
+  belongs to the exact conversation version that was reviewed. A record that
   fails the check shows only a warning, never its content.
 - The decision's timestamp is shown, but the timestamp authority's own
   signature is not checked yet.
@@ -66,5 +69,9 @@ example a later amendment, are marked and are not part of your review.
 - The list of reviewers leaves out supervisors who recovered, or are
   recovering, the conversation. Someone who knows all reviewers could infer a
   recovery from that.
+- The check on a decision detects damaged or mismatched records. It does not
+  prove who the reviewer was: SSF stores the reviewer's key next to the record,
+  so someone in control of the SSF server could replace both. Only the phone
+  comparison of the fingerprint at assignment ties a key to a person.
 - A nightly check removes access from reviewers and supervisors who lost their
   Studio permission (see the operations runbook `recording-revocation.md`).

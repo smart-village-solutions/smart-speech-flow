@@ -55,7 +55,7 @@ class Directory(Protocol):
 
 class VerificationStore(Protocol):
     async def excluded(
-        self, tenant_id: str, conversation_id: str, subs: Sequence[str]
+        self, tenant_id: str, conversation_id: str, subs: Sequence[str], now: datetime
     ) -> frozenset[str]: ...
 
     async def active_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, KeyRow]: ...
@@ -200,7 +200,9 @@ class Verifications:
         await self._openable(tenant_id, sub, conversation_id, supervisor)
         directory = await self._read_directory(tenant_id, correlation_id)
         reviewers = directory.holders_of(REVIEW)
-        excluded = await _stored(self._store.excluded(tenant_id, conversation_id, list(reviewers)))
+        excluded = await _stored(
+            self._store.excluded(tenant_id, conversation_id, list(reviewers), self._clock())
+        )
         eligible = sorted(set(reviewers) - excluded)
         keys = await _stored(self._store.active_keys(tenant_id, eligible))
         found = [

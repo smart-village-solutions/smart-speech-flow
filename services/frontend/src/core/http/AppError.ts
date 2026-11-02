@@ -156,6 +156,16 @@ export function fromServerCode<T extends string>(
   return (code !== undefined && codes[code]) || fallback;
 }
 
+/** The gateway's error code when the screen has a message for it, otherwise `fallback`. */
+export function knownServerCode(
+  error: unknown,
+  known: ReadonlySet<string>,
+  fallback: string
+): string {
+  const code = error instanceof AppError ? error.serverCode : undefined;
+  return code !== undefined && known.has(code) ? code : fallback;
+}
+
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;

@@ -5,7 +5,7 @@ import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { equalBytes } from '@/core/crypto/bytes';
 import { displayFingerprint, fingerprint } from '@/core/crypto/transcript';
-import { AppError } from '@/core/http/AppError';
+import { AppError, knownServerCode } from '@/core/http/AppError';
 import type { ReviewerCandidate } from '@/domain/archive/archive.types';
 import { useOwnKey } from '@/features/keys/useKeys';
 import type { Opened } from './openConversation';
@@ -24,16 +24,11 @@ const KNOWN = new Set([
   'DIRECTORY_UNAVAILABLE',
 ]);
 
-function errorKey(error: unknown): string {
-  const code = error instanceof AppError ? (error.serverCode ?? '') : '';
-  return KNOWN.has(code) ? code : 'FAILED';
-}
-
 function requestError(mismatch: boolean, stage: RequestStage, error: unknown): string | null {
   if (mismatch) return 'FINGERPRINT_MISMATCH';
   // The step-up prompt says it all; a FAILED line beside it would only confuse.
   if (stage === 'stepUp' || error === null) return null;
-  return errorKey(error);
+  return knownServerCode(error, KNOWN, 'FAILED');
 }
 
 /** Reviewers covering every language of the conversation, unless the caller asks for all. */

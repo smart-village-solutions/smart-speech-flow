@@ -30,9 +30,10 @@ from .repository import (
 from .verification_model import (
     DECIDED,
     OPEN,
-    KeyRow,
     NotePost,
     VerificationResult,
+    key_from_row,
+    note_from_row,
     summary,
     verification_from_row,
 )
@@ -459,9 +460,7 @@ async def read_records(
     rows = [verification_from_row(row) for row in await connection.fetch(_RECORDS, conversation_id)]
     notes: dict[str, list[NotePost]] = {}
     for item in await connection.fetch(_DECIDED_NOTES, conversation_id):
-        notes.setdefault(str(item["verification_id"]), []).append(
-            NotePost(str(item["entry_id"]), str(item["key_id"]), bytes(item["ciphertext"]))
-        )
+        notes.setdefault(str(item["verification_id"]), []).append(note_from_row(item))
     keys = {
         (item["user_sub"], item["key_version"]): item
         for item in await connection.fetch(_SIGNER_KEYS, conversation_id)
@@ -476,20 +475,10 @@ async def read_records(
             VerificationResult(
                 record,
                 tuple(notes.get(record.verification_id, ())),
-                None if key is None else _key_row(key),
+                None if key is None else key_from_row(key),
             )
         )
     return tuple(results)
-
-
-def _key_row(row: Any) -> KeyRow:
-    return KeyRow(
-        row["user_sub"],
-        row["key_version"],
-        bytes(row["fingerprint"]),
-        bytes(row["enc_pub"]),
-        bytes(row["sig_pub"]),
-    )
 
 
 async def read_conversation(

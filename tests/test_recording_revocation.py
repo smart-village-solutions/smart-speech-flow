@@ -41,7 +41,7 @@ class Store:
     async def key_holders(self, tenant_id):
         return self.holders
 
-    async def grants(self, tenant_id):
+    async def grants(self, tenant_id, now):
         return self._grants
 
     async def revoke(self, tenant_id, conversation_id, withdraw, unsupervised, actor, now):

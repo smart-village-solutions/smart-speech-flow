@@ -95,7 +95,7 @@ class FakeStore:
             self.record, status=decision.outcome, outcome=decision.outcome
         )
 
-    async def excluded(self, tenant_id, conversation_id, subs):
+    async def excluded(self, tenant_id, conversation_id, subs, now):
         if self.down:
             raise RecordingStorageUnavailable("down")
         return frozenset(subs) & self._excluded

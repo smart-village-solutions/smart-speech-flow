@@ -1,6 +1,7 @@
 import type { ArchiveCrypto, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { equalBytes } from '@/core/crypto/bytes';
 import { fingerprint } from '@/core/crypto/transcript';
+import { noteAddress } from '@/core/crypto/verification';
 import type { OpenedConversation, VerificationRecord } from '@/domain/archive/archive.types';
 import { type Finding, parseFindings, parseOverall } from '@/domain/review/findings';
 import type { ReviewRepository } from '@/domain/review/review.repository';
@@ -32,17 +33,7 @@ export function headEntry(opened: OpenedConversation, record: VerificationRecord
   return head === null ? undefined : opened.entries.find((entry) => equalBytes(entry.hash, head));
 }
 
-export function noteAddress(
-  tenantId: string,
-  record: VerificationRecord,
-  conversationId: string,
-  part: 'note' | 'overall',
-  entryId: string,
-  keyId: string
-) {
-  return { tenantId, conversationId, verificationId: record.verificationId, part, entryId, keyId };
-}
-
+// Consistent with the fingerprint the server serves, not confirmed out of band (spec D11).
 async function trustedRequester(
   tenantId: string,
   record: VerificationRecord,
@@ -61,13 +52,17 @@ async function openDraft(
   keys: ReadonlyMap<string, CryptoKey>
 ) {
   const { record, opened, draft } = review;
-  const conversationId = opened.conversation.conversationId;
+  const scope = {
+    tenantId,
+    conversationId: opened.conversation.conversationId,
+    verificationId: record.verificationId,
+  };
   const findings = new Map<string, Finding[]>();
   for (const note of draft.notes) {
     const key = keys.get(note.keyId);
     if (key === undefined) continue;
     try {
-      const at = noteAddress(tenantId, record, conversationId, 'note', note.entryId, note.keyId);
+      const at = noteAddress(scope, 'note', note.entryId, note.keyId);
       findings.set(
         note.entryId,
         parseFindings(
@@ -85,7 +80,7 @@ async function openDraft(
   const key = head ? keys.get(head.keyId) : undefined;
   if (draft.overall !== null && head && key) {
     try {
-      const at = noteAddress(tenantId, record, conversationId, 'overall', head.entryId, head.keyId);
+      const at = noteAddress(scope, 'overall', head.entryId, head.keyId);
       overall = parseOverall(await crypto.openNote(key, at, draft.overall), record.verificationId);
     } catch {
       overall = '';

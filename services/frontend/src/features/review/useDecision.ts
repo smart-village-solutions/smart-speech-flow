@@ -3,7 +3,7 @@ import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { notesDigest } from '@/core/crypto/verification';
-import { AppError } from '@/core/http/AppError';
+import { knownServerCode } from '@/core/http/AppError';
 import type { VerificationRecord } from '@/domain/archive/archive.types';
 import type { ReviewDraft } from '@/domain/review/review.types';
 import type { ReviewState } from './openReview';
@@ -24,13 +24,8 @@ const KNOWN = new Set([
   'HEAD_CHANGED',
 ]);
 
-function codeOf(error: unknown): string | undefined {
-  return error instanceof AppError ? error.serverCode : undefined;
-}
-
 export function errorKey(error: unknown): string {
-  const code = codeOf(error) ?? '';
-  return KNOWN.has(code) ? code : 'FAILED';
+  return knownServerCode(error, KNOWN, 'FAILED');
 }
 
 /** The last entry's seq: what the reviewer loaded, so a start never skips a newer head. */
@@ -68,7 +63,7 @@ export function useDecision(
       try {
         return await post(state.review.record, outcome, draft);
       } catch (error) {
-        if (codeOf(error) !== 'PERMISSIONS_CHANGED') throw error;
+        if (errorKey(error) !== 'PERMISSIONS_CHANGED') throw error;
         return post(await reviews.start(verificationId, headSeq(state)), outcome, draft);
       }
     },

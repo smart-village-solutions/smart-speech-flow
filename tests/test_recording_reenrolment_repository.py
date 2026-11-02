@@ -96,7 +96,9 @@ async def test_a_swap_withdraws_the_reviewers_open_assignments_drafts_first():
     drafts = next(
         i for i, c in enumerate(connection.calls) if "DELETE FROM verification_notes" in c
     )
-    closed = next(i for i, c in enumerate(connection.calls) if "SET status = 'withdrawn'" in c)
+    closed = next(
+        i for i, c in enumerate(connection.calls) if "UPDATE verifications SET status" in c
+    )
     wraps = next(i for i, c in enumerate(connection.calls) if c.startswith(WRAPS))
     assert drafts < closed < wraps
     assert _events(connection) == 2  # withdrawn, then key_reenrolled

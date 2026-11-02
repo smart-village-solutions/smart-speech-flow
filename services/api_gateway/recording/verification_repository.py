@@ -7,7 +7,7 @@ verification records, then the wraps, with the audit appended last.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypeVar
@@ -33,7 +33,9 @@ from .verification_model import (
     NotePost,
     PendingDecisionStamp,
     VerificationRow,
+    key_from_row,
     new_verification_id,
+    note_from_row,
     verification_from_row,
 )
 from .verification_sql import (
@@ -44,6 +46,7 @@ from .verification_sql import (
     openable,
     reviewing,
 )
+from .verification_writes import close_records
 
 T = TypeVar("T")
 
@@ -54,13 +57,19 @@ _KEYS = (
 _SCOPE = "SELECT key_id FROM conversation_keys WHERE conversation_id = $1 ORDER BY key_id"
 _EXCLUDED = (
     "SELECT s.sub FROM unnest($2::text[]) AS s(sub) CROSS JOIN conversations c"
-    f" WHERE c.conversation_id = $1 AND ({excluded('s.sub')} OR {assigned('s.sub')})"
+    f" WHERE c.conversation_id = $1 AND ({excluded('s.sub', '$3')} OR {assigned('s.sub')})"
 )
+# Locked first, checked in the next statement: a statement that waited for a row lock
+# reads its subqueries from its own start, and would miss wraps a revocation deleted
+# meanwhile (review of #675).
+_CONVERSATION_LOCK = "SELECT 1 FROM conversations WHERE conversation_id = $1 FOR UPDATE"
 _ASSIGNABLE = (
     "SELECT c.conversation_id FROM conversations c WHERE c.conversation_id = $3"
-    f" AND {openable('$1', '$2', '$4')} FOR UPDATE"
+    f" AND {openable('$1', '$2', '$4')}"
 )
-_REVIEWER_EXCLUDED = f"SELECT {excluded('$2')} FROM conversations c WHERE c.conversation_id = $1"
+_REVIEWER_EXCLUDED = (
+    f"SELECT {excluded('$2', '$3')} FROM conversations c WHERE c.conversation_id = $1"
+)
 _INSERT = (
     "INSERT INTO verifications (tenant_id, verification_id, conversation_id, status,"
     " requested_by, requester_key_version, requested_at, directory_read_at, reviewer_sub,"
@@ -122,17 +131,13 @@ _RESNAPSHOT = (
     "UPDATE verifications SET permission_snapshot = $2 WHERE verification_id = $1 RETURNING *"
 )
 _ENTRIES = "SELECT entry_id, key_id, seq FROM chain_entries WHERE conversation_id = $1"
-_DROP_NOTES = "DELETE FROM verification_notes WHERE verification_id = $1"
+_DROP_DRAFT = "DELETE FROM verification_notes WHERE verification_id = $1"
 _PUT_NOTES = (
     "INSERT INTO verification_notes (tenant_id, verification_id, entry_id, key_id, ciphertext)"
     " SELECT $1, $2, n.entry_id, n.key_id, n.ciphertext"
     " FROM unnest($3::uuid[], $4::uuid[], $5::bytea[]) AS n(entry_id, key_id, ciphertext)"
 )
 _PUT_OVERALL = "UPDATE verifications SET overall_note = $2 WHERE verification_id = $1"
-_CLOSE = (
-    "UPDATE verifications SET status = $2, closed_at = $3, close_reason = $4,"
-    " overall_note = NULL WHERE verification_id = $1"
-)
 _REVIEWER_KEY = (
     "SELECT key_version, fingerprint FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL"
     " FOR SHARE"
@@ -178,20 +183,6 @@ class ReviewOpened:
     requester_name: str | None = None
 
 
-def note_post(row: Mapping[str, Any]) -> NotePost:
-    return NotePost(str(row["entry_id"]), str(row["key_id"]), bytes(row["ciphertext"]))
-
-
-def key_row(row: Mapping[str, Any]) -> KeyRow:
-    return KeyRow(
-        sub=row["user_sub"],
-        key_version=row["key_version"],
-        fingerprint=bytes(row["fingerprint"]),
-        enc_pub=bytes(row["enc_pub"]),
-        sig_pub=bytes(row["sig_pub"]),
-    )
-
-
 class PostgresVerifications:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
@@ -208,10 +199,10 @@ class PostgresVerifications:
             raise storage_unavailable(error) from None
 
     async def excluded(
-        self, tenant_id: str, conversation_id: str, subs: Sequence[str]
+        self, tenant_id: str, conversation_id: str, subs: Sequence[str], now: datetime
     ) -> frozenset[str]:
         async def work(connection: asyncpg.Connection) -> Any:
-            return await connection.fetch(_EXCLUDED, uuid.UUID(conversation_id), list(subs))
+            return await connection.fetch(_EXCLUDED, uuid.UUID(conversation_id), list(subs), now)
 
         return frozenset(row["sub"] for row in await self._run(tenant_id, work))
 
@@ -219,7 +210,7 @@ class PostgresVerifications:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetch(_KEYS, list(subs))
 
-        return {row["user_sub"]: key_row(row) for row in await self._run(tenant_id, work)}
+        return {row["user_sub"]: key_from_row(row) for row in await self._run(tenant_id, work)}
 
     async def conversation_keys(self, tenant_id: str, conversation_id: str) -> tuple[str, ...]:
         async def work(connection: asyncpg.Connection) -> Any:
@@ -280,8 +271,8 @@ class PostgresVerifications:
             return ReviewOpened(
                 conversation=opened,
                 record=record,
-                draft=tuple(note_post(note) for note in notes),
-                requester=None if requester is None else key_row(requester),
+                draft=tuple(note_from_row(note) for note in notes),
+                requester=None if requester is None else key_from_row(requester),
             )
 
         return await self._run(tenant_id, work)
@@ -371,12 +362,11 @@ class PostgresVerifications:
         self, tenant_id: str, sub: str, verification_id: str, now: datetime
     ) -> Refused | None:
         async def work(connection: asyncpg.Connection) -> Refused | None:
-            record = await locked_record(connection, sub, verification_id, now)
+            record = await locked_record(connection, sub, verification_id, now, readable=False)
             if isinstance(record, Refused):
                 return record
             vid = uuid.UUID(verification_id)
-            await connection.execute(_DROP_NOTES, vid)
-            await connection.execute(_CLOSE, vid, "declined", now, "declined")
+            await close_records(connection, [vid], "declined", "declined", now)
             released = await release(connection, record)
             await append_audits(
                 connection,
@@ -495,12 +485,13 @@ async def _assign_refusal(
     if keys.get(assignment.reviewer_sub) != assignment.reviewer_key_version:
         return Refused("reviewer_key_changed")
     conversation = uuid.UUID(assignment.conversation_id)
+    await connection.execute(_CONVERSATION_LOCK, conversation)
     found = await connection.fetchrow(
         _ASSIGNABLE, assignment.requester_sub, now, conversation, supervisor
     )
     if found is None:
         return Refused("not_found")
-    if await connection.fetchval(_REVIEWER_EXCLUDED, conversation, assignment.reviewer_sub):
+    if await connection.fetchval(_REVIEWER_EXCLUDED, conversation, assignment.reviewer_sub, now):
         return Refused("reviewer_not_eligible")
     scope = [str(row["key_id"]) for row in await connection.fetch(_SCOPE, conversation)]
     if sorted(wrap.key_id for wrap in assignment.wraps) != scope:
@@ -556,7 +547,12 @@ def _granted_events(
 
 
 async def locked_record(
-    connection: asyncpg.Connection, sub: str, verification_id: str, now: datetime
+    connection: asyncpg.Connection,
+    sub: str,
+    verification_id: str,
+    now: datetime,
+    *,
+    readable: bool = True,
 ) -> Refused | VerificationRow:
     """The caller's open record, locked after its conversation; refusals before any write."""
     vid = uuid.UUID(verification_id)
@@ -567,7 +563,8 @@ async def locked_record(
     record = verification_from_row(await connection.fetchrow(_RECORD_LOCKED, vid))
     if record.status not in OPEN:
         return Refused("verification_closed")
-    if not await connection.fetchval(_STILL_REVIEWING, conversation, sub, now):
+    # A decline needs no content: a reviewer can clear a record whose conversation is gone.
+    if readable and not await connection.fetchval(_STILL_REVIEWING, conversation, sub, now):
         return Refused("verification_closed")  # shredded, past its date, or no wrap left
     return record
 
@@ -596,7 +593,7 @@ async def put_notes(
     notes: Sequence[NotePost],
 ) -> None:
     vid = uuid.UUID(record.verification_id)
-    await connection.execute(_DROP_NOTES, vid)
+    await connection.execute(_DROP_DRAFT, vid)
     await connection.execute(
         _PUT_NOTES,
         tenant_id,

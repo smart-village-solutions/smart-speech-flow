@@ -17,6 +17,7 @@ import asyncpg
 from .audit import AuditEvent
 from .recovery_requests_model import SYSTEM_ACTOR
 from .recovery_requests_sql import CURRENT_CUSTODIANS
+from .verification_writes import close_records
 
 # A ceremony still dealing or confirming holds sub-shares sealed to this key, or, for a
 # resharing's dealer, relies on the key that opens the dealer's share (§9.7).
@@ -189,17 +190,7 @@ async def _withdraw_assignments(
     if not rows:
         return []
     ids = [row["verification_id"] for row in rows]
-    # Drafts first: they may change only while their record is in review.
-    await connection.execute(
-        "DELETE FROM verification_notes WHERE verification_id = ANY($1::uuid[])", ids
-    )
-    await connection.execute(
-        "UPDATE verifications SET status = 'withdrawn', closed_at = $2,"
-        " close_reason = 'key_retired', overall_note = NULL"
-        " WHERE verification_id = ANY($1::uuid[])",
-        ids,
-        now,
-    )
+    await close_records(connection, ids, "withdrawn", "key_retired", now)
     return [
         AuditEvent(
             tenant_id, actor, "recording.verification.withdrawn.key_retired", f"{vid}:{sub}", now

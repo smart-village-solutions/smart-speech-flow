@@ -129,6 +129,20 @@ def verification_from_row(row: Mapping[str, Any]) -> VerificationRow:
     )
 
 
+def key_from_row(row: Mapping[str, Any]) -> KeyRow:
+    return KeyRow(
+        sub=row["user_sub"],
+        key_version=row["key_version"],
+        fingerprint=bytes(row["fingerprint"]),
+        enc_pub=bytes(row["enc_pub"]),
+        sig_pub=bytes(row["sig_pub"]),
+    )
+
+
+def note_from_row(row: Mapping[str, Any]) -> NotePost:
+    return NotePost(str(row["entry_id"]), str(row["key_id"]), bytes(row["ciphertext"]))
+
+
 def new_verification_id() -> str:
     return str(uuid.uuid4())
 

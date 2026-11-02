@@ -65,8 +65,8 @@ export function ReadyReview({ state, unlocked, onStarted, onDone }: Readonly<Rea
             {t(`admin.review.error.${failure}`)}
           </p>
         )}
-        {!started && (
-          <div className="flex gap-3">
+        <div className="flex gap-3">
+          {!started && (
             <Button
               variant="compact"
               className="bg-accent text-accent-on"
@@ -74,15 +74,15 @@ export function ReadyReview({ state, unlocked, onStarted, onDone }: Readonly<Rea
             >
               {t('admin.review.start')}
             </Button>
-            <button
-              type="button"
-              className="text-label font-medium text-fg-muted"
-              onClick={() => setDeclining(true)}
-            >
-              {t('admin.review.decline')}
-            </button>
-          </div>
-        )}
+          )}
+          <button
+            type="button"
+            className="text-label font-medium text-fg-muted"
+            onClick={() => setDeclining(true)}
+          >
+            {t('admin.review.decline')}
+          </button>
+        </div>
       </section>
       <ol className="flex flex-col">
         {view.entries.map((entry) => (

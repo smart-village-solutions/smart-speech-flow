@@ -103,3 +103,7 @@ production_compose exec prometheus sha256sum /etc/prometheus/alert_rules.yml
   (spec §19).
 - A revoked reviewer's open assignment returns to the employee as *Withdrawn*.
   The employee assigns someone else.
+- Assignments on a conversation that was shredded or is past its retention date
+  are skipped: they are neither revoked nor counted towards `bound`. Nobody can
+  open that conversation any more, and retention deletion removes them with
+  it. The reviewer can still decline such an assignment.

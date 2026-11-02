@@ -487,7 +487,7 @@ async def test_candidates_exclude_and_keys_are_read(archive, owner, verification
     await _key(owner, "gone", retired=True)
     await _verification(cid, reviewer="ralf")
 
-    excluded = await verifications.excluded(TENANT, cid, ["alice", "sam", "rita", "ralf"])
+    excluded = await verifications.excluded(TENANT, cid, ["alice", "sam", "rita", "ralf"], NOW)
     keys = await verifications.active_keys(TENANT, ["rita", "gone"])
 
     assert excluded == frozenset({"alice", "sam", "ralf"})
@@ -1114,9 +1114,9 @@ async def test_a_review_write_after_a_shred_answers_closed(archive, owner, verif
     await owner.execute(
         "UPDATE conversations SET shredded_at = $2 WHERE conversation_id = $1", uuid.UUID(cid), NOW
     )
-    assert await verifications.decline(TENANT, "rita", row.verification_id, NOW) == Refused(
-        "verification_closed"
-    )
+    assert await verifications.start(
+        TENANT, "rita", row.verification_id, 1, SNAPSHOT, NOW
+    ) == Refused("verification_closed")
 
 
 async def test_a_closed_record_reaches_no_object_even_with_its_wrap_left(
@@ -1151,3 +1151,33 @@ async def test_an_old_record_cannot_be_written_beside_a_newer_open_one(
     assert await verifications.save_draft(
         TENANT, "rita", row.verification_id, None, [], NOW
     ) == Refused("verification_closed")
+
+
+async def test_an_expired_request_no_longer_excludes_its_requester(archive, owner, verifications):
+    """Review finding 2: a lapsed request stays 'open' until the next retention pass."""
+    conversation, key_id, _ = await _ended(archive, owner)
+    cid = conversation.conversation_id
+    await _key(owner, "alice")
+    await _recovered(owner, conversation, key_id, requester="olga", status="open")
+    await owner.execute("DELETE FROM key_wraps WHERE recipient_ref = 'olga'")
+    assert await verifications.excluded(TENANT, cid, ["olga"], NOW) == {"olga"}
+    await owner.execute(
+        "UPDATE recovery_requests SET expires_at = $1 WHERE requester_sub = 'olga'",
+        NOW - timedelta(minutes=1),
+    )
+    assert await verifications.excluded(TENANT, cid, ["olga"], NOW) == frozenset()
+
+
+async def test_a_reviewer_can_decline_a_record_whose_conversation_is_gone(
+    archive, owner, verifications
+):
+    """Review finding 8: nothing else can be written, but the inbox can always be cleared."""
+    cid, key_id, row = await _assigned(archive, owner, verifications)
+    await owner.execute(
+        "UPDATE conversations SET shredded_at = $2 WHERE conversation_id = $1", uuid.UUID(cid), NOW
+    )
+    assert await verifications.save_draft(
+        TENANT, "rita", row.verification_id, None, [], NOW
+    ) == Refused("verification_closed")
+    assert await verifications.decline(TENANT, "rita", row.verification_id, NOW) is None
+    assert await owner.fetchval("SELECT status FROM verifications") == "declined"

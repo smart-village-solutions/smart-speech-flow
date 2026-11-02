@@ -40,7 +40,7 @@ async def test_grants_and_holders_are_read():
     repo, _ = repository(
         {
             "FROM user_keys WHERE retired_at IS NULL": [{"user_sub": "alice"}],
-            "SELECT verification_id, conversation_id, reviewer_sub": [
+            "SELECT v.verification_id, v.conversation_id, v.reviewer_sub": [
                 {
                     "verification_id": uuid.UUID(VERIFICATION),
                     "conversation_id": uuid.UUID(CONVERSATION),
@@ -57,7 +57,7 @@ async def test_grants_and_holders_are_read():
         }
     )
     assert await repo.key_holders(TENANT) == {"alice"}
-    grants = await repo.grants(TENANT)
+    grants = await repo.grants(TENANT, NOW)
     assert grants.assignments[0].reviewer_sub == "rita"
     assert grants.recovered == ((CONVERSATION, "sam"),) and grants.orphaned == (CONVERSATION,)
 
@@ -82,7 +82,9 @@ async def test_a_revoke_withdraws_drafts_first_deletes_and_audits():
     drafts = next(
         i for i, c in enumerate(connection.calls) if "DELETE FROM verification_notes" in c
     )
-    withdrawn = next(i for i, c in enumerate(connection.calls) if "'permission_revoked'" in c)
+    withdrawn = next(
+        i for i, c in enumerate(connection.calls) if "UPDATE verifications SET status" in c
+    )
     assert drafts < withdrawn
     assert audits(connection) == 3  # one withdrawal and two revoked wraps
 
@@ -90,7 +92,7 @@ async def test_a_revoke_withdraws_drafts_first_deletes_and_audits():
 async def test_a_revoke_without_records_only_sweeps_and_a_skip_is_audited():
     repo, connection = repository({})
     assert await repo.revoke(TENANT, CONVERSATION, [], [], "system", NOW) == 0
-    assert not any("'permission_revoked'" in call for call in connection.calls)
+    assert not any("UPDATE verifications SET status" in call for call in connection.calls)
     await repo.skipped(TENANT, "bound", date(2026, 11, 3), NOW, "system")
     assert audits(connection) == 1
 

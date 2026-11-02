@@ -34,23 +34,31 @@ export function useReviewDraft(state: Ready) {
     });
   }, [archiveCrypto, state]);
 
+  // Counts edits, so a save that finishes after more typing leaves those edits unsaved.
+  const revision = useRef(0);
   const save = useCallback(async () => {
+    const saving = revision.current;
     await reviews.saveDraft(state.review.record.verificationId, await seal());
-    setDirty(false);
+    if (revision.current === saving) setDirty(false);
   }, [reviews, seal, state]);
 
   // Set once the record is decided or declined: nothing is left to save into.
   const closed = useRef(false);
-  useEffect(() => {
-    const flush = () => {
+  useEffect(
+    () => () => {
+      // Leaving the screen inside the app: the app lives on, so this save completes.
       if (latest.current.dirty && !closed.current) save().catch(() => undefined);
+    },
+    [save]
+  );
+  // Closing the tab cannot wait for encryption and a request: ask the reviewer instead.
+  useEffect(() => {
+    const warn = (event: Event) => {
+      if (latest.current.dirty && !closed.current) event.preventDefault();
     };
-    globalThis.addEventListener('pagehide', flush);
-    return () => {
-      globalThis.removeEventListener('pagehide', flush);
-      flush();
-    };
-  }, [save]);
+    globalThis.addEventListener('beforeunload', warn);
+    return () => globalThis.removeEventListener('beforeunload', warn);
+  }, []);
 
   return {
     findings,
@@ -62,10 +70,12 @@ export function useReviewDraft(state: Ready) {
       closed.current = true;
     },
     setEntry: (entryId: string, next: EditableFinding[]) => {
+      revision.current += 1;
       setFindings((previous) => new Map(previous).set(entryId, next));
       setDirty(true);
     },
     setOverall: (text: string) => {
+      revision.current += 1;
       setOverall(text);
       setDirty(true);
     },

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { aesKey } from '@/core/crypto/aead';
 import { fromBuffer, randomBytes } from '@/core/crypto/bytes';
 import { fingerprint } from '@/core/crypto/transcript';
+import { noteAddress } from '@/core/crypto/verification';
 import { createWebArchiveCrypto } from '@/core/crypto/web-archive-crypto';
 import type { ArchiveRepository } from '@/domain/archive/archive.repository';
 import type { VerificationRecord } from '@/domain/archive/archive.types';
@@ -10,7 +11,7 @@ import type { ReviewRepository } from '@/domain/review/review.repository';
 import type { ReviewOpened } from '@/domain/review/review.types';
 import { finishOpening } from '@/features/archive/openConversation';
 import { verifyConversation } from '@/features/archive/verifyConversation';
-import { noteAddress, openReview } from '@/features/review/openReview';
+import { openReview } from '@/features/review/openReview';
 import { sealNotes } from '@/features/review/sealNotes';
 import { IDS, openedConversation } from '@/features/archive/__tests__/archiveFixture';
 
@@ -191,7 +192,12 @@ describe('openReview (spec §10.7)', { timeout: 30_000 }, () => {
     const [note] = sealed.notes;
     const plain = await archiveCrypto.openNote(
       await ck,
-      noteAddress(TENANT, r, IDS.conversation, 'note', IDS.message, IDS.key),
+      noteAddress(
+        { tenantId: TENANT, conversationId: IDS.conversation, verificationId: r.verificationId },
+        'note',
+        IDS.message,
+        IDS.key
+      ),
       note.ciphertext
     );
     expect(parseFindings(plain, VID, IDS.message)).toEqual([

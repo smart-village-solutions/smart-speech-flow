@@ -5,9 +5,9 @@ import { TAGS } from '@/core/crypto/tags';
 import { fingerprint } from '@/core/crypto/transcript';
 import { readTimestamp } from '@/core/crypto/tst-info';
 import {
-  type NoteAddress,
   type VerificationSignatureFields,
   decisionImprint,
+  noteAddress,
   notesDigest,
   verificationFields,
 } from '@/core/crypto/verification';
@@ -72,6 +72,7 @@ function fieldsOf(
   } satisfies VerificationSignatureFields;
 }
 
+// Binds the record to the key it names, not to a person: the server supplies both (spec D11).
 async function signed(ctx: Readonly<Context>, record: VerificationRecord, decided: DecidedFacts) {
   const key = decided.reviewerKey;
   check(key !== null && record.reviewedHead !== null);
@@ -83,20 +84,11 @@ async function signed(ctx: Readonly<Context>, record: VerificationRecord, decide
   return fields;
 }
 
-function address(
-  ctx: Readonly<Context>,
-  record: VerificationRecord,
-  part: NoteAddress['part'],
-  entryId: string,
-  keyId: string
-) {
+function scopeOf(ctx: Readonly<Context>, record: VerificationRecord) {
   return {
     tenantId: ctx.tenantId,
     conversationId: ctx.opened.conversation.conversationId,
     verificationId: record.verificationId,
-    part,
-    entryId,
-    keyId,
   };
 }
 
@@ -111,7 +103,7 @@ async function openNotes(
       view.missingKeys = true;
       continue;
     }
-    const at = address(ctx, view.record, 'note', note.entryId, note.keyId);
+    const at = noteAddress(scopeOf(ctx, view.record), 'note', note.entryId, note.keyId);
     const plain = await ctx.archiveCrypto.openNote(key, at, note.ciphertext);
     const findings = parseFindings(plain, view.record.verificationId, note.entryId);
     view.findings.set(
@@ -134,7 +126,7 @@ async function openOverall(
     view.missingKeys = true;
     return;
   }
-  const at = address(ctx, view.record, 'overall', head.entryId, head.keyId);
+  const at = noteAddress(scopeOf(ctx, view.record), 'overall', head.entryId, head.keyId);
   view.overall = parseOverall(
     await ctx.archiveCrypto.openNote(key, at, decided.overallNote),
     view.record.verificationId

@@ -8,6 +8,7 @@ import { TAGS } from '@/core/crypto/tags';
 import {
   decisionImprint,
   noteAad,
+  noteAddress,
   notesDigest,
   verificationFields,
 } from '@/core/crypto/verification';
@@ -111,5 +112,19 @@ describe('verification records (A.3a)', () => {
 
   it('stamps the signed digest and the signature together', async () => {
     same(await decisionImprint(b(vector.signed_digest), b(vector.signature)), b(vector.imprint));
+  });
+});
+
+describe('noteAddress', () => {
+  it('binds the scope, part, entry and key', () => {
+    const scope = { tenantId: 't', conversationId: 'c', verificationId: 'v' };
+    expect(noteAddress(scope, 'overall', 'e', 'k')).toEqual({
+      tenantId: 't',
+      conversationId: 'c',
+      verificationId: 'v',
+      part: 'overall',
+      entryId: 'e',
+      keyId: 'k',
+    });
   });
 });

@@ -66,8 +66,12 @@ def openable(sub: str, now: str, supervisor: str) -> str:
     )
 
 
-def excluded(sub: str) -> str:
-    """Who may not be assigned: whoever can read it already, or is trying to (§10.7)."""
+def excluded(sub: str, now: str) -> str:
+    """Who may not be assigned: whoever can read it already, or is trying to (§10.7).
+
+    A lapsed request stays 'open' until the retention worker's next pass closes it;
+    it is no attempt any more, so it excludes nobody.
+    """
     return (
         f"(c.employee_sub = {sub}"
         " OR EXISTS (SELECT 1 FROM key_wraps w JOIN conversation_keys k"
@@ -77,7 +81,7 @@ def excluded(sub: str) -> str:
         " OR EXISTS (SELECT 1 FROM recovery_request_keys rk JOIN recovery_requests r"
         "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
         f"  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = {sub}"
-        "  AND r.status IN ('open', 'completed')))"
+        f"  AND (r.status = 'completed' OR (r.status = 'open' AND r.expires_at > {now}))))"
     )
 
 

@@ -6,7 +6,9 @@ import { useInbox } from './useReviews';
 function RowContent({ row }: Readonly<{ row: InboxRow }>) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
-  const status = row.openable ? row.status : 'closed';
+  const open = row.status === 'awaiting' || row.status === 'in_review';
+  // An open record whose conversation is gone lapses; a finished one says how it ended.
+  const status = open && !row.openable ? 'closed' : row.status;
   return (
     <>
       <span className="flex flex-col">

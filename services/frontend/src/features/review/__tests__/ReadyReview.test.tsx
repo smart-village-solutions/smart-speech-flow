@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAdminIdentity } from '@/app/auth/keycloak';
@@ -273,5 +273,53 @@ describe('ReadyReview (spec §10.7)', { timeout: 30_000 }, () => {
     await userEvent.click(screen.getByLabelText(r.decision.approved));
     await userEvent.click(screen.getByRole('button', { name: r.decision.submit }));
     expect(await screen.findByRole('alert')).toHaveTextContent(r.error.NOT_A_REVIEWER);
+  });
+});
+
+describe('ReadyReview: review of #675', { timeout: 30_000 }, () => {
+  beforeEach(() =>
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: TENANT, userSub: 'rita' })
+  );
+
+  it('offers decline after the review has started, as the gateway allows', async () => {
+    const reviews = { decline: vi.fn().mockResolvedValue(undefined) };
+    const { onDone } = render(await state('in_review'), await unlockedKeys(), reviews);
+    expect(screen.queryByRole('button', { name: r.start })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: r.decline }));
+    await userEvent.click(screen.getByRole('button', { name: r.declineConfirm }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith('declined'));
+  });
+
+  it('keeps notes typed during a save unsaved', async () => {
+    let finish: () => void = () => undefined;
+    const reviews = {
+      saveDraft: vi
+        .fn()
+        .mockImplementation(() => new Promise<void>((resolve) => (finish = resolve))),
+    };
+    render(await state('in_review'), await unlockedKeys(), reviews);
+    await userEvent.click(screen.getAllByRole('button', { name: r.addFinding })[1]);
+    await userEvent.type(screen.getByLabelText(r.findingText), 'erste');
+    await userEvent.click(screen.getByRole('button', { name: r.save }));
+    await waitFor(() => expect(reviews.saveDraft).toHaveBeenCalled());
+    await userEvent.type(screen.getByLabelText(r.findingText), ' zweite');
+    await act(async () => {
+      finish();
+      await new Promise((resolve) => setTimeout(resolve, 50)); // let the save run to its end
+    });
+    expect(screen.getByText(r.unsaved)).toBeInTheDocument();
+  });
+
+  it('warns before the page is left with unsaved notes, and not otherwise', async () => {
+    render(await state('in_review'), await unlockedKeys(), {});
+    const leave = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      globalThis.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+    await userEvent.click(screen.getAllByRole('button', { name: r.addFinding })[1]);
+    await userEvent.type(screen.getByLabelText(r.findingText), 'x');
+    expect(leave()).toBe(true);
   });
 });

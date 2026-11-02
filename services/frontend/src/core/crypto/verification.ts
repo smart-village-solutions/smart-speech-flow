@@ -13,6 +13,19 @@ export interface NoteAddress {
   keyId: string;
 }
 
+type NoteScope = Pick<NoteAddress, 'tenantId' | 'conversationId' | 'verificationId'>;
+
+/** The one place a note's address is built; the writer and every reader must agree on it. */
+export function noteAddress(
+  scope: Readonly<NoteScope>,
+  part: NoteAddress['part'],
+  entryId: string,
+  keyId: string
+): NoteAddress {
+  const { tenantId, conversationId, verificationId } = scope;
+  return { tenantId, conversationId, verificationId, part, entryId, keyId };
+}
+
 export interface SealedNote {
   entryId: string;
   keyId: string;

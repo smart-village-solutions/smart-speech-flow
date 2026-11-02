@@ -20,6 +20,7 @@ from .repository import (
 )
 from .verification_repository import RELEASE
 from .verification_sql import LIVE_REASON, OPEN_STATUSES
+from .verification_writes import close_records
 
 T = TypeVar("T")
 
@@ -39,9 +40,14 @@ _OWED_SINCE = (
     " FROM revocation_runs"
 )
 _HOLDERS = "SELECT DISTINCT user_sub FROM user_keys WHERE retired_at IS NULL"
+# Assignments on a conversation that is shredded or past its date are left to lapse:
+# their rows go at expiry, and they count towards no bound (review of #675).
 _ASSIGNMENTS = (
-    "SELECT verification_id, conversation_id, reviewer_sub, directory_read_at FROM verifications"
-    f" WHERE status IN {OPEN_STATUSES} ORDER BY verification_id"
+    "SELECT v.verification_id, v.conversation_id, v.reviewer_sub, v.directory_read_at"
+    " FROM verifications v JOIN conversations c"
+    "  ON c.tenant_id = v.tenant_id AND c.conversation_id = v.conversation_id"
+    f" WHERE v.status IN {OPEN_STATUSES} AND c.shredded_at IS NULL"
+    " AND (c.retention_until > $1 OR c.legal_hold) ORDER BY v.verification_id"
 )
 _USER_WRAPS = (
     " FROM key_wraps w JOIN conversation_keys k ON k.tenant_id = w.tenant_id AND k.key_id = w.key_id"
@@ -61,12 +67,6 @@ _LOCK_CONVERSATION = "SELECT 1 FROM conversations WHERE conversation_id = $1 FOR
 _LOCK_RECORDS = (
     "SELECT verification_id, reviewer_sub FROM verifications WHERE verification_id = ANY($1::uuid[])"
     f" AND status IN {OPEN_STATUSES} ORDER BY verification_id FOR UPDATE"
-)
-_DROP_DRAFTS = "DELETE FROM verification_notes WHERE verification_id = ANY($1::uuid[])"
-_WITHDRAW = (
-    "UPDATE verifications SET status = 'withdrawn', closed_at = $2,"
-    " close_reason = 'permission_revoked', overall_note = NULL"
-    " WHERE verification_id = ANY($1::uuid[])"
 )
 _UNSUPERVISED = (
     "DELETE FROM key_wraps w USING conversation_keys k, conversations c"
@@ -144,9 +144,9 @@ class PostgresRevocations:
 
         return frozenset(row["user_sub"] for row in await self._run(tenant_id, work))
 
-    async def grants(self, tenant_id: str) -> Grants:
+    async def grants(self, tenant_id: str, now: datetime) -> Grants:
         async def work(connection: asyncpg.Connection) -> Grants:
-            assignments = await connection.fetch(_ASSIGNMENTS)
+            assignments = await connection.fetch(_ASSIGNMENTS, now)
             recovered = await connection.fetch(_RECOVERED)
             orphaned = await connection.fetch(_ORPHANED)
             return Grants(
@@ -191,9 +191,7 @@ class PostgresRevocations:
                 )
                 for row in records
             ]
-            if ids:
-                await connection.execute(_DROP_DRAFTS, ids)
-                await connection.execute(_WITHDRAW, ids, now)
+            await close_records(connection, ids, "withdrawn", "permission_revoked", now)
             deleted = [
                 (str(row["key_id"]), row["recipient_ref"])
                 for row in await connection.fetch(_UNSUPERVISED, conversation, list(unsupervised))

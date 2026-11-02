@@ -404,3 +404,34 @@ async def test_a_decision_waiting_on_a_shred_is_refused(archive, owner, verifica
         await holder.close()
     assert refused == Refused("verification_closed")
     assert await owner.fetchval("SELECT status FROM verifications") == "in_review"
+
+
+async def test_an_assignment_waiting_on_a_revocation_sees_the_wraps_it_removed(
+    archive, owner, verifications
+):
+    """Review finding 1: the opening rule is read after the lock, not from before the wait."""
+    from tests.integration.test_recording_archive_access_database import _recovered
+
+    conversation, key_id, _ = await _ended(archive, owner)
+    cid = conversation.conversation_id
+    await _recovered(owner, conversation, key_id, requester="sam")  # sam's key is version 1
+    await _key(owner, "rita")
+    holder = await asyncpg.connect(OWNER_DSN, password=OWNER_PASSWORD)
+    try:
+        transaction = holder.transaction()
+        await transaction.start()
+        # What the nightly check does to a supervisor who lost `supervise`.
+        await holder.execute(
+            "SELECT 1 FROM conversations WHERE conversation_id = $1 FOR SHARE", uuid.UUID(cid)
+        )
+        await holder.execute("DELETE FROM key_wraps WHERE recipient_ref = 'sam'")
+        queued = asyncio.create_task(
+            verifications.assign(_assignment(cid, [key_id], requester="sam"), NOW, supervisor=True)
+        )
+        await _waiting(owner, 1)
+        await transaction.commit()
+        refused = await queued
+    finally:
+        await holder.close()
+    assert refused == Refused("not_found")
+    assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref = 'rita'") == 0
