@@ -135,28 +135,28 @@ whose `auth_time` is at most 300 seconds old; both values are fixed in the
 gateway and the frontend. Each tenant realm must therefore map `mfa` to a
 level of authentication that demands OTP.
 
-Tenant realms are provisioned by Studio, so this configuration belongs in
-Studio's realm provisioning (#612). Until it is there, apply it by hand in the
-Keycloak admin console of each realm:
+Studio provisions this in every tenant realm: the levels `pwd` → `1` and
+`mfa` → `2`, login flows whose level 2 always asks for the OTP code, and the
+`acr` claim in `ssf-frontend` tokens. Its Keycloak provisioning run applies them
+together with the tenant's ordinary-login MFA setting, which is optional by
+default. Do not configure the realm by hand: Studio refuses to replace a browser
+flow it did not create (`LOGIN_MFA_BINDING_CONFLICT`), so the tenant's MFA
+setting would never take effect.
 
-1. **Realm settings → General → ACR to LoA Mapping:** add `pwd` → `1` and
-   `mfa` → `2`. Save.
-2. **Authentication → Flows → browser → Action → Duplicate**, named
-   `ssf step-up browser`.
-3. In its `forms` sub-flow, delete the existing `Username Password Form` step
-   and the `Browser - Conditional 2FA` sub-flow (named `Conditional OTP` before
-   Keycloak 26), then add:
-   - a sub-flow `1st condition`, requirement **Conditional**, containing
-     `Condition - Level of Authentication` (Required; level `1`, max age
-     `36000`) and `Username Password Form` (Required);
-   - a sub-flow `2nd condition`, requirement **Conditional**, containing
-     `Condition - Level of Authentication` (Required; level `2`, max age `0`)
-     and `OTP Form` (Required).
-4. **Action → Bind flow → Browser flow.**
-5. **Clients → ssf-frontend → Advanced → Default ACR Values:** `pwd`, so an
-   ordinary sign-in stays at level 1.
-6. Staff who will hold keys need OTP set up: **Users → (user) → Required user
-   actions → Configure OTP**, or they set it up at their next step-up.
+1. In Studio, open the tenant's instance. Under **Ordinary login MFA** (**MFA
+   bei normaler Anmeldung**) keep **optional**, or choose **required** to ask
+   for the code at every sign-in. Step-up asks for it either way.
+2. Wait until the instance's Keycloak status shows **Tenant login MFA
+   verified**. A pending or failed run means the realm is not ready yet; the
+   run's diagnostic names the cause.
+3. Staff who will hold keys need OTP set up: **Users → (user) → Required user
+   actions → Configure OTP** in Keycloak, or they set it up at their next
+   step-up.
+
+**A realm configured by hand** with the earlier version of this step: in its
+Keycloak admin console, **Authentication → Flows → browser → Action → Bind flow
+→ Browser flow**, then delete the `ssf step-up browser` flow, and save the MFA
+setting in Studio again to retry its run. Enrolled OTP codes stay.
 
 Verify with a staff account that holds an `ssf.recording.*` permission:
 

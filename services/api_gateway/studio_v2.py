@@ -263,7 +263,7 @@ class RecordingTexts(_StudioModel):
 
 
 class RecordingPolicy(_StudioModel):
-    """The tenant's `recording` block (spec §14), proposed for the Studio contract in #612."""
+    """The tenant's `recording` block (spec §14), as Studio sends it (contract #612)."""
 
     enabled: bool
     legal_basis: Literal["consent", "statutory"] = Field(alias="legalBasis")

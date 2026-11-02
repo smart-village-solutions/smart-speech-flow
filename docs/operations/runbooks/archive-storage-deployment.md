@@ -192,8 +192,9 @@ one (see "What protects the archive").
 ## Step 5 — Onboard a tenant
 
 Repeat for every tenant that will record. The retention is the tenant's
-`recording.retentionHours` (Studio, #612); until Studio supplies it, the value
-agreed with the tenant.
+`recording.retentionHours` as Studio resolves it: the tenant's own value, else
+the installation default, else 720 hours, at most 8760. Read it in Studio's
+recording settings for the tenant.
 
 1. **Writer credential**, on the gateway host. The command writes it to a file
    only you can read; nothing secret appears on screen. `merge_writer.py` adds
