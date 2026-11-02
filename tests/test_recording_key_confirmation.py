@@ -186,3 +186,14 @@ def test_a_bad_body_is_refused_without_echoing_it(client, body):
 def test_an_unwired_gateway_answers_503():
     response = TestClient(app).post(f"{BASE}/lookup", json={"token": LINK})
     assert (response.status_code, _code(response)) == (503, "RECORDING_UNAVAILABLE")
+
+
+def test_a_wired_gateway_answers_through_its_container():
+    container = app.state.dependencies
+    previous = container.recording_key_confirmations
+    container.recording_key_confirmations = _service(FakeStore())
+    try:
+        response = TestClient(app).post(f"{BASE}/lookup", json={"token": LINK})
+    finally:
+        container.recording_key_confirmations = previous
+    assert response.status_code == 200

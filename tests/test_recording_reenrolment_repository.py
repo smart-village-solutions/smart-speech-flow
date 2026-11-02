@@ -76,3 +76,11 @@ async def test_the_impact_without_a_recovery_key_counts_nothing():
 async def test_a_driver_failure_is_storage_unavailable():
     with pytest.raises(RecordingStorageUnavailable):
         await PostgresKeyReenrolment(ScriptedPool(None)).swap(RECORD, 1, NOW)
+
+
+async def test_a_swap_cancels_a_pending_key_of_the_retired_one():
+    store, connection = _store(
+        {ACTIVE: OLD, "DELETE FROM user_key_reenrolments WHERE user_sub = $1": 3}
+    )
+    assert await store.swap(RECORD, 1, NOW) is None
+    assert _events(connection) == 2  # key_reenrolment.cancelled, then key_reenrolled

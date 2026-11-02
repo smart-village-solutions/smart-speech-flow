@@ -307,3 +307,48 @@ async def test_an_unreadable_writers_file_leaves_the_archive_off(
     assert state.recording_archive is None
     assert state.recording_sessions is not None
     await wiring.close_recording(state)
+
+
+def _clear_mail(monkeypatch) -> None:
+    for name in ("SSF_SMTP_HOST", "SSF_SMTP_PORT", "SSF_SMTP_SECURITY", "SSF_SMTP_FROM"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("SSF_SMTP_USERNAME", raising=False)
+    monkeypatch.delenv("SSF_SMTP_PASSWORD_FILE", raising=False)
+
+
+@pytest.mark.parametrize(
+    ("environment", "reason"),
+    [
+        ({}, "SSF_SMTP_HOST is not set"),
+        ({"SSF_SMTP_HOST": "mail.example.org", "SSF_SMTP_PORT": "x"}, "SSF_SMTP_FROM is required"),
+    ],
+)
+def test_re_enrolment_mail_is_off_without_a_usable_relay(monkeypatch, capsys, environment, reason):
+    _clear_mail(monkeypatch)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CLIENT_BASE_URL", "https://dialog.example.org")
+
+    confirmation = wiring._confirmation(object())
+
+    assert confirmation.available is False
+    assert reason in capsys.readouterr().err
+
+
+def test_re_enrolment_mail_is_off_without_a_link_origin(monkeypatch, capsys):
+    _clear_mail(monkeypatch)
+    relay = {
+        "SSF_SMTP_HOST": "mail.example.org",
+        "SSF_SMTP_PORT": "587",
+        "SSF_SMTP_SECURITY": "starttls",
+        "SSF_SMTP_FROM": "noreply@example.org",
+    }
+    for name, value in relay.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("CLIENT_BASE_URL", raising=False)
+
+    assert wiring._confirmation(object()).available is False
+    assert "CLIENT_BASE_URL" in capsys.readouterr().err
+
+    monkeypatch.setenv("CLIENT_BASE_URL", "https://dialog.example.org")
+    assert wiring._confirmation(object()).available is True
