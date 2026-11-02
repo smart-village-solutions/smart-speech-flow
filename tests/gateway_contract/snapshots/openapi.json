@@ -1526,6 +1526,22 @@
         "title": "LegalInformationSection",
         "type": "object"
       },
+      "LinkBody": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "LinkBody",
+        "type": "object"
+      },
       "LocalizedRecordingStatus": {
         "properties": {
           "locale": {
@@ -3932,7 +3948,7 @@
     },
     "/api/admin/recording/keys/reenrolment": {
       "get": {
-        "description": "What re-enrolling would cost: a custodian learns how many usable shares remain.",
+        "description": "What re-enrolling would cost, and the key waiting for its mailed link, if any.",
         "operationId": "reenrolment_impact_api_admin_recording_keys_reenrolment_get",
         "responses": {
           "200": {
@@ -7463,6 +7479,128 @@
         "summary": "List Login Tenants",
         "tags": [
           "login"
+        ]
+      }
+    },
+    "/api/recording/key-confirmation/confirm": {
+      "post": {
+        "operationId": "confirm_link_api_recording_key_confirmation_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Confirm Link Api Recording Key Confirmation Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Link",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/recording/key-confirmation/decline": {
+      "post": {
+        "operationId": "decline_link_api_recording_key_confirmation_decline_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline Link",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/recording/key-confirmation/lookup": {
+      "post": {
+        "operationId": "lookup_link_api_recording_key_confirmation_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Lookup Link Api Recording Key Confirmation Lookup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lookup Link",
+        "tags": [
+          "recording"
         ]
       }
     },

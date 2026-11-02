@@ -63,9 +63,13 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
     ...options.services,
   };
 
-  // A fresh client per render stops query caches leaking between tests.
+  // A fresh client per render stops query caches leaking between tests. No refetch on
+  // focus, as QueryProvider has it, so a test cannot lean on one production never makes.
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false },
+      mutations: { retry: false },
+    },
   });
   const seed = options.publicContent ?? (options.services?.content ? 'fetched' : 'seeded');
   if (seed === 'seeded') {

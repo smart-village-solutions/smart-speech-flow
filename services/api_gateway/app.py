@@ -540,6 +540,7 @@ from .routes import (
     recording,
     recording_archive,
     recording_ceremony,
+    recording_key_confirmation,
     recording_leavers,
     recording_recovery,
     recording_resharing,
@@ -572,6 +573,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(recording_ceremony.router)
     app.include_router(recording_resharing.router)
     app.include_router(recording_leavers.router)
+    app.include_router(recording_key_confirmation.router)
     app.include_router(recording_session.router)
     app.include_router(recording_retention.router)
     app.include_router(recording_archive.router)

@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useServices } from '@/app/providers/services';
 import { Button } from '@/ui/primitives/Button';
+import { useReenrolmentImpact } from './useKeys';
 
 interface ReenrolWarningProps {
   onContinue: () => void;
@@ -11,11 +10,7 @@ interface ReenrolWarningProps {
 /** What a new key costs, before anything happens; a custodian sees the shares left (§9.6). */
 export function ReenrolWarning({ onContinue, onCancel }: Readonly<ReenrolWarningProps>) {
   const { t } = useTranslation();
-  const { recordingKeys } = useServices();
-  const impact = useQuery({
-    queryKey: ['recording', 'reenrolmentImpact'],
-    queryFn: () => recordingKeys.reenrolmentImpact(),
-  });
+  const impact = useReenrolmentImpact();
   const custodian = impact.data?.custodian === true;
 
   return (

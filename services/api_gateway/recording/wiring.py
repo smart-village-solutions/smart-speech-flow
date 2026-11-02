@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Final
 
+from ..client_origin import configured_client_origin
 from ..dependencies import GatewayDependencies
 from ..realtime_protocol import ConnectionState, Frame
 from ..session_models import ClientType, SessionStatus
@@ -28,12 +29,16 @@ from .archive_service import ChainStamper, ConversationArchive, stored_recorder
 from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
+from .key_confirmation import KeyConfirmations
+from .key_confirmation_repository import PostgresKeyConfirmations
 from .keys import KeyEnrolmentService
 from .leavers import Leavers
 from .leavers_repository import PostgresLeavers
+from .mail import Mailer, SmtpMailer, SmtpSettingsError, smtp_settings
 from .recovery_requests import RecoveryRequests
 from .recovery_requests_repository import PostgresRecoveryRequests
-from .reenrolment import ImmediateConfirmation, KeyReenrolment
+from .reenrolment import KeyReenrolment
+from .reenrolment_email import EmailConfirmation
 from .reenrolment_repository import PostgresKeyReenrolment
 from .resharing import ResharingService
 from .retention.decisions_repository import PostgresRetentionDecisions
@@ -72,6 +77,26 @@ def _custodian_directory(state: Any) -> StudioCustodianDirectory:
     except ValueError:
         return StudioCustodianDirectory(None)
     return StudioCustodianDirectory(client)
+
+
+def _mailer() -> Mailer | None:
+    """The relay for re-enrolment links; without one, re-enrolment answers 503 (§9.9)."""
+    try:
+        settings = smtp_settings(os.environ)
+    except SmtpSettingsError as error:
+        sys.stderr.write(f"Re-enrolment mail disabled: {error}\n")
+        return None
+    if settings is None:
+        sys.stderr.write("Re-enrolment mail disabled: SSF_SMTP_HOST is not set\n")
+        return None
+    return SmtpMailer(settings)
+
+
+def _confirmation(store: PostgresKeyConfirmations) -> EmailConfirmation:
+    origin = configured_client_origin()
+    if origin is None:
+        sys.stderr.write("Re-enrolment mail disabled: CLIENT_BASE_URL is not an HTTPS origin\n")
+    return EmailConfirmation(store=store, mailer=_mailer(), origin=origin)
 
 
 class WebSocketAnnouncer:
@@ -269,11 +294,13 @@ async def connect_recording(state: Any, dsn: str) -> bool:
     state.recording_keys = KeyEnrolmentService(
         repository=repository, server_layer=secrets.server_layer
     )
+    confirmations = PostgresKeyConfirmations(repository.pool)
     state.recording_reenrolment = KeyReenrolment(
         store=PostgresKeyReenrolment(repository.pool),
         server_layer=secrets.server_layer,
-        confirmation=ImmediateConfirmation(),
+        confirmation=_confirmation(confirmations),
     )
+    state.recording_key_confirmations = KeyConfirmations(store=confirmations)
     state.recording_ceremony = CeremonyService(
         repository=repository, directory=_custodian_directory(state), secrets=secrets
     )
@@ -321,6 +348,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_ceremony = None
     dependencies.recording_recovery_requests = None
     dependencies.recording_reenrolment = None
+    dependencies.recording_key_confirmations = None
     dependencies.recording_resharing = None
     dependencies.recording_leavers = None
     dependencies.recording_retention = None

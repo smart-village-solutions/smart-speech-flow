@@ -33,6 +33,11 @@ IN_CEREMONY = (
 CUSTODIAN_OF = f"SELECT r.key_id{CURRENT_CUSTODIANS} AND p.holder_ref = $1 AND p.fingerprint = $2"
 
 
+def reenrolment_ref(sub: str, version: int) -> str:
+    """A pending key's audit ref: with the sub, since an admin or the system may act (§9.9)."""
+    return f"user-key:{sub}:{version}"
+
+
 @dataclass(frozen=True)
 class Retired:
     events: list[AuditEvent]
@@ -63,6 +68,7 @@ async def retire_key(
     )
     custodian_of = await connection.fetchval(CUSTODIAN_OF, sub, bytes(old["fingerprint"]))
     await _retire(connection, sub, old["key_version"], custodian_of, now, left)
+    events += await _cancel_pending(connection, tenant_id, sub, actor, now)
     deleted = await _delete_user_wraps(connection, tenant_id, sub, actor, now)
     return Retired(events + deleted, custodian_of, len(deleted))
 
@@ -134,7 +140,7 @@ async def _retire(
     await connection.execute(
         "UPDATE user_keys SET retired_at = $3,"
         " left_at = CASE WHEN $5 THEN $3::timestamptz END,"
-        " encrypted_private = CASE WHEN $4 THEN encrypted_private END"
+        " encrypted_private = CASE WHEN $4 THEN encrypted_private END, email = NULL"
         " WHERE user_sub = $1 AND key_version = $2",
         sub,
         version,
@@ -142,6 +148,19 @@ async def _retire(
         custodian_of is not None,
         left,
     )
+
+
+async def _cancel_pending(
+    connection: asyncpg.Connection, tenant_id: str, sub: str, actor: str, now: datetime
+) -> list[AuditEvent]:
+    """A pending key replaces the retired one: its link must not activate it (§9.9)."""
+    version = await connection.fetchval(
+        "DELETE FROM user_key_reenrolments WHERE user_sub = $1 RETURNING key_version", sub
+    )
+    if version is None:
+        return []
+    ref = reenrolment_ref(sub, version)
+    return [AuditEvent(tenant_id, actor, "key_reenrolment.cancelled", ref, now)]
 
 
 async def _delete_user_wraps(

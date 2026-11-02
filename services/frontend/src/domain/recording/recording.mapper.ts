@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { fromBase64Url } from '@/core/crypto/bytes';
-import type { EnrolledKey, OwnKey, Reenrolled, ReenrolmentImpact } from './recording.types';
+import type {
+  EnrolledKey,
+  LinkDetails,
+  OwnKey,
+  Reenrolled,
+  ReenrolmentImpact,
+} from './recording.types';
 
 const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/).transform(fromBase64Url);
 const point = base64Url.refine((value) => value.length === 65, 'expected a 65-byte point');
@@ -41,7 +47,7 @@ export function toEnrolledKey(body: unknown): EnrolledKey {
 
 export function toReenrolled(body: unknown): Reenrolled {
   const parsed = enrolledKey
-    .extend({ status: z.enum(['active', 'pending_confirmation']) })
+    .extend({ status: z.literal('pending_confirmation') })
     .parse(body);
   return {
     status: parsed.status,
@@ -52,8 +58,31 @@ export function toReenrolled(body: unknown): Reenrolled {
 
 export function toReenrolmentImpact(body: unknown): ReenrolmentImpact {
   const count = z.number().int().min(0).nullable();
+  const pending = z.object({ ...fingerprint, expires_at: z.string() }).nullable();
   const parsed = z
-    .object({ custodian: z.boolean(), k: count, usable_after: count })
+    .object({ custodian: z.boolean(), k: count, usable_after: count, pending })
     .parse(body);
-  return { custodian: parsed.custodian, k: parsed.k, usableAfter: parsed.usable_after };
+  return {
+    custodian: parsed.custodian,
+    k: parsed.k,
+    usableAfter: parsed.usable_after,
+    pending:
+      parsed.pending === null
+        ? null
+        : {
+            fingerprintDisplay: parsed.pending.fingerprint_display,
+            expiresAt: parsed.pending.expires_at,
+          },
+  };
+}
+
+export function toLinkDetails(body: unknown): LinkDetails {
+  const parsed = z
+    .object({ ...fingerprint, requested_at: z.string(), expires_at: z.string() })
+    .parse(body);
+  return {
+    fingerprintDisplay: parsed.fingerprint_display,
+    requestedAt: parsed.requested_at,
+    expiresAt: parsed.expires_at,
+  };
 }

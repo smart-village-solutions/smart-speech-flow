@@ -146,6 +146,16 @@ export function isSessionGone(error: unknown): boolean {
   );
 }
 
+/** A screen's own name for the gateway's error code, or `fallback` for anything else. */
+export function fromServerCode<T extends string>(
+  error: unknown,
+  codes: Readonly<Record<string, T>>,
+  fallback: NoInfer<T>
+): T {
+  const code = error instanceof AppError ? error.serverCode : undefined;
+  return (code !== undefined && codes[code]) || fallback;
+}
+
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;

@@ -68,6 +68,7 @@ RECORDING = (
     "recording_retention",
     "recording_recovery_requests",
     "recording_reenrolment",
+    "recording_key_confirmations",
     "recording_resharing",
     "recording_leavers",
     "recording_sessions",
