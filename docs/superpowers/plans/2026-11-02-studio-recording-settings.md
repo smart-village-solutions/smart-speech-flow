@@ -39,6 +39,7 @@ Evidence checked on 2026-11-02:
 | [Studio PR #2012](https://github.com/smart-village-solutions/sva-studio/pull/2012), merged | Distribution build isolation fixed after legal-text work | Base implementation on a revision including both changes |
 | SSF `ac7ab1d6` | Recording policy parser, directory client and MFA step-up checks exist | Treat current consumers as the compatibility baseline |
 | Studio local legal-text worktree `234eeff76` | Plugin paths below exist; recording permission allowlist still contains configuration permissions only | Recheck current main and extend the projection rather than create a second IAM source |
+| Studio main `7e0d71a8718754859b7c4efdc8e319d41a7170f4`, checked through GitHub | Descriptor, merge, projection runtime, server factory and realm execution plan match the inspected source; repository validation-fixture bytes differ | Anchor structural decisions to main and implement on a clean checkout of its successor |
 
 The older `/root/projects/sva-studio` checkout does not contain the same plugin baseline and contains unrelated uncommitted architecture work. Do not modify that work. The path `/root/projects/sva-studio-legal-texts` is a source-inspection reference, not a required execution destination. Start implementation in a clean Studio worktree based on current main.
 
@@ -68,14 +69,25 @@ Paths in this table are relative to the **Studio** repository unless prefixed `S
 | `packages/plugin-ssf/src/admin.content-v2-recording-fields.tsx` (new), `admin.content-v2-runtime-fields.tsx`, `plugin.translations.ts` | Recording controls, inherited values and localized labels |
 | `packages/plugin-ssf/src/admin.content-v2-legal-fields.tsx`, `content-v2-contracts.ts` | Existing separate legal consent/release editor and validation |
 | `packages/plugin-ssf/src/authorization-projection.ts`, `keycloak-authorization-projection-contract.ts`, `keycloak-authorization-projection-target.ts` | Recording permission IDs, effective grants, language claim mapper |
+| `packages/plugin-ssf/src/descriptor.ts`, `constants.ts` | Register recording permissions, deliberately scoped role baseline and directory service endpoint |
 | `packages/iam-admin/src/user-detail-query.ts`, `user-detail-query.types.ts` | Extend existing authorized user attributes for reviewer language administration |
-| `packages/plugin-ssf/src/recording-directory.ts`, `server/recording-directory.ts` (new), `server.ts` | Live directory model, IAM read and service handler registration |
+| `packages/auth-runtime/src/iam-authorization/tenant-permission-projection.ts`, `permission-store.queries.ts`, `server.ts` | Extend the current authoritative IAM read with directory subjects and export the host-owned reader |
+| `packages/plugin-ssf/src/recording-directory.ts`, `server/recording-directory.ts` (new), `server/index.ts` | Directory model, capability contract and handler registration in the exported `./server` entry point |
+| `apps/sva-studio-react/src/lib/plugin-server-runtime.server.ts`, `ssf-authorization-projection-runtime.server.ts` | Compose host IAM reads into SSF server capabilities and include reviewer languages in the existing projection source |
 | `packages/instance-registry/src/keycloak-mfa-policy.ts` (new), `service-keycloak-reconcile-helpers.ts`, `service-keycloak-execution-plan.ts`, `service-keycloak-run-steps.ts` | Generic realm MFA desired state, reconciliation and verification |
 | `docs/api/ssf-runtime-configuration-v2.schema.json`, `ssf-runtime-configuration-v2.example.json`, `ssf-recording-directory-v2.schema.json` (new), `ssf-recording-directory-v2.example.json` (new) | Producer contract and synthetic examples |
 | `SSF: services/api_gateway/studio_v2.py`, `studio_recording_directory_client.py`, `recording/permissions.py` | Existing consumer compatibility references; change only for a demonstrated incompatibility |
 | `SSF: services/studio_mock/fixtures/runtime-tenant-kassel.json`, `runtime-tenant-marburg.json`, `runtime-tenant-fulda.json`, `recording-directory.json`, `services/studio_mock/contract_fixtures.py` | Updated defaults and deliberate compatibility/failure scenarios |
 
 No database migration is necessary merely to add optional fields to existing runtime JSON. If the MFA owner has no generic tenant authentication-policy storage, add it in Core/IAM's existing migration sequence after checking its current numbering; never put generic realm policy in the SSF content blob. Task 6 requires a reviewed storage/API design before that schema change.
+
+## Studio integration boundaries
+
+- Studio currently identifies the tenant boundary as `instanceId` in the plugin execution context and as `instance_id` in `ssf.tenant_settings`. Map that canonical value to SSF's `tenantId`; an installation default is the deployment's singleton `ssf.server_settings`, not another tenant or a new instance selector. Organisation-level records within a tenant do not create additional SSF tenants.
+- `mergeSsfContentV2` reserves `enabled` for content-node suppression and strips that property from merged objects. Do not pass the policy subtree through that generic merge. `effectiveSsfRuntimeFieldsV2` must extract `recording`, merge the remaining content as before, resolve recording through the dedicated policy function, then validate and revise the combined result. Tenant `recording.enabled` is never inherited from the installation template.
+- Register a directory handler in both `descriptor.ts` and `server/index.ts`. `src/server.ts` currently provides lifecycle job handlers; the package's `./server` export resolves to `dist/server/index.js`. Adding an ordinary request handler only to the lifecycle file does not expose the endpoint.
+- The SSF plugin must not import IAM repositories or connect to IAM tables. Supply its source through the existing host server-factory capability pattern, already used for `waste-management`. Extend that existing composition point for SSF rather than building another plugin loader or a general capability framework.
+- `readTenantPermissionProjectionSubjects` currently supplies only Keycloak subject, role names and permission IDs. Display names and reviewer languages need an explicit authoritative read; they cannot be reconstructed from the projection cache, an arbitrary staff token or an assumed field on the current return type.
 
 ## Task 1: Freeze the producer contract
 
@@ -138,7 +150,10 @@ export const resolveRecordingRetentionHours = (
 };
 ```
 
-- [ ] Extend optional recording schemas and the existing template/override merge. Reject incomplete enabled policies. Resolve the effective block before canonical revision generation. An installation default change affects inheriting tenants' revisions; overridden tenants keep their effective duration. Keep tenant enablement false unless explicitly selected in tenant configuration.
+- [ ] Add proposed `resolveSsfRecordingPolicy(installation: unknown, tenant: unknown): RecordingPolicy | undefined` in `content-v2-recording.ts`; `RecordingPolicy` is the inferred type of its new complete output schema. Validate sparse administrative inputs separately from complete enabled output. If both inputs are absent return `undefined`; if configured but no tenant enablement is true, resolve a disabled policy or omit an incomplete disabled draft. Reject publishing an incomplete enabled policy. Resolve retention with the function above; resolve other configurable policy fields from explicit tenant value then installation value. Set `enabled` solely from the tenant's explicit boolean, default false.
+- [ ] In `effectiveSsfRuntimeFieldsV2`, validate/extract each input's `recording` subtree before calling the existing content merge, omit that subtree from both content inputs, and attach the separately resolved policy afterward. Preserve current content-array suppression behavior. Missing, null and false must not be collapsed by truthiness: deleting/resetting the tenant retention override inherits, `enabled: false` disables, and a null whole tenant policy is rejected in favor of explicit reset or disable operations.
+- [ ] Add regression cases: tenant `enabled: true` survives serialization; false survives and disables; template `enabled: true` with no explicit tenant enable remains off; absent template recording plus a complete tenant policy is accepted; content entries with `enabled: false` are still suppressed. Test the actual editor diff/reset round trip through `diffSsfContentV2`, persistence and runtime serialization, not just the retention helper.
+- [ ] Resolve the effective block before canonical revision generation. An installation default change affects inheriting tenants' revisions; overridden tenants keep their effective duration. Add no default enablement through normalization or migration.
 - [ ] Add repository integration cases: two tenants with different overrides, override removal, invalid write rollback, no cross-tenant writes, preservation of existing explicit recording values. Do not read legacy storage retention into the new block.
 - [ ] Test audit retention conflicts on both tenant writes and installation-default changes. Reject a change that would publish an invalid inheriting policy; report affected tenants so the administrator can adjust audit retention first.
 - [ ] Rerun the focused test and `pnpm nx run plugin-ssf:test:integration`; run the plugin type target. Commit as `feat(ssf): resolve recording retention defaults and overrides` only after the affected checks pass.
@@ -158,38 +173,79 @@ export const resolveRecordingRetentionHours = (
 
 ## Task 4: Deliver permissions and reviewer languages
 
-**Owner:** Studio IAM + plugin teams. **Depends on:** Task 1. **Files:** existing authorization-projection and Keycloak target files, authorized user attributes and existing tenant user editor; tests in `packages/plugin-ssf/tests/authorization-projection.test.ts`, `keycloak-authorization-projection-target.test.ts` and the IAM user tests.
+**Owner:** Studio IAM + plugin teams. **Depends on:** Task 1. **Files:** `packages/plugin-ssf/src/descriptor.ts`, existing authorization-projection and Keycloak target files, `apps/sva-studio-react/src/lib/ssf-authorization-projection-runtime.server.ts`, authorized user attributes and existing tenant user editor; tests in `packages/plugin-ssf/tests/authorization-projection.test.ts`, `plugin.test.ts`, `keycloak-authorization-projection-target.test.ts` and the IAM user tests.
 
 **Consumes:** effective IAM roles/groups/permissions and tenant-scoped user attributes. **Produces:** `ssf_permissions` and `ssf_languages` claims for the intended SSF staff client, plus a shared authoritative input for Task 5.
 
 - [ ] Write failing projection tests for these exact IDs: `ssf.recording.request`, `ssf.recording.review`, `ssf.recording.review.sworn`, `ssf.recording.supervise`, `ssf.recording.recovery.custodian`.
-- [ ] Extend the existing permission allowlist and IAM baseline; do not infer recording grants from tenant-admin or root status. Verify inherited group grants and revocation of the last effective grant.
+- [ ] Register the five permission definitions in `descriptor.ts` and the module's `moduleIam.permissionIds`, then extend the projection allowlist. The descriptor currently derives the `system_admin` role's grants from all plugin permissions; replace that derivation with the explicit existing configuration-management grants before appending recording permissions. Assert that reconciliation does not grant request/review/sworn/supervision/custodian permissions to existing or new tenant admins automatically. Verify explicit role/group grants and revocation of the last effective grant.
 - [ ] Add reviewer language editing through the tenant's existing authorized user management. Validate at most 40 supported language tags using the consumer-compatible form. Store and project the normalized list as `ssf_languages`; use the sworn-review permission for sworn status, with no parallel boolean authority.
 - [ ] Extend the existing Keycloak mapper and reconciler, preserving client/audience scoping. Test changes for one realm cannot modify another and that newly issued tokens reflect the current permissions and language list.
+- [ ] Extend the source DTO, normalized projection comparison and Keycloak read-back to carry `languages`; currently the host mapping drops every field except subject, roles and permissions. Test that a language-only edit triggers reconciliation and appears in a newly issued `ssf_languages` claim. Keep the contract revision semantics distinct from a per-user data change.
 - [ ] Document existing token-lifetime behavior: a live directory revocation does not itself revoke already-issued access tokens. Do not claim instant actor-token revocation without separate implemented evidence.
 - [ ] Run focused plugin/IAM tests, affected type and server-runtime checks; commit as `feat(iam): project recording grants and reviewer languages`.
 
 ## Task 5: Supply the live recording directory
 
-**Owner:** Studio plugin + IAM teams. **Depends on:** Task 4. **Files:** new directory model and server handler, existing server registration; new `packages/plugin-ssf/tests/recording-directory.test.ts`, `tests/recording-directory-server.test.ts`; update API schema/examples.
+**Owner:** Studio plugin + IAM teams. **Depends on:** Task 4. **Files:** new directory model and server handler; `packages/plugin-ssf/src/constants.ts`, `descriptor.ts`, `server/index.ts`; host/auth-runtime paths from the map; new `packages/plugin-ssf/tests/recording-directory.test.ts`, `tests/recording-directory-server.test.ts`; existing host `plugin-server-runtime.server.test.ts`; update API schema/examples.
 
 **Consumes:** current tenant-bound effective IAM grants and reviewer languages. **Produces:** `GET /internal/plugins/ssf/v2/recording-directory` with the Task 1 envelope; no caller-provided tenant identity bypasses host authorization.
 
+**Proposed source interface:** add a generic host-owned `readTenantPermissionDirectorySubjects` export next to the current projection reader. Its inputs and returned fields are explicit; its implementation owns IAM profile access/decryption and uses the same effective-grant semantics as authorization.
+
+```ts
+type PermissionDirectorySubject = Readonly<{
+  keycloakSubject: string;
+  displayName: string;
+  permissionIds: readonly string[];
+  languages: readonly string[];
+}>;
+type ReadPermissionDirectorySubjects = (input: Readonly<{
+  instanceId: string;
+  permissionIds: readonly string[];
+}>) => Promise<readonly PermissionDirectorySubject[]>;
+type SsfPluginServerCapabilities = Readonly<{
+  readPermissionDirectorySubjects: ReadPermissionDirectorySubjects;
+}>;
+```
+
+The plugin owns the structural capability type, not an import of the Core/IAM implementation. Extend `createPluginServerHandlers` in `server/index.ts` to accept optional `SsfPluginServerCapabilities` without breaking the existing no-argument contract; missing capabilities bind an unavailable directory handler. At the host's existing capability-composition branch in `plugin-server-runtime.server.ts`, supply this reader for SSF, analogous to its current waste-management composition. Keep workspace and installed-package entry points equivalent; pass the reader on the server only.
+
 - [ ] Test an authenticated service read with tenant A's reviewer and custodians, and a separate tenant B user that must never appear.
 - [ ] Test no token, wrong audience/permission, mismatched tenant context, suspended tenant, inactive plugin and unavailable IAM authority with the documented error envelopes.
-- [ ] Implement the service handler through the existing host plugin boundary. Enumerate all effective holders of any of the five grants, including inherited group/role grants; do not silently truncate a paginated IAM result. Return only active eligible users and only recording permissions.
+- [ ] Extend the authoritative IAM query in a tenant-scoped transaction to return active subjects, their effective grants, display names and managed competence languages. Reuse existing permission calculation and profile decoding; do not interpret a user's UI language as competence. Test time-bounded assignments, group grants and inactive accounts. Expose the generic reader through auth-runtime's server entry point and inject it as described above; no plugin query may read `iam.*` tables.
+- [ ] Add constants for path `/internal/plugins/ssf/v2/recording-directory` and proposed handler ID `ssf.recording-directory-v2`. Declare it in `descriptor.ts` as GET with action `ssf.runtime-configuration.read`, service `ssf-runtime` and the existing tenant-header binding. Bind the exact same ID in `server/index.ts` and check the generated registry. No new browser route, navigation item or service-token permission is needed for this read.
+- [ ] In the handler, require `context.scope === 'service'` and use only `context.tenant.instanceId` for the IAM call. Supply the five known permission IDs from the plugin constants and map host `keycloakSubject` to response `sub`; map the canonical context value to `tenantId`. Enumerate all matching users; do not silently truncate a paginated result. Return only active eligible users and only recording permissions, using the existing SSF error envelope.
 - [ ] Build deterministic `directoryRevision` from the normalized directory content. Test that a change in permissions, languages or membership changes the revision and that a repeated unchanged read is stable.
 - [ ] Test grant removal followed immediately by another read, without restart or token refresh. Resolve grants live; do not cache a successful directory or turn an authority failure into an empty list.
+- [ ] Add host-loader tests for capability injection, missing-source unavailability, workspace/installed server entry parity and tenant binding. Assert that `server.ts` lifecycle job handlers still load and a directory request does not run a reconcile job.
 - [ ] Pass the JSON response to SSF's `RecordingDirectory.model_validate`; run Studio handler tests and SSF `tests/test_studio_recording_directory_client.py`. Commit as `feat(ssf): serve the live tenant recording directory`.
 
 ## Task 6: Configure optional and required MFA in Keycloak
 
 **Owner:** Studio Core/IAM team. **Depends on:** Task 1; independent of recording-policy storage. **Files:** generic realm MFA module, provisioning/reconciliation files from the map, existing tenant security UI/API; new `packages/instance-registry/src/keycloak-mfa-policy.test.ts`; existing realm execution tests and guide `docs/guides/keycloak-tenant-realm-bootstrap.md`.
 
-**Interface:** tenant ordinary-login policy `optional | required`, desired/applied status and an idempotent reconciliation result. This is a Core/IAM interface, not a new SSF runtime field. Reuse an existing tenant security setting if available; otherwise approve its exact storage and API extension before implementation.
+**Interface:** tenant ordinary-login policy `optional | required`, desired/applied status and an idempotent reconciliation result. This is a proposed Core/IAM extension, not an already available Studio setting or a new SSF runtime field. Inspection of the current realm execution plan found no implemented optional/required MFA setting. Use the tenant realm identified by the existing instance registry; do not treat tenant-local organisation records as separate realms.
+
+**Required Core/IAM contract:** extend the existing tenant/instance management DTO and its authorized mutation path with this proposed representation, storing desired state in Core/IAM and reporting actual verified state separately:
+
+```ts
+type LoginMfaMode = 'optional' | 'required';
+type LoginMfaPolicyState = Readonly<{
+  desiredMode: LoginMfaMode;
+  appliedMode: LoginMfaMode | null;
+  status: 'pending' | 'applied' | 'failed';
+}>;
+```
+
+Absent desired configuration resolves to optional; absent verification is `appliedMode: null`, never proof of an applied setting. A successful write persists desired state and schedules the existing realm provisioning/reconciliation job, returning pending state. Only a verified read-back sets `appliedMode` and `status: applied`; a failed run keeps the last verified applied mode and reports failed. Use existing run IDs and diagnostic errors rather than duplicating another job state machine.
+
+The implementation must extend the existing tenant-authorized management path to let the organisation's tenant administrator select its policy; root provisioning authority must not implicitly confer tenant-local administration. Define the generic IAM authorization requirement in the owning proposal and test both scopes server-side. Reuse the existing settings page/API and audit mechanism, adding no SSF-specific Core permission or separate security service.
 
 - [ ] Add failing cases for default optional, organisation-required MFA, tenant-scoped writes, repeated reconciliation and Keycloak failure. Require a failed reconciliation to preserve a visible pending/error state rather than falsely claim that mandatory MFA is applied.
+- [ ] Confirm the existing Core/IAM persistence owner and add the desired policy field there, with a migration only if required. Update `docs/development/studio-db-schema-final.sql` and `studio-db-schema.md` for any schema change. Extend authorized read/write DTOs, validation, audit event data, existing tenant management UI and DE/EN translation resources together. Never store this state in plugin runtime content or use raw Keycloak access from the UI.
 - [ ] Review the existing realm and client flow bindings before changing them. Build the desired Keycloak configuration using OTP for this first slice; no new factor engine or external authenticator is needed.
+- [ ] Extend the existing realm execution plan, reconciler and run steps with MFA application and read-back. Compare owned flow bindings, required actions and ACR mapping; preserve unrelated realm configuration and make retries idempotent. Test a pre-existing custom flow: update only declared managed bindings or return a visible conflict, rather than overwrite administrator-managed authentication.
 - [ ] Provision voluntary OTP enrollment and conditional ordinary-login challenges for optional mode. In required mode enforce enrollment and a factor challenge for both existing and new staff. Returning to optional does not delete enrolled factors.
 - [ ] Preserve the SSF step-up mapping `pwd -> 1`, `mfa -> 2`, accurate `acr` and `auth_time`. A requested fresh step-up must actually challenge the user; merely reusing an old SSO cookie must not produce fresh MFA evidence.
 - [ ] Run the following real-realm acceptance matrix for both Studio and SSF clients, including existing SSO sessions:
@@ -249,7 +305,7 @@ Use Studio's measured affected-scope rules before broader runs and its PR/releas
 - [ ] Perform two-tenant acceptance: A inherits 720 hours; B overrides to 240; change installation default to 1440; A follows and B stays 240; resetting B makes it inherit. Invalid writes leave the prior policy intact. Policy/text-only updates never enable recording automatically.
 - [ ] Test missing, disabled, invalid and unavailable recording policies: recording remains unavailable while ordinary conversations follow their existing availability rules. Verify live permission revocation, reviewer language/sworn display, text-change rejection and the Task 6 login matrix.
 - [ ] Verify archive storage, signing/blob secrets, enrolled personal keys, active tenant recovery key, compatible threshold, working timestamp service, retention worker and backups before any tenant enablement. Reuse the existing key, recording cutover and retention deployment runbooks.
-- [ ] Update Studio API documentation and affected arc42 sections, note the desired/applied MFA status and rollback procedure, and cross-link SSF #612 without marking it complete based solely on documentation.
+- [ ] Update Studio API documentation and arc42 sections 04, 05, 06 and 08; document the IAM change in an ADR referenced from section 09. Include the host capability, tenant/installation identifier mapping, desired/applied MFA status and rollback procedure. Cross-link SSF #612 without marking it complete based solely on documentation.
 - [ ] Review and commit independently testable changes. Use Studio's canonical `Build -> Dev -> Staging -> Production` process with the same image digest and existing SSF deployment procedures. Do not introduce direct production realm edits as a competing rollout path.
 - [ ] Enable one prepared tenant explicitly and record smoke-test evidence. Rollback means disabling new recording or reverting the reviewed producer candidate while preserving archives, keys and existing expiry dates. Release approval follows the owning repositories' existing process.
 
