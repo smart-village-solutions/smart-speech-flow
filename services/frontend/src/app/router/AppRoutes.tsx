@@ -37,6 +37,7 @@ import {
   subscribeToKeycloakExpiration,
   subscribeToKeycloakAuthorization,
 } from '@/app/auth/keycloak';
+import { KeyConfirmationScreen } from '@/features/keys/KeyConfirmationScreen';
 import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
 import { contentKeys } from '@/features/content/contentQuery';
 
@@ -246,6 +247,7 @@ export function AppRoutes() {
         <Route path="live" element={<ConversationScreen />} />
       </Route>
 
+      <Route path="/key-confirmation" element={<KeyConfirmationScreen />} />
       <Route path="/login" element={<TenantLoginScreen />} />
       <Route path="/login/:tenantId" element={<TenantLoginEntry />} />
       <Route path="*" element={<NotFoundPage />} />

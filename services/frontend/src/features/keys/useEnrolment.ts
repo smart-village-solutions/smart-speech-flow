@@ -6,7 +6,7 @@ import { AppError } from '@/core/http/AppError';
 import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import { OWN_KEY_QUERY } from './useKeys';
 
-export type EnrolmentError = 'mismatch' | 'weak' | 'stepUp' | 'failed';
+export type EnrolmentError = 'mismatch' | 'weak' | 'stepUp' | 'email' | 'failed';
 
 /** Spec §8.3: at least 12 characters and the top zxcvbn score. */
 const MIN_LENGTH = 12;
@@ -24,8 +24,14 @@ async function problemWith(
   return score >= REQUIRED_SCORE ? null : 'weak';
 }
 
+const ENROLMENT_CODES: Record<string, EnrolmentError> = {
+  [STEP_UP_REQUIRED]: 'stepUp',
+  EMAIL_NOT_VERIFIED: 'email',
+};
+
 function enrolmentError(caught: unknown): EnrolmentError {
-  return caught instanceof AppError && caught.serverCode === STEP_UP_REQUIRED ? 'stepUp' : 'failed';
+  const code = caught instanceof AppError ? caught.serverCode : undefined;
+  return (code !== undefined && ENROLMENT_CODES[code]) || 'failed';
 }
 
 /** The passphrase checks, the pending state and the error every new key shares (§8.3, §9.6). */

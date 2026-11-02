@@ -271,7 +271,27 @@
         "done": "Ihr neuer Schlüssel ist aktiv.",
         "changed": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
         "ceremony": "Während einer laufenden Schlüsselzeremonie, an der Sie teilnehmen, nicht möglich.",
-        "failed": "Der neue Schlüssel konnte nicht eingerichtet werden."
+        "failed": "Der neue Schlüssel konnte nicht eingerichtet werden.",
+        "pendingUntil": "Öffnen Sie den Link aus unserer E-Mail bis {{time}} Uhr. Erst dann wird dieser Schlüssel aktiv:",
+        "mailUnavailable": "Die Bestätigungs-E-Mail kann gerade nicht verschickt werden. Bitte versuchen Sie es später erneut.",
+        "emailNotVerified": "Für Ihren Schlüssel ist keine E-Mail-Adresse hinterlegt, an die wir den Bestätigungslink schicken könnten. Bitte wenden Sie sich an Ihre Administration."
+      },
+      "emailNotVerified": "Ihr Konto hat keine bestätigte E-Mail-Adresse. Bitte bestätigen Sie sie in Ihren Kontoeinstellungen; an diese Adresse schicken wir den Link, falls Sie später einen neuen Schlüssel brauchen.",
+      "confirmation": {
+        "title": "Neuen Schlüssel bestätigen",
+        "body": "Am {{date}} um {{time}} Uhr wurde für Ihr Konto ein neuer Archivschlüssel eingerichtet. Er wird erst aktiv, wenn Sie ihn hier bestätigen.",
+        "hint": "Vergleichen Sie den Fingerabdruck mit dem, den Ihre Schlüsselseite nach dem Einrichten angezeigt hat.",
+        "confirm": "Schlüssel bestätigen",
+        "decline": "Das war ich nicht",
+        "confirmed": "Ihr neuer Schlüssel ist aktiv.",
+        "confirmedNext": "Entsperren Sie ihn auf der Seite „Archivschlüssel“ mit Ihrer neuen Passphrase.",
+        "declined": "Der neue Schlüssel wurde verworfen; Ihr bisheriger Schlüssel gilt weiter. Bitte informieren Sie Ihre Administration, denn jemand anderes hat ihn angefordert.",
+        "invalid": "Dieser Link ist ungültig oder wurde schon verwendet. Haben Sie ihn bereits bestätigt, ist Ihr neuer Schlüssel aktiv.",
+        "expired": "Dieser Link ist abgelaufen. Richten Sie den neuen Schlüssel bitte erneut ein.",
+        "ceremony": "Während einer laufenden Schlüsselzeremonie, an der Sie teilnehmen, nicht möglich. Versuchen Sie es nach der Zeremonie erneut, solange der Link gilt.",
+        "failed": "Das hat nicht geklappt. Bitte versuchen Sie es erneut.",
+        "missing": "Diese Seite braucht den Link aus Ihrer E-Mail. Bitte öffnen Sie ihn dort erneut.",
+        "retry": "Erneut versuchen"
       }
     },
     "ceremony": {

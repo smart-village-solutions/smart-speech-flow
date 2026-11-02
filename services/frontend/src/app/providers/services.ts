@@ -37,6 +37,8 @@ import { createWebRecoveryCrypto } from '@/core/crypto/web-recovery-crypto';
 import { createZxcvbnStrength } from '@/core/crypto/zxcvbn-strength';
 import { createResumeMemory } from '@/core/storage/resume-memory';
 import type { ResumeMemory } from '@/core/storage/resume-memory.port';
+import { createKeyConfirmationRepository } from '@/domain/recording/keyConfirmation.repository';
+import type { KeyConfirmationRepository } from '@/domain/recording/keyConfirmation.repository';
 import { createRecordingKeysRepository } from '@/domain/recording/recording.repository';
 import type { RecordingKeysRepository } from '@/domain/recording/recording.repository';
 import { createRecordingSessionRepository } from '@/domain/recording/recordingSession.repository';
@@ -61,6 +63,7 @@ export interface Services {
   clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
   recordingKeys: RecordingKeysRepository;
+  keyConfirmation: KeyConfirmationRepository;
   recordingSession: RecordingSessionRepository;
   archive: ArchiveRepository;
   archiveCrypto: ArchiveCrypto;
@@ -100,6 +103,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     audio,
     clips: createBrowserClipLoader(http, audio),
     recordingKeys: createRecordingKeysRepository(http),
+    keyConfirmation: createKeyConfirmationRepository(http),
     recordingSession: createRecordingSessionRepository(http),
     archive: createArchiveRepository(http),
     archiveCrypto: createWebArchiveCrypto(),

@@ -6,7 +6,7 @@ import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { AppError } from '@/core/http/AppError';
 import type { RecordingKeysRepository } from '@/domain/recording/recording.repository';
-import type { OwnKey, Reenrolled } from '@/domain/recording/recording.types';
+import type { OwnKey, PendingReenrolment, Reenrolled } from '@/domain/recording/recording.types';
 import { KeysScreen } from '@/features/keys/KeysScreen';
 import de from '@/i18n/locales/de.json';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -26,7 +26,8 @@ const ownKey: OwnKey = {
   encPub: new Uint8Array(65),
   sigPub: new Uint8Array(65),
   blob: '{"v":1}',
-  fingerprint: new Uint8Array(32),
+  // The unlocked key's, so the vault stays open until the served key changes.
+  fingerprint: new Uint8Array(32).fill(1),
   fingerprintDisplay: 'abab abab abab abab abab abab abab abab abab abab',
   createdAt: '2026-10-26T09:00:00+00:00',
   keyVersion: 4,
@@ -41,9 +42,18 @@ interface Options {
   reenrol?: RecordingKeysRepository['reenrol'];
   custodian?: boolean;
   impactFails?: boolean;
+  pending?: PendingReenrolment | null;
+  /** What /keys/me serves once a re-enrolment invalidated it. */
+  after?: OwnKey;
 }
 
-function render({ reenrol, custodian = false, impactFails = false }: Options = {}) {
+function render({
+  reenrol,
+  custodian = false,
+  impactFails = false,
+  pending = null,
+  after,
+}: Options = {}) {
   const keyVault = createKeyVault();
   keyVault.hold(old);
   const order: string[] = [];
@@ -53,12 +63,15 @@ function render({ reenrol, custodian = false, impactFails = false }: Options = {
     lock();
   };
   const recordingKeys = {
-    ownKey: vi.fn().mockResolvedValue(ownKey),
+    ownKey: vi
+      .fn()
+      .mockResolvedValueOnce(ownKey)
+      .mockResolvedValue(after ?? ownKey),
     enrol: vi.fn(),
     reenrol: reenrol ?? vi.fn().mockResolvedValue(active),
     reenrolmentImpact: impactFails
       ? vi.fn().mockRejectedValue(new Error('down'))
-      : vi.fn().mockResolvedValue({ custodian, k: 2, usableAfter: custodian ? 2 : null }),
+      : vi.fn().mockResolvedValue({ custodian, k: 2, usableAfter: custodian ? 2 : null, pending }),
   };
   const archiveCrypto = {
     createKeys: vi.fn(async () => {
@@ -124,7 +137,8 @@ describe('re-enrolment', () => {
   });
 
   it('holds the new key once accepted, replaces the version shown, and offers key recovery', async () => {
-    const { recordingKeys, keyVault, order, onOpenKeyRecovery } = render();
+    const after = { ...ownKey, fingerprint: fresh.fingerprint, keyVersion: 5 };
+    const { recordingKeys, keyVault, order, onOpenKeyRecovery } = render({ after });
     await throughTheWarning();
     await submitNewPassphrase();
 
@@ -148,6 +162,8 @@ describe('re-enrolment', () => {
   it.each([
     ['KEY_CHANGED', r.changed],
     ['CEREMONY_IN_PROGRESS', r.ceremony],
+    ['EMAIL_NOT_VERIFIED', r.emailNotVerified],
+    ['MAIL_UNAVAILABLE', r.mailUnavailable],
   ])('names the refusal %s', async (code, message) => {
     const refused = new AppError('validation', { status: 409, serverCode: code });
     const { keyVault } = render({ reenrol: vi.fn().mockRejectedValue(refused) });
@@ -166,12 +182,54 @@ describe('re-enrolment', () => {
   });
 
   it('keeps the new key on screen when the step-up ages afterwards', async () => {
-    const { keyVault } = render();
+    const { keyVault } = render({ after: { ...ownKey, fingerprint: fresh.fingerprint } });
     await throughTheWarning();
     await submitNewPassphrase();
     expect(await screen.findByText(r.done)).toBeInTheDocument();
     vi.mocked(hasFreshStepUp).mockReturnValue(false);
     keyVault.lock(); // any re-render
     expect(await screen.findByText(r.done)).toBeInTheDocument();
+  });
+
+  it('shows a key waiting for its link after a reload, with the deadline', async () => {
+    const expiresAt = '2026-11-02T10:00:00+00:00';
+    render({
+      pending: {
+        fingerprintDisplay: 'efef efef efef efef efef efef efef efef efef efef',
+        expiresAt,
+      },
+    });
+    const time = new Intl.DateTimeFormat('de', { hour: '2-digit', minute: '2-digit' }).format(
+      new Date(expiresAt)
+    );
+    expect(await screen.findByText(r.pendingUntil.replace('{{time}}', time))).toBeInTheDocument();
+    expect(
+      screen.getByText('efef efef efef efef efef efef efef efef efef efef')
+    ).toBeInTheDocument();
+  });
+
+  it('shows the waiting key as soon as the re-enrolment is pending', async () => {
+    const waiting = {
+      fingerprintDisplay: 'efef efef efef efef efef efef efef efef efef efef',
+      expiresAt: '2026-11-02T10:00:00+00:00',
+    };
+    const pendingResult = { ...active, status: 'pending_confirmation' as const };
+    const { recordingKeys } = render({ reenrol: vi.fn().mockResolvedValue(pendingResult) });
+    await throughTheWarning();
+    // Only after the warning, which reads the same query on its own mount.
+    recordingKeys.reenrolmentImpact.mockResolvedValue({
+      custodian: false,
+      k: 2,
+      usableAfter: null,
+      pending: waiting,
+    });
+    await submitNewPassphrase();
+    expect(await screen.findByText(waiting.fingerprintDisplay)).toBeInTheDocument();
+  });
+
+  it('shows no waiting key when none is pending', async () => {
+    render();
+    expect(await screen.findByRole('button', { name: r.start })).toBeInTheDocument();
+    expect(screen.queryByText(/efef/)).not.toBeInTheDocument();
   });
 });

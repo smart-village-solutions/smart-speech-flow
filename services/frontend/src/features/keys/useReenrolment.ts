@@ -7,12 +7,14 @@ import type { Reenrolled } from '@/domain/recording/recording.types';
 import { type EnrolmentError, useNewKeySubmit } from './useEnrolment';
 import { OWN_KEY_QUERY } from './useKeys';
 
-export type ReenrolmentError = EnrolmentError | 'changed' | 'ceremony';
+export type ReenrolmentError = EnrolmentError | 'changed' | 'ceremony' | 'mail';
 
 const CODES: Record<string, ReenrolmentError> = {
   STEP_UP_REQUIRED: 'stepUp',
   KEY_CHANGED: 'changed',
   CEREMONY_IN_PROGRESS: 'ceremony',
+  EMAIL_NOT_VERIFIED: 'email',
+  MAIL_UNAVAILABLE: 'mail',
 };
 
 function reenrolmentError(caught: unknown): ReenrolmentError {

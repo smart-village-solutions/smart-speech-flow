@@ -9,13 +9,14 @@ import { FingerprintCard } from './FingerprintCard';
 import { ReenrolPanel } from './ReenrolPanel';
 import { StepUpPrompt } from './StepUpPrompt';
 import { UnlockForm } from './UnlockForm';
-import { useOwnKey, useUnlockedKeys } from './useKeys';
+import { useOwnKey, useUnlockedKeys, useVaultFollowsOwnKey } from './useKeys';
 
 function KeysPanel({ onOpenKeyRecovery }: Readonly<{ onOpenKeyRecovery?: () => void }>) {
   const { t } = useTranslation();
   const owner = getAdminIdentity();
   const ownKey = useOwnKey();
   const unlocked = useUnlockedKeys();
+  useVaultFollowsOwnKey(ownKey.data);
 
   if (owner === null || ownKey.isError) {
     return (

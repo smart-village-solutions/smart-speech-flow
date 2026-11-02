@@ -147,6 +147,7 @@ def sealed_record(
     *,
     version: int,
     now: datetime,
+    email: str | None = None,
 ) -> UserKeyRecord:
     return UserKeyRecord(
         tenant_id=tenant_id,
@@ -159,6 +160,7 @@ def sealed_record(
             enrolment.blob.encode("utf-8"), tenant_id=tenant_id, user_sub=user_sub
         ),
         created_at=now,
+        email=email,
     )
 
 
@@ -178,13 +180,16 @@ class KeyEnrolmentService:
         self._server_layer = server_layer
         self._clock = clock
 
-    async def enrol(self, tenant_id: str, user_sub: str, enrolment: Enrolment) -> bytes:
-        """Returns the key fingerprint. KeyAlreadyEnrolledError if a key is active."""
+    async def enrol(self, tenant_id: str, user_sub: str, enrolment: Enrolment, email: str) -> bytes:
+        """Returns the key fingerprint. KeyAlreadyEnrolledError if a key is active.
+
+        `email` is the token's verified address, pinned for re-enrolments (§9.9).
+        """
         validate_enrolment(enrolment)
         now = self._clock()
         # The version is the store's to pick; nothing sealed here binds it.
         record = sealed_record(
-            self._server_layer, tenant_id, user_sub, enrolment, version=1, now=now
+            self._server_layer, tenant_id, user_sub, enrolment, version=1, now=now, email=email
         )
         await self._repository.enrol_user_key(record)
         return record.fingerprint

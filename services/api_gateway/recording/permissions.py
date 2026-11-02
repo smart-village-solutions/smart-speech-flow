@@ -36,6 +36,7 @@ STEP_UP_MAX_AGE_SECONDS: Final[int] = 300
 CLOCK_SKEW_SECONDS: Final[int] = 60
 
 Claims = dict[str, Any]
+MAX_EMAIL_CHARACTERS: Final[int] = 254
 
 
 def coded(status_code: int, code: str, message: str) -> HTTPException:
@@ -76,3 +77,11 @@ async def require_step_up(claims: Annotated[Claims, Depends(require_ssf_user)]) 
     if not step_up_satisfied(claims, time.time()):
         raise coded(status.HTTP_403_FORBIDDEN, "STEP_UP_REQUIRED", "Fresh MFA login required")
     return claims
+
+
+def verified_email(claims: Claims) -> str | None:
+    """The token's address when Keycloak marked it verified; None otherwise (§9.9)."""
+    email = claims.get("email")
+    if claims.get("email_verified") is not True or not isinstance(email, str):
+        return None
+    return email if 0 < len(email) <= MAX_EMAIL_CHARACTERS else None
