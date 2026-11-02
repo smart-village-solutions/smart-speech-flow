@@ -29,11 +29,11 @@
 
 ## Execution status
 
-The user approved implementation on 2026-11-02. Policy/content, identity/directory and MFA slices are implemented and have passed independent review, including correction and re-review of status reconciliation. The whole-branch review and its scoped correction review are approved. Exact-head CI remains the final repository gate; two-tenant staging and production activation remain separate release operations.
+The user approved implementation on 2026-11-02. Policy/content, identity/directory and MFA slices are implemented and have passed independent review, including correction and re-review of status reconciliation. The whole-branch review and the scoped UI/CI correction reviews are approved. The producer candidate is published in [Studio PR #2041](https://github.com/smart-village-solutions/sva-studio/pull/2041), coordinated with [SSF PR #674](https://github.com/smart-village-solutions/smart-speech-flow/pull/674). Exact-head CI remains the final repository gate; two-tenant staging and production activation remain separate release operations.
 
 | Candidate / check | Recorded evidence |
 | --- | --- |
-| Studio runtime candidate | `0b695f2c2`, branch `feature/ssf-recording-administration`, based on `7e0d71a8718754859b7c4efdc8e319d41a7170f4` |
+| Studio runtime candidate | `668f66b30`, branch `feature/ssf-recording-administration`, based on `7e0d71a8718754859b7c4efdc8e319d41a7170f4` |
 | SSF consumer/fixture candidate | `c4069f77`, branch `codex/project-steward-studio-recording-plan-20261102` |
 | Schema / wire contracts | Central IAM migration 0113; SSF schema migration 0007; runtime/directory contract 2.0 |
 | SSF consumer regression | 221 passed across the seven Task 8 suites; ConsentScreen cleanup separately passed 24 tests |
@@ -41,7 +41,10 @@ The user approved implementation on 2026-11-02. Policy/content, identity/directo
 | Core/IAM review corrections | 246 registry regressions, 18 focused completion/status tests and 3 repository tests passed; 3 real PostgreSQL tests passed with 0113 down/up and exact schema comparison |
 | Authentication acceptance | Keycloak 26.7.2, real browser and access tokens: 2 tests passed in 90.27 seconds, including optional SSO, voluntary enrollment, required existing/new users, fresh MFA timestamp, tenant isolation, lost-factor reset/re-enrollment, reversal and custom-flow conflict |
 | Types / runtime | Affected Core/IAM/plugin/SDK/application types passed; server-runtime gate passed; correction gates rebuilt affected packages and passed auth-runtime runtime guard |
-| Verification limits | Two existing baseline module-boundary lint errors were reproduced in unmodified mainline source. The full local PR gate exposed stale DTO/mock/catalog assertions, corrected by focused coverage checks (8, 12, 45 and 11 tests). The real seed runner then passed idempotency/counts and 17 recovery/baseline/mail tests. Individual green gates do not imply a green repository-wide gate. |
+| Quality gates after final correction | Full `pnpm test:eslint` passed Fallow and all 38 Nx lint projects; complexity passed with zero new findings and unchanged 201 tracked findings. Final plugin unit gate passed 239; focused editor V8 gate passed 24 with the original timeout preserved. Earlier direct-file lint warnings do not describe the current full gate. |
+| Final database/provider evidence | All three real PostgreSQL integrations passed after refactoring, including migration 0113 down/up and exact schema comparison with no drift. The complete real Keycloak browser matrix passed again: 2 tests in 84.23 seconds. |
+| Gate corrections and limits | The initial full local PR gate exposed stale DTO/mock/catalog/manifest fixtures, corrected with focused coverage checks; the real seed runner passed idempotency/counts and 17 recovery/baseline/mail tests. GitHub's initial four unit shards, types, build, database and integration gates passed. Individual checks do not imply final exact-head CI acceptance. |
+| Security review disposition | [CodeQL alert 44](https://github.com/smart-village-solutions/sva-studio/security/code-scanning/44) classifies a deterministic plan-metadata fingerprint as password hashing. Independent inspection confirms its reported source accepts three booleans and returns fixed UI/status metadata, with no password in that dataflow. No algorithm, rule or suppression was changed; external alert disposition requires explicit approval. |
 
 Local producer output was accepted by the actual SSF models. These tests do not replace deployed two-tenant staging, minimum-privilege provisioner preflight, tenant legal-content review or the archive/key/timestamp/backup operational checks below. No tenant is enabled by this implementation or its migrations.
 
@@ -54,6 +57,7 @@ Implementation decisions made within the approved scope:
 | Add managed `competenceLanguages` to IAM accounts, separate from UI language | No existing authoritative competence field exists; choosing a different source later requires data migration and projection updates. |
 | Add generic tenant `iam.authenticationPolicy.manage` permission | Existing root provisioning rights do not authorize tenant-local security settings; a different authorization policy requires catalog/grant changes. |
 | Preserve existing administrator permission exclusions through SDK and both host bootstrap paths | Otherwise all new recording permissions are automatically granted to tenant administrators; any alternative must retain that isolation invariant. |
+| Resolve new CI complexity/boundary findings through cohesive existing-module helpers and supported test seams | Preserves quality gates without exceptions; a mistaken extraction requires local review and regression correction. One internal provider policy-definition module separates topology from operations, with no new public service/API. |
 
 ## Evidence and scope
 
