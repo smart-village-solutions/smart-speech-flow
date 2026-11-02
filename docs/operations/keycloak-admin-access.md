@@ -79,10 +79,10 @@ Installation content and the login directory take the same headers without
 
 `Bearer studio-mock-authorized-token` has
 `ssf.runtime-configuration.read`; `Bearer studio-mock-unauthorized-token`
-models an authenticated caller without that permission. The mock still sends
-the retired `ask` storage fields (Kassel `ask`, Fulda `disabled`, Marburg
-`retentionHours: 0`), which the gateway ignores. `tenant-marburg` has no local
-Keycloak realm, so the login directory lists only Kassel and Fulda.
+models an authenticated caller without that permission. Normal v2 tenant
+fixtures send only disabled legacy storage fields and null storage questions,
+which the gateway ignores. `tenant-marburg` has no local Keycloak realm, so
+the login directory lists only Kassel and Fulda.
 
 On both runtime paths, send `X-Mock-Scenario: suspended`, `plugin-inactive`,
 `tenant-not-ready`, or `unavailable` to exercise the exact `409` and `503`
@@ -92,11 +92,12 @@ exercise `404`. A missing `X-Studio-Tenant-Id` or `X-Correlation-Id`, a legacy
 header (`X-Studio-Instance-Id` or `X-Tenant-Id`) or any query selector is
 rejected with `404 tenant_not_found`, as Studio does.
 
-On v2, `storage-disabled` turns the tenant's storage mode to `disabled` for
-that request, `recording-disabled` drops `tenant-kassel`'s `recording` block
-(the only mock tenant that has one), and `invalid-content` adds a feedback question of an unsupported
-type to the first guest language: the runtime body keeps a valid storage policy
-and SSF drops only that guest language.
+On v2, `legacy-storage-ask` deliberately supplies an old producer response
+for ignored-input regression tests. `recording-retention-override` changes
+the synthetic recording retention from the 720-hour default to 240 hours;
+`recording-disabled` removes the policy block. The retained `storage-disabled`
+scenario returns disabled legacy fields. `invalid-content` adds an unsupported
+feedback question to the first guest language, so SSF drops only that language.
 
 Installation content ignores the tenant scenarios (`suspended`,
 `plugin-inactive`, `tenant-not-ready`, `storage-disabled` and

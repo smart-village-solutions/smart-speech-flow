@@ -16,15 +16,15 @@
     }
   },
   "conversationContentStorage": {
-    "mode": "ask",
-    "retentionHours": 4320
+    "mode": "disabled",
+    "retentionHours": null
   },
   "recording": {
     "enabled": true,
     "legalBasis": "consent",
     "signature": "optional",
     "idCheck": "optional",
-    "retentionHours": 4320,
+    "retentionHours": 720,
     "verificationRequired": false,
     "recoveryMode": "standard",
     "timestampAuthorityUrl": "https://freetsa.org/tsr",
@@ -95,7 +95,7 @@
       },
       "guest": {
         "explanationHtml": "<p>Test environment: conversations are translated in real time.</p>",
-        "storageQuestionHtml": "<p>I agree to the storage of my conversation data for up to 180 days.</p>"
+        "storageQuestionHtml": null
       },
       "feedback": {
         "headline": "Share your feedback",
@@ -144,7 +144,7 @@
       },
       "guest": {
         "explanationHtml": "<p>Test ortamı: konuşmalar gerçek zamanlı olarak çevrilir.</p>",
-        "storageQuestionHtml": "<p>Konuşma verilerimin 180 güne kadar saklanmasını kabul ediyorum.</p>"
+        "storageQuestionHtml": null
       }
     },
     {
@@ -154,7 +154,7 @@
       "icon": null,
       "guest": {
         "explanationHtml": "<p>بيئة اختبار: تتم ترجمة المحادثات في الوقت الفعلي.</p>",
-        "storageQuestionHtml": "<p>أوافق على تخزين بيانات محادثتي لمدة تصل إلى 180 يومًا.</p>"
+        "storageQuestionHtml": null
       }
     },
     {
@@ -167,7 +167,7 @@
       },
       "guest": {
         "explanationHtml": "<p>Hawirdora ceribandinê: axaftin di demê de têne wergerandin.</p>",
-        "storageQuestionHtml": "<p>Ez qebûl dikim ku daneyên axaftina min heta 180 rojan bên hilanîn.</p>"
+        "storageQuestionHtml": null
       }
     },
     {
@@ -180,7 +180,7 @@
       },
       "guest": {
         "explanationHtml": "<p>Ambiente de teste: as conversas são traduzidas em tempo real.</p>",
-        "storageQuestionHtml": "<p>Concordo com o armazenamento dos dados da minha conversa por até 180 dias.</p>"
+        "storageQuestionHtml": null
       }
     }
   ]
