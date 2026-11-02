@@ -195,7 +195,9 @@ under `services/api_gateway/recording/`.
 Apply the gateway's migrations (Step 2's `apply.sh`) before the gateway or the
 workers run a new image. From #626 on, the workers write and the gateway reads
 columns migration 012 adds; without them every heartbeat fails, or the gateway
-cannot read one, and `RecordingRetentionWorkerSilent` fires.
+cannot read one, and `RecordingRetentionWorkerSilent` fires. Update both VMs
+together: until the replica's worker runs an image with #626,
+`ArchiveReplicaBehind` cannot see a stopped sync.
 
 ## Step 5 — Secrets on each VM
 
@@ -396,6 +398,17 @@ Stop both workers (`archive_compose --profile retention stop retention`, and
 `replica_compose` likewise). Nothing then expires and nothing is deleted; locks
 keep protecting the archive. Migration 004 stays: its tables are unused without
 the workers, and the gateway's routes keep working.
+
+Rolling the workers back to an image without #626 leaves the last
+`unconfirmed_since` they wrote in place, and `ArchiveReplicaBehind` would fire
+on it for good. Clear it once both run the older image:
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d ssf_recording -c "UPDATE retention_worker_status SET unconfirmed_since = NULL"'
+```
+
+Migration 012 stays; the older images ignore its columns.
 
 ## Known limits
 

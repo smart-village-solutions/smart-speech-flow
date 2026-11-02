@@ -33,6 +33,8 @@ from .settings import WorkerSettings
 SWEEP_STATE_FILE: Final[str] = "sweep.json"
 # Tenants whose whole pass has been failing, and since when: they count as overdue.
 FAILURES_STATE_FILE: Final[str] = "tenant-failures.json"
+# Each tenant's last read unconfirmed_since, kept for a pass that cannot read it.
+UNCONFIRMED_STATE_FILE: Final[str] = "unconfirmed.json"
 
 
 class WorkerStore(RetentionRows, ExpiryRows, Protocol):
@@ -117,7 +119,6 @@ class RetentionWorker:
         self._reconciler = LockReconciler(store, archive)
         self._expirer = Expirer(store, archive)
         self._primary = settings.site == "primary"
-        self._unconfirmed: dict[str, datetime | None] = {}
 
     async def run_once(self) -> PassReport:
         now = self._clock()
@@ -239,17 +240,29 @@ class RetentionWorker:
     async def _unconfirmed_since(self, tenants: list[str]) -> datetime | None:
         """The oldest version this site still lacks; a stopped replica sync shows here (#626).
 
-        A tenant that cannot be read keeps its last value, so a flaky read neither
-        clears the alert nor restarts its timer.
+        A tenant that cannot be read keeps its last value, across restarts too, so a
+        flaky read neither clears the alert nor restarts its timer.
         """
-        known = {tenant: self._unconfirmed.get(tenant) for tenant in tenants}
+        path = self._settings.state_dir / UNCONFIRMED_STATE_FILE
+        raw = _read_state(path)
+        last = raw if isinstance(raw, dict) else {}
+        known = {}
         for tenant in tenants:
             try:
-                known[tenant] = await self._store.unconfirmed_since(tenant)
+                moment = await self._store.unconfirmed_since(tenant)
+                known[tenant] = None if moment is None else moment.isoformat()
             except RecordingStorageUnavailable:
-                pass
-        self._unconfirmed = known
-        return min((moment for moment in known.values() if moment is not None), default=None)
+                known[tenant] = last.get(tenant)
+        if known != last:
+            _write_state(path, known)
+        moments = []
+        for value in known.values():
+            if isinstance(value, str):
+                try:
+                    moments.append(datetime.fromisoformat(value))
+                except ValueError:
+                    pass  # an unreadable record
+        return min(moments, default=None)
 
     def _record_failures(self, tenants: set[str], failed: set[str], now: datetime) -> None:
         path = self._settings.state_dir / FAILURES_STATE_FILE

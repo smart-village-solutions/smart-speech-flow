@@ -45,14 +45,15 @@ def _store(answers=None, site="replica"):
 
 
 @pytest.mark.parametrize(
-    # Not on this site yet: retried soon, so a resumed sync clears its alert soon.
-    ("missing", "ceiling"),
-    [(True, UNREAD_BACKOFF_CEILING), (False, BACKOFF_CEILING)],
+    # The replica waits for its sync's copies; on the primary a missing version is a loss.
+    ("site", "unread"),
+    [("replica", UNREAD_BACKOFF_CEILING), ("primary", BACKOFF_CEILING)],
 )
-async def test_a_version_not_copied_yet_backs_off_to_a_shorter_ceiling(missing, ceiling):
-    store, connection = _store()
-    await store.record_failure(due_row(checked_at=None), NOW, None, missing=missing)
-    assert connection.arguments[-1][6] == ceiling
+async def test_the_ceiling_for_a_version_never_read_depends_on_the_site(site, unread):
+    store, connection = _store(site=site)
+    await store.record_failure(due_row(checked_at=None), NOW)
+    arguments = connection.arguments[-1]
+    assert (arguments[6], arguments[11]) == (BACKOFF_CEILING, unread)
 
 
 def test_the_unread_ceiling_is_well_inside_the_alerts_half_hour():

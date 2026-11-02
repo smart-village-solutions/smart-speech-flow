@@ -55,8 +55,6 @@ class FakeRetentionStore:
         self.restores = 0
         self.recorded: dict[str, tuple[LockState, datetime]] = {}
         self.failed: list[str] = []
-        # Failures recorded as a version the store has not got yet.
-        self.missing: list[str] = []
         # When each version was stored, for unconfirmed_since; NOW unless set.
         self.stored_at: dict[str, datetime] = {}
         self.first_read: set[str] = {row.version_id for row in rows if row.checked_at}
@@ -146,10 +144,8 @@ class FakeRetentionStore:
         if state.deleted_at is not None:
             del self.rows[row.version_id]
 
-    async def record_failure(self, row, now, state=None, *, missing=False):
+    async def record_failure(self, row, now, state=None):
         self.failed.append(row.version_id)
-        if missing:
-            self.missing.append(row.version_id)
         self.failing.setdefault(row.version_id, now)
         if state is not None:
             self.first_read.add(row.version_id)

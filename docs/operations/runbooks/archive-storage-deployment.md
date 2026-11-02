@@ -360,9 +360,9 @@ ping -c 3 10.8.0.1
   (recording-retention-deployment.md, `RecordingRetentionWorkerSilent`, which
   fires as well when the worker is the cause).
 
-The sync resumes from where it stopped and copies what it missed. The worker
-retries a version it did not find within 15 minutes, so the alert clears within
-about 20 minutes of the copies arriving. To see progress, on the
+The sync resumes from where it stopped and copies what it missed. The
+replica's worker retries a version it has never read within 15 minutes, so the
+alert clears within about 20 minutes of the copies arriving. To see progress, on the
 gateway host:
 
 ```bash

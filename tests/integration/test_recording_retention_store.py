@@ -165,19 +165,63 @@ async def test_failures_back_off_and_a_success_clears_them(archive, owner, store
     assert await store.overdue_since(TENANT, later + timedelta(hours=1)) == later
 
 
-@pytest.mark.parametrize(
-    ("missing", "ceiling"),
-    # A version not copied to this site yet is retried within the replica alert's half hour.
-    [(False, timedelta(hours=6)), (True, timedelta(minutes=15))],
+MIGRATION_012 = (
+    Path(__file__).resolve().parents[2]
+    / "deploy/postgres/recording/migrations/012_recording_replica_sync.sql"
 )
-async def test_the_backoff_stops_growing_at_its_ceiling(archive, owner, stores, missing, ceiling):
+
+
+@pytest.mark.parametrize(
+    ("site", "read_before", "read_now", "ceiling"),
+    [
+        ("primary", False, False, timedelta(hours=6)),
+        # Not copied to the replica yet: retried within the alert's half hour (#626).
+        ("replica", False, False, timedelta(minutes=15)),
+        # Read once, as before a restore's re-read: a lasting fault, not a lag.
+        ("replica", True, False, timedelta(hours=6)),
+        ("replica", False, True, timedelta(hours=6)),
+    ],
+)
+async def test_the_backoff_stops_growing_at_its_ceiling(
+    archive, owner, stores, site, read_before, read_now, ceiling
+):
     await _stored(archive)
-    store = stores["primary"]
+    store = stores[site]
     await store.discover(TENANT, NOW)
-    await owner.execute("UPDATE version_locks SET attempts = 5000")
+    first_read = NOW - timedelta(days=1) if read_before else None
+    await owner.execute("UPDATE version_locks SET attempts = 5000, first_read_at = $1", first_read)
     [row] = await store.due_versions(TENANT, NOW)
-    await store.record_failure(row, NOW, missing=missing)
+    state = LockState(NOW, None, False, None, None) if read_now else None
+    await store.record_failure(row, NOW, state)
     assert await owner.fetchval("SELECT next_attempt_at FROM version_locks") == NOW + ceiling
+
+
+async def test_a_deleted_version_never_counts_as_unread(archive, owner, stores):
+    await _stored(archive)
+    replica = stores["replica"]
+    await replica.discover(TENANT, NOW)
+    # Deleted before migration 012 added first_read_at.
+    await owner.execute("UPDATE version_locks SET deleted_at = $1", NOW)
+    assert await replica.unconfirmed_since(TENANT) is None
+
+
+async def test_migration_012_marks_versions_read_before_it_as_read(archive, owner, stores):
+    await _stored(archive)
+    await _stored(archive)
+    replica = stores["replica"]
+    await replica.discover(TENANT, NOW)
+    read, _ = await owner.fetch("SELECT entry_id FROM version_locks ORDER BY entry_id")
+    await owner.execute(
+        "UPDATE version_locks SET checked_at = $1, first_read_at = NULL WHERE entry_id = $2",
+        NOW,
+        read["entry_id"],
+    )
+
+    await owner.execute(MIGRATION_012.read_text())
+
+    rows = await owner.fetch("SELECT entry_id, first_read_at FROM version_locks ORDER BY entry_id")
+    assert [row["first_read_at"] for row in rows] == [NOW, None]
+    assert await replica.unconfirmed_since(TENANT) == NOW  # the unread one, stored at NOW
 
 
 async def test_unconfirmed_since_is_when_the_oldest_unread_version_was_stored(
@@ -196,7 +240,7 @@ async def test_unconfirmed_since_is_when_the_oldest_unread_version_was_stored(
     # Untried versions count: a pass that never reached them must not hide them.
     assert await replica.unconfirmed_since(TENANT) == NOW
     assert await stores["primary"].unconfirmed_since(TENANT) is None
-    await replica.record_failure(older, NOW, missing=True)
+    await replica.record_failure(older, NOW)
     assert await replica.unconfirmed_since(TENANT) == NOW
 
     await replica.record(older, LockState(NOW, None, False, None, None), NOW)

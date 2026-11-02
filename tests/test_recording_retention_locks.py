@@ -406,17 +406,6 @@ async def test_a_lock_never_reaches_beyond_one_extension_step(store):
     )
 
 
-@pytest.mark.parametrize(("checked_at", "missing"), [(None, ["v9"]), (NOW, [])])
-async def test_only_a_version_never_found_here_counts_as_not_copied_yet(store, checked_at, missing):
-    """A replica's sync may not have copied it yet (#626); a version read before is gone."""
-    archive, _ = store
-    later = NOW + timedelta(days=60)  # a read version then owes an extension
-    rows = FakeRows(_row(version_id="v9", checked_at=checked_at, retention_until=later))
-    report = await LockReconciler(rows, archive).run(TENANT, NOW, destructive=True)
-    assert report.failures == 1
-    assert rows.missing == missing
-
-
 @pytest.mark.parametrize("error", [ArchiveNotFoundError("NoSuchVersion")])
 async def test_a_hold_on_a_missing_live_version_is_a_failure(store, error):
     archive, _ = store
