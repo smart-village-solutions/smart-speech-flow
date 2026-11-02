@@ -6,6 +6,7 @@ timestamp rather than an age, so a gateway that can no longer read the rows
 leaves the age to grow in the alert rather than freezing it here. Once the
 gateway has an archive, both sites are expected: one that never reported is
 exported with a last beat at the epoch, so its silence alerts too.
+`unconfirmed_since` is 0 while a site has read every stored version (#626).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ class WorkerStatus:
     failing_seconds: float
     halted: bool
     hold_mismatches: int
+    unconfirmed_since: datetime | None
 
 
 class RetentionWorkerMetrics:
@@ -57,13 +59,26 @@ class RetentionWorkerMetrics:
             ("site",),
             registry=registry,
         )
+        self._unconfirmed = Gauge(
+            "ssf_retention_unconfirmed_since_timestamp_seconds",
+            "When the oldest stored version a site has never read was stored; 0 when none",
+            ("site",),
+            registry=registry,
+        )
+        self._gauges = (
+            self._last_beat,
+            self._failing,
+            self._halted,
+            self._mismatches,
+            self._unconfirmed,
+        )
         self._sites: set[str] = set()
 
     def update(self, statuses: Sequence[WorkerStatus], expected: Sequence[str] = ()) -> None:
         reported = {status.site: status for status in statuses}
         sites = set(reported) | set(expected)
         for site in self._sites - sites:
-            for gauge in (self._last_beat, self._failing, self._halted, self._mismatches):
+            for gauge in self._gauges:
                 gauge.remove(site)
         for site in sites - set(reported):
             self._never_reported(site)
@@ -72,6 +87,10 @@ class RetentionWorkerMetrics:
             self._failing.labels(site=status.site).set(status.failing_seconds)
             self._halted.labels(site=status.site).set(1 if status.halted else 0)
             self._mismatches.labels(site=status.site).set(status.hold_mismatches)
+            unconfirmed = status.unconfirmed_since
+            self._unconfirmed.labels(site=status.site).set(
+                0 if unconfirmed is None else unconfirmed.timestamp()
+            )
         self._sites = sites
 
     def expect(self, sites: Sequence[str]) -> None:
@@ -81,7 +100,5 @@ class RetentionWorkerMetrics:
         self._sites |= set(sites)
 
     def _never_reported(self, site: str) -> None:
-        self._last_beat.labels(site=site).set(0)
-        self._failing.labels(site=site).set(0)
-        self._halted.labels(site=site).set(0)
-        self._mismatches.labels(site=site).set(0)
+        for gauge in self._gauges:
+            gauge.labels(site=site).set(0)

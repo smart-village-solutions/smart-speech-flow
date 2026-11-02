@@ -562,6 +562,25 @@ groups:
           summary: Archive versions are held without a legal hold.
           description: "{{ $value }} versions on the {{ $labels.site }} archive site are held although no legal hold applies, and no hold_off decision later than the hold exists to lift them. After a restore, have a supervisor lift the hold again; otherwise check the audit log for the conversation's decisions. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
 
+  # The off-site archive replica (#626). Its retention worker reports when the
+  # oldest version it has never read on the replica was stored on the primary;
+  # a sync that stopped leaves new versions unread there. A replica cut off
+  # entirely, link included, cannot report at all, which counts the same and
+  # also fires RecordingRetentionWorkerSilent for the replica.
+  - name: ssf-archive-replica
+    rules:
+      - alert: ArchiveReplicaBehind
+        expr: >-
+          time() - (ssf_retention_unconfirmed_since_timestamp_seconds{site="replica"} > 0) > 1800
+          or time() - ssf_retention_worker_last_beat_timestamp_seconds{site="replica"} > 1800
+        for: 5m
+        labels:
+          severity: critical
+          component: recording
+        annotations:
+          summary: The off-site archive replica is not receiving new versions.
+          description: "A version stored on the primary archive has not been readable on the replica for over thirty minutes, or the replica has not reported for as long, so new recordings may exist on the primary only. Check the sync on the replica VM (replica_compose ps primary-sync, then its log), the private link to the primary, and the replica's S3 API. See docs/operations/runbooks/archive-storage-deployment.md, 'Alerts'."
+
   # Recording revocation (#619). The gateway runs the nightly check that removes
   # access whose Studio permission is gone. A guard that doubts the directory
   # skips the tenant on purpose and leaves this timestamp to age.

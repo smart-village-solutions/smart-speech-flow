@@ -52,7 +52,12 @@ class RetentionRows(Protocol):
     async def record(self, row: DueVersion, state: LockState, revisit_at: datetime) -> None: ...
 
     async def record_failure(
-        self, row: DueVersion, now: datetime, state: LockState | None = None
+        self,
+        row: DueVersion,
+        now: datetime,
+        state: LockState | None = None,
+        *,
+        missing: bool = False,
     ) -> None: ...
 
 
@@ -160,7 +165,8 @@ class LockReconciler:
             return False
         except ArchiveNotFoundError:
             if row.shredded_at is None:
-                await self._failed(row, now, report, state)
+                # Never read here: most likely not copied to this site yet (#626).
+                await self._failed(row, now, report, state, missing=state is None)
                 return True
             # Gone, or not yet copied here: the prefix listing finds a late copy (expiry.py).
             gone = dataclasses.replace(state or _recorded(row, now), deleted_at=now)
@@ -177,11 +183,17 @@ class LockReconciler:
         return True
 
     async def _failed(
-        self, row: DueVersion, now: datetime, report: ReconcileReport, state: LockState | None
+        self,
+        row: DueVersion,
+        now: datetime,
+        report: ReconcileReport,
+        state: LockState | None,
+        *,
+        missing: bool = False,
     ) -> None:
         """Count the failure, and keep what earlier steps of the plan did, such as a hold."""
         report.failures += 1
-        await self._store.record_failure(row, now, state)
+        await self._store.record_failure(row, now, state, missing=missing)
 
     async def _refused_delete(
         self, row: DueVersion, state: LockState, now: datetime, report: ReconcileReport

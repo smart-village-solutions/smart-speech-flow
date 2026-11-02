@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -19,7 +19,9 @@ FAMILIES = (
     "ssf_retention_worker_failing_seconds",
     "ssf_retention_worker_halted",
     "ssf_retention_hold_mismatches",
+    "ssf_retention_unconfirmed_since_timestamp_seconds",
 )
+UNCONFIRMED = BEAT - timedelta(minutes=40)
 
 
 def _value(registry, family, site):
@@ -27,11 +29,17 @@ def _value(registry, family, site):
 
 
 def _status(site="primary", **changes) -> WorkerStatus:
-    values = {"beat_at": BEAT, "failing_seconds": 90.0, "halted": True, "hold_mismatches": 2}
+    values = {
+        "beat_at": BEAT,
+        "failing_seconds": 90.0,
+        "halted": True,
+        "hold_mismatches": 2,
+        "unconfirmed_since": UNCONFIRMED,
+    }
     return WorkerStatus(site=site, **(values | changes))
 
 
-def test_each_site_gets_all_four_series():
+def test_each_site_gets_all_five_series():
     registry = CollectorRegistry()
     RetentionWorkerMetrics(registry).update([_status(), _status("replica", halted=False)])
     assert [_value(registry, family, "primary") for family in FAMILIES] == [
@@ -39,8 +47,17 @@ def test_each_site_gets_all_four_series():
         90.0,
         1.0,
         2.0,
+        UNCONFIRMED.timestamp(),
     ]
     assert _value(registry, "ssf_retention_worker_halted", "replica") == 0.0
+
+
+def test_a_site_with_every_version_confirmed_exports_zero():
+    registry = CollectorRegistry()
+    metrics = RetentionWorkerMetrics(registry)
+    metrics.update([_status("replica")])
+    metrics.update([_status("replica", unconfirmed_since=None)])
+    assert _value(registry, "ssf_retention_unconfirmed_since_timestamp_seconds", "replica") == 0.0
 
 
 def test_a_site_no_longer_reported_keeps_no_stale_series():
@@ -113,6 +130,7 @@ def test_an_expected_site_that_never_reported_looks_silent():
     RetentionWorkerMetrics(registry).update([_status()], expected=("primary", "replica"))
     assert _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", "replica") == 0.0
     assert _value(registry, "ssf_retention_worker_halted", "replica") == 0.0
+    assert _value(registry, "ssf_retention_unconfirmed_since_timestamp_seconds", "replica") == 0.0
     assert _value(registry, "ssf_retention_worker_last_beat_timestamp_seconds", "primary") == (
         BEAT.timestamp()
     )

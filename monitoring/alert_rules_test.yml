@@ -673,6 +673,77 @@ tests:
         alertname: StudioPolicyGateUnbound
         exp_alerts: []
 
+  # The archive replica (#626). The sync has stopped; a version stored at minute
+  # 10 is reported unread from the replica's next pass at minute 15. Over thirty
+  # minutes from minute 41, firing five minutes on; the worker beats on.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_unconfirmed_since_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0x14 600+0x60"
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+60x75"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ArchiveReplicaBehind
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: ArchiveReplicaBehind
+        exp_alerts: []
+      - eval_time: 46m
+        alertname: ArchiveReplicaBehind
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: replica
+            exp_annotations:
+              summary: The off-site archive replica is not receiving new versions.
+              description: "A version stored on the primary archive has not been readable on the replica for over thirty minutes, or the replica has not reported for as long, so new recordings may exist on the primary only. Check the sync on the replica VM (replica_compose ps primary-sync, then its log), the private link to the primary, and the replica's S3 API. See docs/operations/runbooks/archive-storage-deployment.md, 'Alerts'."
+
+  # A version read within minutes never fires; nor does the primary's value.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_unconfirmed_since_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0x5 300x5 0x80"
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+60x90"
+      - series: 'ssf_retention_unconfirmed_since_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="primary"}'
+        values: "60+0x90"
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: ArchiveReplicaBehind
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: ArchiveReplicaBehind
+        exp_alerts: []
+
+  # The link down: the replica's worker cannot report either. Its last beat at
+  # minute 10 is over thirty minutes old from minute 41.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_retention_unconfirmed_since_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+0x60"
+      - series: 'ssf_retention_worker_last_beat_timestamp_seconds{job="api_gateway",instance="api_gateway:8000",site="replica"}'
+        values: "0+60x10 600+0x50"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: ArchiveReplicaBehind
+        exp_alerts: []
+      - eval_time: 46m
+        alertname: ArchiveReplicaBehind
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+              site: replica
+            exp_annotations:
+              summary: The off-site archive replica is not receiving new versions.
+              description: "A version stored on the primary archive has not been readable on the replica for over thirty minutes, or the replica has not reported for as long, so new recordings may exist on the primary only. Check the sync on the replica VM (replica_compose ps primary-sync, then its log), the private link to the primary, and the replica's S3 API. See docs/operations/runbooks/archive-storage-deployment.md, 'Alerts'."
+
   # Recording retention (#618).
   # A worker whose last beat was at minute 0: past 30 min at 30m01s, firing ten minutes on.
   - interval: 1m

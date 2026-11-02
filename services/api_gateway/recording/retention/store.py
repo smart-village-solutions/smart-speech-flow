@@ -32,6 +32,9 @@ from .restore_guard import AuditMark
 from .settings import Site, WorkerSettings
 
 BACKOFF_CEILING: Final[timedelta] = timedelta(hours=6)
+# A version this site has never found is usually one its sync has not copied
+# yet (#626): retried soon, so the replica alert clears soon after it resumes.
+UNREAD_BACKOFF_CEILING: Final[timedelta] = timedelta(minutes=15)
 # A bucket locks each version for the retention rounded up to whole days plus
 # one, from its upload, which can come up to a session's length after the
 # first yes. A lock further past its conversation's date than this points to
@@ -106,6 +109,14 @@ _OVERDUE_SINCE: Final[str] = (
     "SELECT min(coalesce(failing_since, next_attempt_at)) FROM version_locks"
     " WHERE site = $1 AND deleted_at IS NULL"
     " AND (failing_since IS NOT NULL OR next_attempt_at <= $2)"
+)
+# Whether or not a read was tried: one the pass never reached is missing too.
+# A deleted row was recorded, so it has a first read.
+_UNCONFIRMED_SINCE: Final[str] = (
+    "SELECT min(s.stored_at) FROM version_locks v JOIN stored_objects s"
+    " ON s.tenant_id = v.tenant_id AND s.entry_id = v.entry_id"
+    " AND s.object_type = v.object_type"
+    " WHERE v.site = $1 AND v.first_read_at IS NULL"
 )
 _RESTORE_CONFLICTS: Final[str] = (
     "SELECT v.conversation_id, CASE"
@@ -184,6 +195,7 @@ _DUE: Final[str] = (
 _ROW: Final[str] = "entry_id = $1 AND object_type = $2 AND site = $3 AND version_id = $4"
 _RECORD: Final[str] = (
     "UPDATE version_locks SET checked_at = $5, locked_until = $6, held = $7, held_since = $8,"
+    " first_read_at = coalesce(first_read_at, $5),"
     " deleted_at = $9, attempts = 0, failing_since = NULL,"
     " next_attempt_at = CASE WHEN next_attempt_at = $10 THEN $11 ELSE next_attempt_at END"
     " WHERE " + _ROW
@@ -198,6 +210,7 @@ _FAILED: Final[str] = (
     "  THEN $5 + least(interval '60 seconds' * power(2, least(attempts, 20)), $7)"
     "  ELSE next_attempt_at END,"
     " checked_at = coalesce($8::timestamptz, checked_at),"
+    " first_read_at = coalesce(first_read_at, $8::timestamptz),"
     " locked_until = CASE WHEN $8::timestamptz IS NULL THEN locked_until"
     "  ELSE $9::timestamptz END,"
     " held = CASE WHEN $8::timestamptz IS NULL THEN held ELSE $10::boolean END,"
@@ -396,16 +409,26 @@ class PostgresRetentionStore:
         await self._run(row.tenant_id, work)
 
     async def record_failure(
-        self, row: DueVersion, now: datetime, state: LockState | None = None
+        self,
+        row: DueVersion,
+        now: datetime,
+        state: LockState | None = None,
+        *,
+        missing: bool = False,
     ) -> None:
-        """A failed step, keeping `state`: what the steps before it changed in the store."""
+        """A failed step, keeping `state`: what the steps before it changed in the store.
+
+        `missing`: the store has not got the version yet, so it is retried soon.
+        """
         known: tuple[Any, ...] = (None, None, None, None)
         if state is not None:
             known = (state.checked_at, state.locked_until, state.held, state.held_since)
 
+        ceiling = UNREAD_BACKOFF_CEILING if missing else BACKOFF_CEILING
+
         async def work(connection: asyncpg.Connection) -> None:
             await connection.execute(
-                _FAILED, *self._row(row), now, row.next_attempt_at, BACKOFF_CEILING, *known
+                _FAILED, *self._row(row), now, row.next_attempt_at, ceiling, *known
             )
 
         await self._run(row.tenant_id, work)
@@ -417,20 +440,37 @@ class PostgresRetentionStore:
         result: datetime | None = await self._run(tenant_id, work)
         return result
 
+    async def unconfirmed_since(self, tenant_id: str) -> datetime | None:
+        """When the oldest version this site has never read was stored."""
+
+        async def work(connection: asyncpg.Connection) -> Any:
+            return await connection.fetchval(_UNCONFIRMED_SINCE, self.site)
+
+        result: datetime | None = await self._run(tenant_id, work)
+        return result
+
     async def beat(
-        self, now: datetime, failing_seconds: float, halted: bool, hold_mismatches: int
+        self,
+        now: datetime,
+        failing_seconds: float,
+        halted: bool,
+        hold_mismatches: int,
+        unconfirmed_since: datetime | None,
     ) -> None:
         async def work(connection: asyncpg.Connection) -> None:
             await connection.execute(
                 "INSERT INTO retention_worker_status (site, beat_at, failing_seconds, halted,"
-                " hold_mismatches) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (site) DO UPDATE SET"
+                " hold_mismatches, unconfirmed_since) VALUES ($1, $2, $3, $4, $5, $6)"
+                " ON CONFLICT (site) DO UPDATE SET"
                 " beat_at = EXCLUDED.beat_at, failing_seconds = EXCLUDED.failing_seconds,"
-                " halted = EXCLUDED.halted, hold_mismatches = EXCLUDED.hold_mismatches",
+                " halted = EXCLUDED.halted, hold_mismatches = EXCLUDED.hold_mismatches,"
+                " unconfirmed_since = EXCLUDED.unconfirmed_since",
                 self.site,
                 now,
                 failing_seconds,
                 halted,
                 hold_mismatches,
+                unconfirmed_since,
             )
 
         await self._run(None, work)

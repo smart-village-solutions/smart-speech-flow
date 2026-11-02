@@ -177,6 +177,9 @@ sudo docker logs --since 30s ssf-archive-replica-primary-sync-1 2>&1 | grep -c '
 Expected: `0`. Error lines in the first seconds after a start, while the
 replica's own filer comes up, are normal.
 
+From then on, `ArchiveReplicaBehind` watches the sync (see "Alerts"). It needs
+both retention workers (recording-retention-deployment.md).
+
 The sync copies every new version with its lock to the replica, which then
 enforces the lock itself. It never copies a deletion, and it skips a change that
 leaves a version's content as it was: a version deleted on the primary stays on
@@ -326,6 +329,52 @@ and a bucket change that should have been refused is taken back before the
 test fails. The test objects stay in the `verification` bucket; once their
 two-day lock has lapsed, the retention identity may delete them.
 
+## Alerts
+
+### `ArchiveReplicaBehind`
+
+The replica is not receiving new versions (#626). Prometheus cannot reach the
+replica VM, so the replica's retention worker reports for it: each pass it
+reads every version the gateway stored, and the gateway exports when the oldest
+one it has never read on the replica was stored
+(`ssf_retention_unconfirmed_since_timestamp_seconds{site="replica"}`, `0` while
+none is). The alert fires when that is over 30 minutes ago, or when the
+replica's worker has not reported for 30 minutes, as when the private link is
+down; `RecordingRetentionWorkerSilent` then fires for the replica as well. A
+version stored while the sync is stopped raises it within about 40 minutes.
+
+On the replica VM:
+
+```bash
+replica_compose ps primary-sync
+sudo docker logs --since 1h ssf-archive-replica-primary-sync-1 2>&1 | grep '^E' | tail -20
+ping -c 3 10.8.0.1
+```
+
+- **The sync is not running:** `replica_compose up -d primary-sync`.
+- **The sync logs connection errors:** the link or the primary's filer. Check
+  the link (`sudo wg show`) and, on the archive VM, `archive_compose ps`. The
+  sync resumes by itself once the primary answers.
+- **The sync runs without errors:** the replica's own S3 API or the
+  replica's retention worker
+  (recording-retention-deployment.md, `RecordingRetentionWorkerSilent`, which
+  fires as well when the worker is the cause).
+
+The sync resumes from where it stopped and copies what it missed. The worker
+retries a version it did not find within 15 minutes, so the alert clears within
+about 20 minutes of the copies arriving. To see progress, on the
+gateway host:
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d ssf_recording -c "SELECT site, beat_at, unconfirmed_since FROM retention_worker_status"'
+```
+
+To check the alert itself before go-live, stop the sync
+(`replica_compose stop primary-sync`), record one message in a test
+conversation, and wait: `unconfirmed_since` fills within ten minutes, and the
+alert fires within about 40. `replica_compose start primary-sync` then clears it.
+
 ## Rollback
 
 Unset `SSF_ARCHIVE_ENDPOINT` and run `production_compose up -d api_gateway`.
@@ -345,8 +394,10 @@ design.
 - The replica does not survive root on the primary: a version rewritten below
   the S3 API there replaces the replica's copy (see "What protects the
   archive"). The chain still shows the tampering.
-- Nothing alerts on a stopped or lagging sync yet (#626); Step 4's log check
-  is the only signal.
+- A sync that stops while nobody records raises no alert, since nothing is
+  then missing on the replica: `ArchiveReplicaBehind` fires about 40 minutes
+  after the first version stored after the stop. Closing that gap would take a
+  canary object written to the primary every few minutes.
 - The archive VM's disk is in no `backup-production.sh` artifact. The replica
   is its copy.
 - Restoring from the replica: it holds the same buckets, keys and version IDs,
