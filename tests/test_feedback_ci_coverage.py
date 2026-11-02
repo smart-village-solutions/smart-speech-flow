@@ -84,6 +84,7 @@ def test_the_job_supplies_every_role_dsn(variable: str) -> None:
         "recording/migrations/009_recording_leavers",
         "recording/migrations/010_recording_reenrolment_email",
         "recording/migrations/011_recording_verification",
+        "recording/migrations/012_recording_replica_sync",
     ],
 )
 def test_the_job_checks_each_migration_applied(migration: str) -> None:

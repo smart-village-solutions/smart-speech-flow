@@ -139,8 +139,8 @@ class PostgresRetentionDecisions:
         try:
             async with self._pool.acquire(timeout=COMMAND_TIMEOUT_SECONDS) as connection:
                 rows = await connection.fetch(
-                    "SELECT site, beat_at, failing_seconds, halted, hold_mismatches"
-                    " FROM retention_worker_status ORDER BY site"
+                    "SELECT site, beat_at, failing_seconds, halted, hold_mismatches,"
+                    " unconfirmed_since FROM retention_worker_status ORDER BY site"
                 )
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None

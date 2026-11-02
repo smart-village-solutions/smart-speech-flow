@@ -192,6 +192,13 @@ Copy the updated `deploy/archive-storage/` compose files to `/opt/ssf-archive/`
 on both VMs. Repeat this step whenever the gateway is deployed with a change
 under `services/api_gateway/recording/`.
 
+Apply the gateway's migrations (Step 2's `apply.sh`) before the gateway or the
+workers run a new image. From #626 on, the workers write and the gateway reads
+columns migration 012 adds; without them every heartbeat fails, or the gateway
+cannot read one, and `RecordingRetentionWorkerSilent` fires. Update both VMs
+together: until the replica's worker runs an image with #626,
+`ArchiveReplicaBehind` cannot see a stopped sync.
+
 ## Step 5 — Secrets on each VM
 
 The image runs as `app`, uid 100 and gid 101 (recording-keys-deployment.md,
@@ -241,13 +248,13 @@ On the gateway host, each site has a fresh heartbeat:
 
 ```bash
 production_compose exec -T ssf-postgres sh -ec \
-  'psql -U "$POSTGRES_USER" -d ssf_recording -c "SELECT site, beat_at, halted, failing_seconds, hold_mismatches FROM retention_worker_status"'
+  'psql -U "$POSTGRES_USER" -d ssf_recording -c "SELECT site, beat_at, halted, failing_seconds, hold_mismatches, unconfirmed_since FROM retention_worker_status"'
 curl -s http://127.0.0.1:8000/metrics | grep -c '^ssf_retention'
 ```
 
 Expected: a `primary` and a `replica` row, each beaten in the last five minutes
-with `halted` false; and `8` series (four per site) within a minute of the
-gateway reading them.
+with `halted` false and `unconfirmed_since` empty; and `10` series (five per
+site) within a minute of the gateway reading them.
 
 ## Step 7 — The daily dump
 
@@ -382,6 +389,7 @@ compare. In this order:
 | `RecordingRetentionWorkerSilent` | That site's worker has not finished a pass for 30 minutes, or has never reported since the gateway got an archive. Check the container (`… --profile retention ps`, `… logs retention`), Step 3's link, and that the gateway can read `ssf_recording`. |
 | `RecordingRetentionWorkerFailing` | A step on that site has failed for a day. The log names the error type; Step 6 lists the usual causes. |
 | `RecordingRetentionWorkerHalted` | The database is behind the worker's audit mark. If it was restored on purpose, work through Step 11. If not, find out why before acknowledging anything. |
+| `ArchiveReplicaBehind` | The replica's worker has not read a version stored on the primary for 30 minutes, or has not reported for as long. See archive-storage-deployment.md, "Alerts". |
 | `RecordingRetentionHoldMismatch` | Versions are held on that site with no hold in the database and no later `hold_off`, or untracked versions there are held. After a restore, have a supervisor set the hold again (Step 11, item 5). Otherwise check the conversation's decisions in the audit log; a supervisor's `hold_off` lifts it. For a shredded conversation no decision is accepted any more: lift the hold on that site with its retention pair by hand, and record why. |
 
 ## Rollback
@@ -390,6 +398,17 @@ Stop both workers (`archive_compose --profile retention stop retention`, and
 `replica_compose` likewise). Nothing then expires and nothing is deleted; locks
 keep protecting the archive. Migration 004 stays: its tables are unused without
 the workers, and the gateway's routes keep working.
+
+Rolling the workers back to an image without #626 leaves the last
+`unconfirmed_since` they wrote in place, and `ArchiveReplicaBehind` would fire
+on it for good. Clear it once both run the older image:
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d ssf_recording -c "UPDATE retention_worker_status SET unconfirmed_since = NULL"'
+```
+
+Migration 012 stays; the older images ignore its columns.
 
 ## Known limits
 

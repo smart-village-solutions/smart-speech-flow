@@ -165,16 +165,92 @@ async def test_failures_back_off_and_a_success_clears_them(archive, owner, store
     assert await store.overdue_since(TENANT, later + timedelta(hours=1)) == later
 
 
-async def test_the_backoff_stops_growing_at_its_ceiling(archive, owner, stores):
+MIGRATION_012 = (
+    Path(__file__).resolve().parents[2]
+    / "deploy/postgres/recording/migrations/012_recording_replica_sync.sql"
+)
+
+
+@pytest.mark.parametrize(
+    ("site", "read_before", "read_now", "ceiling"),
+    [
+        ("primary", False, False, timedelta(hours=6)),
+        # Not copied to the replica yet: retried within the alert's half hour (#626).
+        ("replica", False, False, timedelta(minutes=15)),
+        # Read once, as before a restore's re-read: a lasting fault, not a lag.
+        ("replica", True, False, timedelta(hours=6)),
+        ("replica", False, True, timedelta(hours=6)),
+    ],
+)
+async def test_the_backoff_stops_growing_at_its_ceiling(
+    archive, owner, stores, site, read_before, read_now, ceiling
+):
     await _stored(archive)
-    store = stores["primary"]
+    store = stores[site]
     await store.discover(TENANT, NOW)
-    await owner.execute("UPDATE version_locks SET attempts = 5000")
+    first_read = NOW - timedelta(days=1) if read_before else None
+    await owner.execute("UPDATE version_locks SET attempts = 5000, first_read_at = $1", first_read)
     [row] = await store.due_versions(TENANT, NOW)
-    await store.record_failure(row, NOW)
-    assert await owner.fetchval("SELECT next_attempt_at FROM version_locks") == NOW + timedelta(
-        hours=6
+    state = LockState(NOW, None, False, None, None) if read_now else None
+    await store.record_failure(row, NOW, state)
+    assert await owner.fetchval("SELECT next_attempt_at FROM version_locks") == NOW + ceiling
+
+
+async def test_a_deleted_version_never_counts_as_unread(archive, owner, stores):
+    await _stored(archive)
+    replica = stores["replica"]
+    await replica.discover(TENANT, NOW)
+    # Deleted before migration 012 added first_read_at.
+    await owner.execute("UPDATE version_locks SET deleted_at = $1", NOW)
+    assert await replica.unconfirmed_since(TENANT) is None
+
+
+async def test_migration_012_marks_versions_read_before_it_as_read(archive, owner, stores):
+    await _stored(archive)
+    await _stored(archive)
+    replica = stores["replica"]
+    await replica.discover(TENANT, NOW)
+    read, _ = await owner.fetch("SELECT entry_id FROM version_locks ORDER BY entry_id")
+    await owner.execute(
+        "UPDATE version_locks SET checked_at = $1, first_read_at = NULL WHERE entry_id = $2",
+        NOW,
+        read["entry_id"],
     )
+
+    await owner.execute(MIGRATION_012.read_text())
+
+    rows = await owner.fetch("SELECT entry_id, first_read_at FROM version_locks ORDER BY entry_id")
+    assert [row["first_read_at"] for row in rows] == [NOW, None]
+    assert await replica.unconfirmed_since(TENANT) == NOW  # the unread one, stored at NOW
+
+
+async def test_unconfirmed_since_is_when_the_oldest_unread_version_was_stored(
+    archive, owner, stores
+):
+    entries = {}
+    for stored_at in (NOW + timedelta(minutes=30), NOW):
+        _, _, _, consent = await _opened(archive)
+        await archive.record_stored(TENANT, consent.entry_id, "record.json", "v", stored_at)
+        entries[stored_at] = consent.entry_id
+    replica = stores["replica"]
+    await replica.discover(TENANT, NOW)
+    rows = {row.entry_id: row for row in await replica.due_versions(TENANT, NOW)}
+    older, newer = rows[entries[NOW]], rows[entries[NOW + timedelta(minutes=30)]]
+
+    # Untried versions count: a pass that never reached them must not hide them.
+    assert await replica.unconfirmed_since(TENANT) == NOW
+    assert await stores["primary"].unconfirmed_since(TENANT) is None
+    await replica.record_failure(older, NOW)
+    assert await replica.unconfirmed_since(TENANT) == NOW
+
+    await replica.record(older, LockState(NOW, None, False, None, None), NOW)
+    assert await replica.unconfirmed_since(TENANT) == NOW + timedelta(minutes=30)
+    # A re-read after a restore clears checked_at, not the first read.
+    await replica.recheck_all(TENANT, NOW)
+    assert await replica.unconfirmed_since(TENANT) == NOW + timedelta(minutes=30)
+    # Read, then a later step failed: read all the same.
+    await replica.record_failure(newer, NOW, LockState(NOW, None, False, None, None))
+    assert await replica.unconfirmed_since(TENANT) is None
 
 
 async def test_a_decision_made_while_a_row_is_worked_on_is_not_overwritten(archive, owner, stores):
@@ -210,17 +286,17 @@ async def test_the_replica_cannot_reach_the_primarys_rows(archive, owner, stores
 
 
 async def test_each_site_beats_only_for_itself(archive, owner, stores):
-    await stores["primary"].beat(NOW, 12.5, False, 1)
-    await stores["primary"].beat(NOW + timedelta(minutes=5), 0.0, True, 0)
-    await stores["replica"].beat(NOW, 0.0, False, 0)
+    await stores["primary"].beat(NOW, 12.5, False, 1, NOW)
+    await stores["primary"].beat(NOW + timedelta(minutes=5), 0.0, True, 0, None)
+    await stores["replica"].beat(NOW, 0.0, False, 0, NOW - timedelta(hours=1))
     rows = await owner.fetch("SELECT * FROM retention_worker_status ORDER BY site")
-    assert [(row["site"], row["beat_at"], row["halted"]) for row in rows] == [
-        ("primary", NOW + timedelta(minutes=5), True),
-        ("replica", NOW, False),
+    assert [(r["site"], r["beat_at"], r["halted"], r["unconfirmed_since"]) for r in rows] == [
+        ("primary", NOW + timedelta(minutes=5), True, None),
+        ("replica", NOW, False, NOW - timedelta(hours=1)),
     ]
     impostor = PostgresRetentionStore(stores["replica"].pool, "primary")
     with pytest.raises(RecordingStorageUnavailable) as refused:
-        await impostor.beat(NOW, 0.0, False, 0)
+        await impostor.beat(NOW, 0.0, False, 0, None)
     assert "postgresql://" not in str(refused.value)
 
 
@@ -314,16 +390,19 @@ async def test_a_restore_lists_held_extended_and_unread_versions(archive, owner,
 
 
 async def test_the_gateway_reads_both_sites_heartbeats(archive, stores):
-    await stores["replica"].beat(NOW, 0.0, False, 0)
-    await stores["primary"].beat(NOW, 30.0, True, 2)
+    await stores["replica"].beat(NOW, 0.0, False, 0, NOW)
+    await stores["primary"].beat(NOW, 30.0, True, 2, None)
     base = await PostgresRecordingRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
     try:
         statuses = await PostgresRetentionDecisions(base.pool).worker_statuses()
     finally:
         await base.close()
-    assert [(s.site, s.failing_seconds, s.halted, s.hold_mismatches) for s in statuses] == [
-        ("primary", 30.0, True, 2),
-        ("replica", 0.0, False, 0),
+    assert [
+        (s.site, s.failing_seconds, s.halted, s.hold_mismatches, s.unconfirmed_since)
+        for s in statuses
+    ] == [
+        ("primary", 30.0, True, 2, None),
+        ("replica", 0.0, False, 0, NOW),
     ]
 
 

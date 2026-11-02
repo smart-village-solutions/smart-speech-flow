@@ -33,6 +33,8 @@ from .settings import WorkerSettings
 SWEEP_STATE_FILE: Final[str] = "sweep.json"
 # Tenants whose whole pass has been failing, and since when: they count as overdue.
 FAILURES_STATE_FILE: Final[str] = "tenant-failures.json"
+# Each tenant's last read unconfirmed_since, kept for a pass that cannot read it.
+UNCONFIRMED_STATE_FILE: Final[str] = "unconfirmed.json"
 
 
 class WorkerStore(RetentionRows, ExpiryRows, Protocol):
@@ -50,8 +52,15 @@ class WorkerStore(RetentionRows, ExpiryRows, Protocol):
 
     async def overdue_since(self, tenant_id: str, now: datetime) -> datetime | None: ...
 
+    async def unconfirmed_since(self, tenant_id: str) -> datetime | None: ...
+
     async def beat(
-        self, now: datetime, failing_seconds: float, halted: bool, hold_mismatches: int
+        self,
+        now: datetime,
+        failing_seconds: float,
+        halted: bool,
+        hold_mismatches: int,
+        unconfirmed_since: datetime | None,
     ) -> None: ...
 
 
@@ -122,7 +131,8 @@ class RetentionWorker:
         report.halted, _ = await self._observe(await self._store.tenants(), advance=True)
         report.mismatches = await self._mismatches(tenants, report, complete=not failed)
         overdue = await self._overdue_seconds(tenants, now, failed)
-        await self._store.beat(now, overdue, report.halted, report.mismatches)
+        unconfirmed = await self._unconfirmed_since(tenants)
+        await self._store.beat(now, overdue, report.halted, report.mismatches, unconfirmed)
         return report
 
     async def _observe(self, tenants: list[str], *, advance: bool) -> tuple[bool, set[str]]:
@@ -226,6 +236,33 @@ class RetentionWorker:
             except RecordingStorageUnavailable:
                 pass  # its pass failed too, and counts as overdue
         return total
+
+    async def _unconfirmed_since(self, tenants: list[str]) -> datetime | None:
+        """The oldest version this site still lacks; a stopped replica sync shows here (#626).
+
+        A tenant that cannot be read keeps its last value, across restarts too, so a
+        flaky read neither clears the alert nor restarts its timer.
+        """
+        path = self._settings.state_dir / UNCONFIRMED_STATE_FILE
+        raw = _read_state(path)
+        last = raw if isinstance(raw, dict) else {}
+        known = {}
+        for tenant in tenants:
+            try:
+                moment = await self._store.unconfirmed_since(tenant)
+                known[tenant] = None if moment is None else moment.isoformat()
+            except RecordingStorageUnavailable:
+                known[tenant] = last.get(tenant)
+        if known != last:
+            _write_state(path, known)
+        moments = []
+        for value in known.values():
+            if isinstance(value, str):
+                try:
+                    moments.append(datetime.fromisoformat(value))
+                except ValueError:
+                    pass  # an unreadable record
+        return min(moments, default=None)
 
     def _record_failures(self, tenants: set[str], failed: set[str], now: datetime) -> None:
         path = self._settings.state_dir / FAILURES_STATE_FILE

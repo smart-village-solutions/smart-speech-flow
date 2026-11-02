@@ -128,6 +128,11 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "Versions held on a site although no hold applies, awaiting a hold_off decision",
         frozenset({"site"}),
     ),
+    "ssf_retention_unconfirmed_since_timestamp_seconds": (
+        "gauge",
+        "When the oldest stored version a site has never read was stored; 0 when none",
+        frozenset({"site"}),
+    ),
     "ssf_retention_worker_failing_seconds": (
         "gauge",
         "How long the oldest overdue or failing retention step on each site has waited",

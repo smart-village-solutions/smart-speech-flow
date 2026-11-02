@@ -55,9 +55,12 @@ class FakeRetentionStore:
         self.restores = 0
         self.recorded: dict[str, tuple[LockState, datetime]] = {}
         self.failed: list[str] = []
+        # When each version was stored, for unconfirmed_since; NOW unless set.
+        self.stored_at: dict[str, datetime] = {}
+        self.first_read: set[str] = {row.version_id for row in rows if row.checked_at}
         self.failing: dict[str, datetime] = {}
         self.discovered: list[str] = []
-        self.beats: list[tuple[datetime, float, bool, int]] = []
+        self.beats: list[tuple[datetime, float, bool, int, datetime | None]] = []
         self.unavailable: set[str] = set()
         self.calls = 0
         self.closed = False
@@ -128,6 +131,7 @@ class FakeRetentionStore:
 
     async def record(self, row, state, revisit_at):
         self.recorded[row.version_id] = (state, revisit_at)
+        self.first_read.add(row.version_id)
         self.failing.pop(row.version_id, None)
         self.rows[row.version_id] = dataclasses.replace(
             row,
@@ -144,6 +148,7 @@ class FakeRetentionStore:
         self.failed.append(row.version_id)
         self.failing.setdefault(row.version_id, now)
         if state is not None:
+            self.first_read.add(row.version_id)
             row = dataclasses.replace(
                 row,
                 checked_at=state.checked_at,
@@ -164,8 +169,20 @@ class FakeRetentionStore:
         ]
         return min(moments, default=None)
 
-    async def beat(self, now, failing_seconds, halted, hold_mismatches):
-        self.beats.append((now, failing_seconds, halted, hold_mismatches))
+    async def unconfirmed_since(self, tenant_id):
+        if tenant_id in self.unavailable:
+            raise RecordingStorageUnavailable("the recording database is unavailable")
+        return min(
+            (
+                self.stored_at.get(version, NOW)
+                for version, row in self.rows.items()
+                if row.tenant_id == tenant_id and version not in self.first_read
+            ),
+            default=None,
+        )
+
+    async def beat(self, now, failing_seconds, halted, hold_mismatches, unconfirmed_since):
+        self.beats.append((now, failing_seconds, halted, hold_mismatches, unconfirmed_since))
 
     async def close(self) -> None:
         self.closed = True

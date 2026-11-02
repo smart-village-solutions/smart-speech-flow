@@ -67,7 +67,7 @@ async def test_a_pass_covers_every_tenant_and_beats(tmp_path):
     report = await _worker(tmp_path, store).run_once()
     assert store.discovered == [TENANT, "tenant-b"]
     assert (report.tenants, report.halted) == (2, False)
-    assert store.beats == [(NOW, 0.0, False, 0)]
+    assert store.beats == [(NOW, 0.0, False, 0, None)]
 
 
 async def test_a_tenant_whose_database_fails_is_skipped_and_the_rest_run(tmp_path):
@@ -93,7 +93,57 @@ async def test_the_heartbeat_reports_the_oldest_failure_and_the_mismatches(tmp_p
     report = await _worker(tmp_path, store, archive).run_once()
 
     assert (report.mismatches, report.failures) == (1, 1)
-    assert store.beats == [(NOW, 3 * 3600.0, False, 1)]
+    assert store.beats == [(NOW, 3 * 3600.0, False, 1, None)]
+
+
+async def test_the_heartbeat_reports_when_the_oldest_unread_version_was_stored(tmp_path):
+    """Across tenants, of versions never read here; the store has none of them yet."""
+    unread = due_row(version_id="v1", checked_at=None)
+    elsewhere = due_row(version_id="v2", checked_at=None, tenant_id="tenant-b")
+    read = due_row(version_id="v3")
+    store = FakeRetentionStore(unread, elsewhere, read, positions={TENANT: 1, "tenant-b": 1})
+    store.stored_at |= {
+        "v1": NOW - timedelta(hours=1),
+        "v2": NOW - timedelta(hours=2),
+        "v3": NOW - timedelta(hours=5),
+    }
+
+    await _worker(tmp_path, store).run_once()
+
+    assert store.beats[-1][4] == NOW - timedelta(hours=2)
+
+
+async def test_a_tenant_that_cannot_be_read_keeps_its_last_unconfirmed_since(tmp_path):
+    store = FakeRetentionStore(
+        due_row(version_id="v1", checked_at=None),
+        due_row(version_id="v2", checked_at=None, tenant_id="tenant-b"),
+        positions={TENANT: 1, "tenant-b": 1},
+    )
+    store.stored_at |= {"v1": NOW - timedelta(hours=2), "v2": NOW - timedelta(hours=1)}
+
+    store.unavailable = {TENANT}
+    await _worker(tmp_path, store).run_once()
+    store.unavailable = set()
+    await _worker(tmp_path, store).run_once()
+    store.unavailable = {TENANT}
+    await _worker(tmp_path, store).run_once()  # a restarted worker
+
+    # Never read yet: left out; read once: kept, so the alert neither clears nor restarts.
+    assert [beat[4] for beat in store.beats] == [
+        NOW - timedelta(hours=1),
+        NOW - timedelta(hours=2),
+        NOW - timedelta(hours=2),
+    ]
+
+
+async def test_an_unreadable_unconfirmed_record_is_ignored(tmp_path):
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "unconfirmed.json").write_text('{"tenant-a": "not a time", "tenant-b": 7}')
+    store = FakeRetentionStore(positions={TENANT: 1, "tenant-b": 1})
+    store.unavailable = {TENANT, "tenant-b"}
+    await _worker(tmp_path, store).run_once()
+    assert store.beats[-1][4] is None
 
 
 async def test_a_database_behind_the_audit_mark_halts_destructive_steps(tmp_path):
