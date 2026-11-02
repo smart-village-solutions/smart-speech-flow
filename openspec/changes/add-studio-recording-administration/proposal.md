@@ -20,4 +20,4 @@ SSF already consumes recording policy, legal wording and recording-directory res
 - SSF implementation: contract fixtures, compatibility tests and documentation; existing recording consumers are reused.
 - Related issues: [#612](https://github.com/smart-village-solutions/smart-speech-flow/issues/612), [#611](https://github.com/smart-village-solutions/smart-speech-flow/issues/611).
 - Studio must carry the matching approved specification in its repository before implementation. This SSF-side proposal is the handoff contract, not evidence of delivered Studio behavior.
-- Plan preparation only: no runtime, realm, existing archive or production configuration changes.
+- Implementation approved by the user on 2026-11-02. Studio work is tracked in its matching `add-ssf-recording-administration` change; the SSF changes align fixtures and consumer acceptance. Existing archives and production configuration are unchanged.

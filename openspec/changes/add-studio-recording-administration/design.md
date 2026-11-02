@@ -52,4 +52,4 @@ Deliver policy, identity/directory and MFA as independently tested slices. Conve
 
 ## Approval boundary
 
-The product decisions are confirmed. Implementation still requires the matching OpenSpec proposal approval in the owning repository. This deliverable supplies the reviewable plan and contract; it does not authorize a production rollout.
+The user approved implementation on 2026-11-02. The matching Studio change `add-ssf-recording-administration` records these producer obligations and the reviewed implementation progress. Production promotion and tenant enablement remain separate release operations.
