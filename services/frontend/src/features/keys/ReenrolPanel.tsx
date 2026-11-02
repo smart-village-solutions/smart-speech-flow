@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { hasFreshStepUp } from '@/app/auth/keycloak';
 import type { KeyOwner } from '@/core/crypto/archive-crypto.port';
-import type { OwnKey, Reenrolled } from '@/domain/recording/recording.types';
-import { Button } from '@/ui/primitives/Button';
+import type { OwnKey } from '@/domain/recording/recording.types';
 import { NewKeyForm } from './NewKeyForm';
-import { PendingNotice } from './PendingNotice';
+import { ReenrolmentStatus } from './ReenrolmentStatus';
 import { ReenrolWarning } from './ReenrolWarning';
 import { StepUpPrompt } from './StepUpPrompt';
 import { type ReenrolmentError, useReenrolment } from './useReenrolment';
@@ -26,36 +25,17 @@ interface ReenrolPanelProps {
   onOpenKeyRecovery?: () => void;
 }
 
-function Result({
-  done,
-  onOpenKeyRecovery,
-}: Readonly<{ done: Reenrolled; onOpenKeyRecovery?: () => void }>) {
-  const { t } = useTranslation();
-  if (done.status !== 'active') return <PendingNotice requested={done.fingerprintDisplay} />;
-  return (
-    <section
-      role="status"
-      className="flex flex-col gap-3 rounded-2xl border border-border-status bg-surface-card p-5"
-    >
-      <p className="text-note text-fg-body">{t('admin.keys.reenrol.done')}</p>
-      <code className="text-body font-semibold text-fg-strong">{done.fingerprintDisplay}</code>
-      {onOpenKeyRecovery && (
-        <Button
-          variant="compact"
-          className="self-start bg-accent text-accent-on"
-          onClick={onOpenKeyRecovery}
-        >
-          {t('admin.keyRecovery.open')}
-        </Button>
-      )}
-    </section>
-  );
-}
-
 function ReenrolForm({ owner, ownKey, onOpenKeyRecovery }: Readonly<ReenrolPanelProps>) {
   const { t } = useTranslation();
   const { submit, error, pending, result } = useReenrolment(owner, ownKey.keyVersion);
-  if (result !== null) return <Result done={result} onOpenKeyRecovery={onOpenKeyRecovery} />;
+  if (result !== null)
+    return (
+      <ReenrolmentStatus
+        ownKey={ownKey}
+        requested={result.fingerprintDisplay}
+        onOpenKeyRecovery={onOpenKeyRecovery}
+      />
+    );
   if (error === 'stepUp') return <StepUpPrompt />;
   return (
     <NewKeyForm
@@ -82,7 +62,7 @@ export function ReenrolPanel(props: Readonly<ReenrolPanelProps>) {
   if (stage === 'form') return <ReenrolForm {...props} />;
   return (
     <>
-      <PendingNotice />
+      <ReenrolmentStatus ownKey={props.ownKey} onOpenKeyRecovery={props.onOpenKeyRecovery} />
       <button
         type="button"
         className="self-start text-label font-medium text-fg-muted"

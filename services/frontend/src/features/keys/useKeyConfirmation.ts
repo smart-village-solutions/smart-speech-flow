@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useServices } from '@/app/providers/services';
-import { AppError } from '@/core/http/AppError';
+import { fromServerCode } from '@/core/http/AppError';
 import type { LinkDetails } from '@/domain/recording/recording.types';
 
 export type ConfirmationError = 'missing' | 'invalid' | 'expired' | 'ceremony' | 'failed';
@@ -15,8 +15,7 @@ const CODES: Record<string, ConfirmationError> = {
 };
 
 function confirmationError(caught: unknown): ConfirmationError {
-  const code = caught instanceof AppError ? caught.serverCode : undefined;
-  return (code !== undefined && CODES[code]) || 'failed';
+  return fromServerCode(caught, CODES, 'failed');
 }
 
 /** The link's token, from the fragment: it never reaches a server log or a Referer. */

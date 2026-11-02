@@ -47,7 +47,7 @@ export function toEnrolledKey(body: unknown): EnrolledKey {
 
 export function toReenrolled(body: unknown): Reenrolled {
   const parsed = enrolledKey
-    .extend({ status: z.enum(['active', 'pending_confirmation']) })
+    .extend({ status: z.literal('pending_confirmation') })
     .parse(body);
   return {
     status: parsed.status,

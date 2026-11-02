@@ -39,8 +39,8 @@ class ReenrolmentStore(Protocol):
 
 @dataclass(frozen=True)
 class Reenrolled:
-    # "active" stays in the answer's contract; today every new key waits for its link.
-    status: Literal["active", "pending_confirmation"]
+    # A new key always waits for its mailed link (§9.9); confirm activates it.
+    status: Literal["pending_confirmation"]
     fingerprint: bytes
 
 

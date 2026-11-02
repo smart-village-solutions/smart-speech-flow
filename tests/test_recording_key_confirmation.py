@@ -177,10 +177,17 @@ def test_storage_failure_is_503(client):
     assert (response.status_code, _code(response)) == (503, "RECORDING_UNAVAILABLE")
 
 
-@pytest.mark.parametrize("body", [{}, {"token": LINK, "extra": 1}, {"token": "x" * 44}])
+@pytest.mark.parametrize("body", [{}, {"token": LINK, "extra": 1}, {"token": "x" * 257}])
 def test_a_bad_body_is_refused_without_echoing_it(client, body):
     response = client(FakeStore()).post(f"{BASE}/confirm", json=body)
-    assert response.status_code == 422 and "x" * 44 not in response.text
+    assert response.status_code == 422 and "x" * 257 not in response.text
+
+
+@pytest.mark.parametrize("token", [LINK[:-1], LINK + "A", "not a token"])
+def test_a_truncated_or_wrapped_link_is_an_invalid_link(client, token):
+    """Review: a 422 would make the page offer a retry that can never succeed."""
+    response = client(FakeStore()).post(f"{BASE}/lookup", json={"token": token})
+    assert (response.status_code, _code(response)) == (404, "LINK_INVALID")
 
 
 def test_an_unwired_gateway_answers_503():

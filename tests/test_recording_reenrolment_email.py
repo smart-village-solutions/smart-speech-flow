@@ -19,7 +19,7 @@ from services.api_gateway.recording.reenrolment_email import (
     compose,
     token_hash,
 )
-from services.api_gateway.recording.repository import UserKeyRecord
+from services.api_gateway.recording.repository import RecordingStorageUnavailable, UserKeyRecord
 from tests import recording_crypto_reference as ref
 
 NOW = datetime(2026, 11, 2, 9, 30, tzinfo=timezone.utc)
@@ -114,11 +114,21 @@ async def test_without_a_mailer_or_an_origin_it_is_unavailable(mailer, origin):
     assert store.calls == []
 
 
-async def test_the_pending_key_is_read_after_a_sweep():
+async def test_the_pending_key_is_only_read():
+    """Review: the keys screen's read must not write; the next request sweeps."""
     store = FakeStore()
     pending = await _adapter(store, FakeMailer()).pending("tenant-a", "alice", NOW)
     assert pending == PendingKey(b"\x05" * 32, NOW + LINK_LIFETIME)
-    assert [call[0] for call in store.calls] == ["sweep", "pending_of"]
+    assert [call[0] for call in store.calls] == ["pending_of"]
+
+
+async def test_a_failed_release_still_answers_that_mail_is_unavailable():
+    class StuckStore(FakeStore):
+        async def release(self, tenant_id, hashed, now):
+            raise RecordingStorageUnavailable("down")
+
+    with pytest.raises(ReenrolmentError, match="mail_unavailable"):
+        await _adapter(StuckStore(), FakeMailer(MailError("OSError"))).request(RECORD, 2)
 
 
 def test_the_mail_holds_link_fingerprint_and_both_languages_and_no_sub():

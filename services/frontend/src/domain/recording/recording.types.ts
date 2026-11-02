@@ -18,9 +18,9 @@ export interface EnrolledKey {
   fingerprintDisplay: string;
 }
 
-/** Active now, or waiting for the emailed confirmation link (spec §9.6). */
+/** Waiting for the emailed confirmation link; opening it activates the key (spec §9.9). */
 export interface Reenrolled extends EnrolledKey {
-  status: 'active' | 'pending_confirmation';
+  status: 'pending_confirmation';
 }
 
 /** A re-enrolled key waiting for its mailed link (spec §9.9). */

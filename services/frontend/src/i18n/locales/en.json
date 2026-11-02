@@ -274,7 +274,8 @@
         "failed": "The new key could not be set up.",
         "pendingUntil": "Open the link from our email before {{time}}. Only then does this key become active:",
         "mailUnavailable": "The confirmation email cannot be sent right now. Please try again later.",
-        "emailNotVerified": "Your key has no email address to send the confirmation link to. Please contact your administrator."
+        "emailNotVerified": "Your key has no email address to send the confirmation link to. Please contact your administrator.",
+        "ended": "The link was declined or has expired; your previous key stays in use. Set up a new key again if you still need one."
       },
       "emailNotVerified": "Your account has no verified email address. Please verify it in your account settings; that is where we send the link if you ever need a new key.",
       "confirmation": {
@@ -284,7 +285,7 @@
         "confirm": "Confirm key",
         "decline": "This wasn't me",
         "confirmed": "Your new key is active.",
-        "confirmedNext": "Unlock it on the Archive keys screen with your new passphrase.",
+        "confirmedNext": "Unlock it on the Archive keys screen with your new passphrase. It opens your earlier conversations only after key recovery, which you request there.",
         "declined": "The new key was discarded; your previous key stays in use. Please tell your administrator, because someone else requested it.",
         "invalid": "This link is not valid or has already been used. If you already confirmed it, your new key is active.",
         "expired": "This link has expired. Please set up the new key again.",

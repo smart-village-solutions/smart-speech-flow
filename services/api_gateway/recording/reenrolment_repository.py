@@ -1,4 +1,4 @@
-"""Re-enrolment's swap (spec §9.6; migration 007).
+"""Re-enrolment's swap (spec §9.6; migration 007), run only by the mailed link's confirm (§9.9).
 
 One transaction, in the lock order every recovery writer keeps: the caller's
 active key row, then their open requests, then the writes, then the audit.
@@ -55,23 +55,6 @@ class PostgresKeyReenrolment:
                 return await work(connection)
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
-
-    async def swap(
-        self, record: UserKeyRecord, replaces_version: int, now: datetime
-    ) -> Refused | None:
-        """Retires `replaces_version` for `record`, or refuses and changes nothing."""
-
-        async def work(connection: asyncpg.Connection) -> Refused | None:
-            old = await lock_active_key(connection, record.user_sub)
-            refused = await reenrolment_refusal(
-                connection, old, record.user_sub, replaces_version, now
-            )
-            if refused is not None:
-                return refused
-            await complete_swap(connection, record, old, now, [])
-            return None
-
-        return await self._run(record.tenant_id, work)
 
     async def impact(self, tenant_id: str, sub: str) -> ReenrolmentImpact:
         async def work(connection: asyncpg.Connection) -> ReenrolmentImpact:

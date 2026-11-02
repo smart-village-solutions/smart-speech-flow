@@ -29,6 +29,7 @@ from services.api_gateway.recording.reenrolment_repository import (
     reenrolment_refusal,
 )
 from services.api_gateway.recording.repository import UserKeyRecord, bind_tenant
+from tests.recording_swap import swap_key
 from services.api_gateway.recording.resharing import ResharingService
 from services.api_gateway.recording.resharing_model import ResharingStart
 from tests import recording_crypto_reference as ref
@@ -794,7 +795,7 @@ async def test_the_swap_waits_for_an_activation_holding_the_key_row(store, owner
         await transaction.start()
         await holder.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", TENANT)
         await holder.execute("SELECT 1 FROM recovery_keys WHERE status = 'active' FOR UPDATE")
-        swap = asyncio.create_task(PostgresKeyReenrolment(archive._pool).swap(record, 1, NOW))
+        swap = asyncio.create_task(swap_key(archive._pool, record, 1, NOW))
         await asyncio.sleep(0.5)
         assert not swap.done()
         await transaction.rollback()

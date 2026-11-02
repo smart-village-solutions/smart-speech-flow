@@ -274,7 +274,8 @@
         "failed": "Der neue Schlüssel konnte nicht eingerichtet werden.",
         "pendingUntil": "Öffnen Sie den Link aus unserer E-Mail bis {{time}} Uhr. Erst dann wird dieser Schlüssel aktiv:",
         "mailUnavailable": "Die Bestätigungs-E-Mail kann gerade nicht verschickt werden. Bitte versuchen Sie es später erneut.",
-        "emailNotVerified": "Für Ihren Schlüssel ist keine E-Mail-Adresse hinterlegt, an die wir den Bestätigungslink schicken könnten. Bitte wenden Sie sich an Ihre Administration."
+        "emailNotVerified": "Für Ihren Schlüssel ist keine E-Mail-Adresse hinterlegt, an die wir den Bestätigungslink schicken könnten. Bitte wenden Sie sich an Ihre Administration.",
+        "ended": "Der Link wurde abgelehnt oder ist abgelaufen; Ihr bisheriger Schlüssel gilt weiter. Richten Sie bei Bedarf erneut einen neuen Schlüssel ein."
       },
       "emailNotVerified": "Ihr Konto hat keine bestätigte E-Mail-Adresse. Bitte bestätigen Sie sie in Ihren Kontoeinstellungen; an diese Adresse schicken wir den Link, falls Sie später einen neuen Schlüssel brauchen.",
       "confirmation": {
@@ -284,7 +285,7 @@
         "confirm": "Schlüssel bestätigen",
         "decline": "Das war ich nicht",
         "confirmed": "Ihr neuer Schlüssel ist aktiv.",
-        "confirmedNext": "Entsperren Sie ihn auf der Seite „Archivschlüssel“ mit Ihrer neuen Passphrase.",
+        "confirmedNext": "Entsperren Sie ihn auf der Seite „Archivschlüssel“ mit Ihrer neuen Passphrase. Ihre früheren Gespräche öffnet er erst nach der Schlüsselwiederherstellung, die Sie dort beantragen.",
         "declined": "Der neue Schlüssel wurde verworfen; Ihr bisheriger Schlüssel gilt weiter. Bitte informieren Sie Ihre Administration, denn jemand anderes hat ihn angefordert.",
         "invalid": "Dieser Link ist ungültig oder wurde schon verwendet. Haben Sie ihn bereits bestätigt, ist Ihr neuer Schlüssel aktiv.",
         "expired": "Dieser Link ist abgelaufen. Richten Sie den neuen Schlüssel bitte erneut ein.",

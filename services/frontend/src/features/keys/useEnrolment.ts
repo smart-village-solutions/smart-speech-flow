@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import type { KeyOwner, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
-import { AppError } from '@/core/http/AppError';
+import { fromServerCode } from '@/core/http/AppError';
 import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import { OWN_KEY_QUERY } from './useKeys';
 
@@ -24,14 +24,13 @@ async function problemWith(
   return score >= REQUIRED_SCORE ? null : 'weak';
 }
 
-const ENROLMENT_CODES: Record<string, EnrolmentError> = {
+export const ENROLMENT_CODES: Readonly<Record<string, EnrolmentError>> = {
   [STEP_UP_REQUIRED]: 'stepUp',
   EMAIL_NOT_VERIFIED: 'email',
 };
 
 function enrolmentError(caught: unknown): EnrolmentError {
-  const code = caught instanceof AppError ? caught.serverCode : undefined;
-  return (code !== undefined && ENROLMENT_CODES[code]) || 'failed';
+  return fromServerCode(caught, ENROLMENT_CODES, 'failed');
 }
 
 /** The passphrase checks, the pending state and the error every new key shares (§8.3, §9.6). */

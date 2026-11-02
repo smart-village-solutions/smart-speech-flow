@@ -20,7 +20,7 @@ from .key_confirmation_repository import PendingKey
 from .mail import Mailer, MailError, MailMessage
 from .recovery_requests_model import Refused
 from .reenrolment import ReenrolmentError
-from .repository import UserKeyRecord
+from .repository import RecordingStorageUnavailable, UserKeyRecord
 
 LINK_LIFETIME: Final[timedelta] = timedelta(minutes=30)
 TOKEN_BYTES: Final[int] = 32
@@ -125,9 +125,16 @@ class EmailConfirmation:
             await self._mailer.send(message)
         except MailError as error:
             sys.stderr.write(f"Re-enrolment mail failed: {error}\n")
-            await self._store.release(record.tenant_id, hashed, now)
+            await self._release(record.tenant_id, hashed, now)
             raise ReenrolmentError("mail_unavailable") from None
 
+    async def _release(self, tenant_id: str, hashed: bytes, now: datetime) -> None:
+        try:
+            await self._store.release(tenant_id, hashed, now)
+        except RecordingStorageUnavailable:
+            # The hold outlives its unsent mail until a new request or its expiry ends it.
+            sys.stderr.write("Re-enrolment hold could not be released\n")
+
     async def pending(self, tenant_id: str, sub: str, now: datetime) -> PendingKey | None:
-        await self._store.sweep(tenant_id, now)
+        # A read: a lapsed link reads as none, and its audit is left to the next write.
         return await self._store.pending_of(tenant_id, sub, now)

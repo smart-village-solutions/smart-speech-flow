@@ -48,8 +48,9 @@ Confirmations = Annotated[KeyConfirmations, Depends(get_key_confirmations)]
 class LinkBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # 32 bytes, base64url without padding.
-    token: str = Field(min_length=43, max_length=43)
+    # 32 bytes, base64url without padding, is 43 characters. Any other shape is an
+    # invalid link, not a malformed request: a page could only retry it forever.
+    token: str = Field(min_length=1, max_length=256)
 
 
 def _refused(error: KeyConfirmationError) -> Exception:
