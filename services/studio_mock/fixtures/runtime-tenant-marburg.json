@@ -51,7 +51,7 @@
       "staffName": "Englisch",
       "icon": null,
       "guest": {
-        "explanationHtml": "<p>Test environment: stored conversations are kept without an expiry.</p>",
+        "explanationHtml": "<p>Test environment: conversations are translated in real time.</p>",
         "storageQuestionHtml": null
       }
     }
