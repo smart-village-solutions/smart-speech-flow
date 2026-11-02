@@ -58,6 +58,11 @@ async def _count(owner, table: str, conversation_id: str) -> int:
             "SELECT count(*) FROM stored_objects WHERE entry_id IN"
             " (SELECT entry_id FROM chain_entries WHERE conversation_id = $1)"
         )
+    elif table == "verification_notes":
+        sql = (
+            "SELECT count(*) FROM verification_notes WHERE verification_id IN"
+            " (SELECT verification_id FROM verifications WHERE conversation_id = $1)"
+        )
     elif table == "key_wraps":
         sql = (
             "SELECT count(*) FROM key_wraps WHERE key_id IN"
@@ -209,8 +214,63 @@ async def test_every_table_naming_a_conversation_is_expired_or_kept(owner):
         named - set(EXPIRY_DELETION_ORDER) - set(KEPT_AFTER_EXPIRY)
     )
     # These name no conversation themselves and go through their parents.
-    assert {"stored_objects", "key_wraps"} <= set(EXPIRY_DELETION_ORDER)
+    assert {"stored_objects", "key_wraps", "verification_notes"} <= set(EXPIRY_DELETION_ORDER)
     assert EXPIRY_DELETION_ORDER[-1] == "conversations"
+
+
+async def _verified(owner, conversation_id: str) -> None:
+    """A decided record with a note, and an open one: pending review never keeps rows (§16)."""
+    entry = await owner.fetchrow(
+        "SELECT entry_id, key_id FROM chain_entries WHERE conversation_id = $1 LIMIT 1",
+        uuid.UUID(conversation_id),
+    )
+    for status, reviewer in (("approved", "rita"), ("awaiting", "ralf")):
+        decided = status == "approved"
+        verification_id = await owner.fetchval(
+            "INSERT INTO verifications (tenant_id, verification_id, conversation_id, status,"
+            " requested_by, requester_key_version, requested_at, directory_read_at, reviewer_sub,"
+            " reviewer_key_version, reviewer_fingerprint, reviewed_head, permission_snapshot,"
+            " outcome, notes_digest, signature, decided_at) VALUES ($1, gen_random_uuid(), $2,"
+            " $3, 'alice', 1, $4, $4, $5, 1, $6, $7, $8, $9, $7, $10, $11)"
+            " RETURNING verification_id",
+            TENANT,
+            uuid.UUID(conversation_id),
+            status,
+            NOW,
+            reviewer,
+            b"\x07" * 32,
+            b"\x01" * 32 if decided else None,
+            ["ssf.recording.review"] if decided else None,
+            status if decided else None,
+            b"\x03" * 64 if decided else None,
+            NOW if decided else None,
+        )
+        if decided:
+            await owner.execute(
+                "INSERT INTO verification_notes VALUES ($1, $2, $3, $4, $5)",
+                TENANT,
+                verification_id,
+                entry["entry_id"],
+                entry["key_id"],
+                b"\x01" + bytes(40),
+            )
+
+
+async def test_verification_records_go_with_their_conversation(archive, owner, stores):
+    expired, kept = await _expired(archive, owner), await _expired(archive, owner)
+    await _verified(owner, expired)
+    await _verified(owner, kept)
+    primary = stores["primary"]
+    await primary.shred(TENANT, expired, NOW, "retention-worker")
+    await primary.record_clearance(TENANT, expired, NOW)
+    await stores["replica"].record_clearance(TENANT, expired, NOW)
+
+    assert await primary.delete_rows(TENANT, expired, NOW) is True
+
+    assert await _count(owner, "verifications", expired) == 0
+    assert await _count(owner, "verification_notes", expired) == 0
+    assert await _count(owner, "verifications", kept) == 2
+    assert await _count(owner, "verification_notes", kept) == 1
 
 
 async def test_an_erasure_shreds_at_once_as_the_operator(archive, owner, stores):

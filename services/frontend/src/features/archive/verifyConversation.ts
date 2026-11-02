@@ -8,12 +8,17 @@ import type { ArchiveTrust, OpenedConversation, StampFacts } from '@/domain/arch
 
 export interface StampView {
   headSeq: number;
-  /** The authority's time; its CMS signature is checked from #619 on. */
+  /** The authority's time; its CMS signature is not checked until Philipp item 27e is settled. */
   genTime: string;
 }
 
 export type Verified =
-  | { ok: true; keys: Map<string, CryptoKey>; stamps: StampView[] }
+  | {
+      ok: true;
+      keys: Map<string, CryptoKey>;
+      stamps: StampView[];
+      signers: ReadonlyMap<string, Bytes>;
+    }
   | { ok: false; stage: IntegrityStage };
 
 export interface VerifyInput {
@@ -24,6 +29,8 @@ export interface VerifyInput {
   unlocked: UnlockedKeys;
   archiveCrypto: ArchiveCrypto;
   ceremonyCrypto: CeremonyCrypto;
+  /** Accepted for wraps only, never for the chain: a review's assigner (spec §10.7). */
+  wrapSigners?: ReadonlyMap<string, Bytes>;
 }
 
 async function certified(input: Readonly<VerifyInput>): Promise<Map<string, Bytes> | null> {
@@ -90,7 +97,7 @@ function stampViews(opened: Readonly<OpenedConversation>): StampView[] | null {
 export async function verifyConversation(input: Readonly<VerifyInput>): Promise<Verified> {
   const signers = await certified(input);
   if (signers === null) return { ok: false, stage: 'trust' };
-  const keys = await openKeys(input, signers);
+  const keys = await openKeys(input, new Map([...signers, ...(input.wrapSigners ?? [])]));
   if (keys === null) return { ok: false, stage: 'wrap' };
   const conversationId = input.opened.conversation.conversationId;
   if (!(await verifyChain(input.tenantId, conversationId, input.opened.entries, signers))) {
@@ -98,5 +105,5 @@ export async function verifyConversation(input: Readonly<VerifyInput>): Promise<
   }
   const stamps = stampViews(input.opened);
   if (stamps === null) return { ok: false, stage: 'stamp' };
-  return { ok: true, keys, stamps };
+  return { ok: true, keys, stamps, signers };
 }

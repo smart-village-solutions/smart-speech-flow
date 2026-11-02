@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { trustChain } from '@/domain/recovery/chain.mapper';
 import { base64Url, chainKey, generation, sized, toServedChain } from '@/domain/recovery/recovery.mapper';
 import type { ArchiveTrust, OpenedConversation, OwnConversation } from './archive.types';
+import { record, summary, toRecord } from './verification.mapper';
 
 const uuid = z.string().uuid();
-const verification = z.literal('not_verified');
+const verification = summary;
 
 const own = z.object({
   conversation_id: uuid,
@@ -22,6 +23,7 @@ const own = z.object({
 });
 
 const opened = z.object({
+  verifications: z.array(record).default([]),
   conversation: z.object({
     conversation_id: uuid,
     employee_sub: z.string(),
@@ -155,6 +157,7 @@ export function toOpened(body: unknown): OpenedConversation {
               creatorSignature: k.wrap.creator_signature,
             },
     })),
+    verifications: parsed.verifications.map(toRecord),
   };
 }
 

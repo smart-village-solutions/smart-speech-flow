@@ -46,8 +46,9 @@ function opened(overrides: Partial<OpenedConversation> = {}): OpenedConversation
       retentionUntil: 'r',
       legalHold: false,
       incomplete: false,
-      verification: 'not_verified',
+      verification: { status: 'not_verified', approved: 0, notApproved: 0 },
     },
+    verifications: [],
     windows: [],
     entries,
     stamps: [{ headSeq: 3, headHash: entries[2].hash, token }],
@@ -112,6 +113,7 @@ describe('verifyConversation', () => {
       ok: true,
       keys: new Map([[KEY, { type: 'secret' }]]),
       stamps: [{ headSeq: 3, genTime: vectors.timestamp.gen_time }],
+      signers,
     });
     expect(setup.openWrap).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -121,6 +123,18 @@ describe('verifyConversation', () => {
       }),
       setup.unlocked,
       signers
+    );
+  });
+
+  it('accepts a review assigner for wraps only, never as a chain signer (spec §10.7)', async () => {
+    const assigner = new Map([['alice', new Uint8Array(65).fill(4)]]);
+    const setup = { ...input(), wrapSigners: assigner };
+    const result = await verifyConversation(setup);
+    expect(result.ok && [...result.signers.keys()]).toEqual([...signers.keys()]);
+    expect(setup.openWrap).toHaveBeenCalledWith(
+      expect.anything(),
+      setup.unlocked,
+      new Map([...signers, ...assigner])
     );
   });
 

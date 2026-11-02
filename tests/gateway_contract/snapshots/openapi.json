@@ -165,6 +165,45 @@
         "title": "ApproveBody",
         "type": "object"
       },
+      "AssignBody": {
+        "additionalProperties": false,
+        "properties": {
+          "key_version": {
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Key Version",
+            "type": "integer"
+          },
+          "reviewer_key_version": {
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Reviewer Key Version",
+            "type": "integer"
+          },
+          "reviewer_sub": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,254}$",
+            "title": "Reviewer Sub",
+            "type": "string"
+          },
+          "wraps": {
+            "items": {
+              "$ref": "#/components/schemas/WrapBody"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Wraps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key_version",
+          "reviewer_sub",
+          "reviewer_key_version",
+          "wraps"
+        ],
+        "title": "AssignBody",
+        "type": "object"
+      },
       "AudioVariant": {
         "enum": [
           "original",
@@ -757,6 +796,80 @@
           "subshares"
         ],
         "title": "DealingBody",
+        "type": "object"
+      },
+      "DecisionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/NoteBody"
+            },
+            "maxItems": 5000,
+            "title": "Notes",
+            "type": "array"
+          },
+          "outcome": {
+            "enum": [
+              "approved",
+              "not_approved"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "maxLength": 43731,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall"
+          },
+          "signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "signature"
+        ],
+        "title": "DecisionBody",
+        "type": "object"
+      },
+      "DraftBody": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/NoteBody"
+            },
+            "maxItems": 5000,
+            "title": "Notes",
+            "type": "array"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "maxLength": 43731,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall"
+          }
+        },
+        "title": "DraftBody",
         "type": "object"
       },
       "EnrolmentBody": {
@@ -1653,6 +1766,34 @@
         "title": "MarkBody",
         "type": "object"
       },
+      "NoteBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ciphertext": {
+            "maxLength": 87428,
+            "minLength": 1,
+            "title": "Ciphertext",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "key_id",
+          "ciphertext"
+        ],
+        "title": "NoteBody",
+        "type": "object"
+      },
       "PaperConfirmationBody": {
         "additionalProperties": false,
         "properties": {
@@ -2148,6 +2289,21 @@
         "title": "ResharingBody",
         "type": "object"
       },
+      "ReviewStartBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_head_seq": {
+            "minimum": 1.0,
+            "title": "Expected Head Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_head_seq"
+        ],
+        "title": "ReviewStartBody",
+        "type": "object"
+      },
       "SessionCreateResponse": {
         "properties": {
           "client_url": {
@@ -2539,6 +2695,35 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WrapBody": {
+        "additionalProperties": false,
+        "properties": {
+          "blob": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Blob",
+            "type": "string"
+          },
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "blob",
+          "signature"
+        ],
+        "title": "WrapBody",
+        "type": "object"
+      },
       "WrapItem": {
         "additionalProperties": false,
         "properties": {
@@ -2609,7 +2794,8 @@
               "wrap",
               "chain",
               "stamp",
-              "object"
+              "object",
+              "verification"
             ],
             "title": "Stage",
             "type": "string"
@@ -3134,6 +3320,106 @@
           }
         },
         "summary": "One Object",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/{conversation_id}/reviewers": {
+      "get": {
+        "operationId": "reviewers_api_admin_recording_archive__conversation_id__reviewers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reviewers Api Admin Recording Archive  Conversation Id  Reviewers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reviewers",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/archive/{conversation_id}/verifications": {
+      "post": {
+        "operationId": "assign_api_admin_recording_archive__conversation_id__verifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assign Api Admin Recording Archive  Conversation Id  Verifications Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign",
         "tags": [
           "recording"
         ]
@@ -4731,6 +5017,266 @@
           }
         },
         "summary": "Store Wraps",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/reviews": {
+      "get": {
+        "operationId": "inbox_api_admin_recording_reviews_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inbox Api Admin Recording Reviews Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Inbox",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/reviews/{verification_id}": {
+      "get": {
+        "operationId": "open_review_api_admin_recording_reviews__verification_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Verification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Open Review Api Admin Recording Reviews  Verification Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Review",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/reviews/{verification_id}/decision": {
+      "post": {
+        "operationId": "decide_api_admin_recording_reviews__verification_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Verification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Decide Api Admin Recording Reviews  Verification Id  Decision Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/reviews/{verification_id}/decline": {
+      "post": {
+        "operationId": "decline_api_admin_recording_reviews__verification_id__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Verification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/reviews/{verification_id}/draft": {
+      "put": {
+        "operationId": "save_draft_api_admin_recording_reviews__verification_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Verification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Draft",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/reviews/{verification_id}/start": {
+      "post": {
+        "operationId": "start_api_admin_recording_reviews__verification_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Verification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewStartBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Api Admin Recording Reviews  Verification Id  Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start",
         "tags": [
           "recording"
         ]

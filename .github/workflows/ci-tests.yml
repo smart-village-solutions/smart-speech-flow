@@ -135,6 +135,9 @@ jobs:
             tests/integration/test_recording_resharing_database.py \
             tests/integration/test_recording_leavers_database.py \
             tests/integration/test_recording_reenrolment_email_database.py \
+            tests/integration/test_recording_verification_database.py \
+            tests/integration/test_recording_revocation_database.py \
+            tests/integration/test_recording_verification_races.py \
             tests/integration/test_recording_mail_server.py \
             tests/integration/test_recording_retention_database.py \
             tests/integration/test_recording_retention_store.py \

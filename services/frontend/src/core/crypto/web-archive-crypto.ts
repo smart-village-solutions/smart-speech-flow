@@ -1,11 +1,12 @@
 import { aesKey, objectAad, openEnvelope, sealEnvelope } from './aead';
 import type { ArchiveCrypto, KeyOwner, NewKeys, PublicKeys, UnlockedKeys, WrapToOpen } from './archive-crypto.port';
 import { type Bytes, concat, equalBytes, fromBase64Url, fromBuffer } from './bytes';
-import { contexts, openWithPrivateKey, parseSealed } from './ecies';
+import { contexts, openWithPrivateKey, parseSealed, seal, sealedToJson } from './ecies';
 import { ENROLMENT_KDF, openPrivateKeys, sealPrivateKeys } from './private-key-blob';
-import { verifyFields, wrapFields } from './signatures';
+import { signFields, verifyFields, wrapFields } from './signatures';
 import { TAGS } from './tags';
 import { fingerprint } from './transcript';
+import { noteAad, verificationFields } from './verification';
 
 const ECDH = { name: 'ECDH', namedCurve: 'P-256' } as const;
 const ECDSA = { name: 'ECDSA', namedCurve: 'P-256' } as const;
@@ -66,6 +67,18 @@ function wrapSigned(
   return verifyFields(signer, wrap.creatorSignature, TAGS.wrapSig, signed);
 }
 
+/** The raw conversation key, only after the wrap's signature checked out (A.6). */
+async function openRaw(
+  wrap: Readonly<WrapToOpen>,
+  keys: Readonly<UnlockedKeys>,
+  signers: ReadonlyMap<string, Bytes>
+): Promise<Bytes> {
+  const sealed = parseSealed(wrap.blob, TAGS.ckWrap);
+  if (!(await wrapSigned(wrap, keys, sealed.ephemeral, signers))) throw new WrapRefusedError();
+  const context = contexts.ckWrap(wrap.tenantId, wrap.conversationId, wrap.keyId, 'user', wrap.recipientRef);
+  return openWithPrivateKey(sealed, keys.encPrivate, keys.encPub, context);
+}
+
 export function createWebArchiveCrypto(): ArchiveCrypto {
   return {
     async createKeys(passphrase, owner): Promise<NewKeys> {
@@ -87,22 +100,44 @@ export function createWebArchiveCrypto(): ArchiveCrypto {
     },
 
     async openWrap(wrap, keys, signers) {
-      const sealed = parseSealed(wrap.blob, TAGS.ckWrap);
-      if (!(await wrapSigned(wrap, keys, sealed.ephemeral, signers))) throw new WrapRefusedError();
-      const context = contexts.ckWrap(
-        wrap.tenantId,
-        wrap.conversationId,
-        wrap.keyId,
-        'user',
-        wrap.recipientRef
-      );
-      const raw = await openWithPrivateKey(sealed, keys.encPrivate, keys.encPub, context);
+      const raw = await openRaw(wrap, keys, signers);
       try {
         return await aesKey(raw);
       } finally {
         raw.fill(0);
       }
     },
+
+    async rewrapFor(wrap, keys, signers, recipient) {
+      const raw = await openRaw(wrap, keys, signers);
+      try {
+        const context = contexts.ckWrap(wrap.tenantId, wrap.conversationId, wrap.keyId, 'user', recipient.sub);
+        const sealed = await seal(TAGS.ckWrap, recipient.encPub, raw, context);
+        const signed = wrapFields({
+          tenantId: wrap.tenantId,
+          conversationId: wrap.conversationId,
+          keyId: wrap.keyId,
+          ephemeral: sealed.ephemeral,
+          recipientKind: 'user',
+          recipientRef: recipient.sub,
+          recipientFingerprint: recipient.fingerprint,
+        });
+        const signature = await signFields(keys.sigPrivate, TAGS.wrapSig, signed);
+        return { keyId: wrap.keyId, blob: sealedToJson(sealed), signature };
+      } finally {
+        raw.fill(0);
+      }
+    },
+
+    sealNote: (key, address, plaintext) => sealEnvelope(key, plaintext, noteAad(address)),
+
+    openNote: (key, address, envelope) => openEnvelope(key, envelope, noteAad(address)),
+
+    signVerification: (keys, fields) =>
+      signFields(keys.sigPrivate, TAGS.verificationSig, verificationFields(fields)),
+
+    verifyVerification: (sigPub, signature, fields) =>
+      verifyFields(sigPub, signature, TAGS.verificationSig, verificationFields(fields)),
 
     openObject: (key, address, envelope) => openEnvelope(key, envelope, objectAad(address)),
 

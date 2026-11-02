@@ -39,6 +39,8 @@ BACKOFF_CEILING: Final[timedelta] = timedelta(hours=6)
 LOCK_MARGIN: Final[timedelta] = timedelta(days=3)
 # Every table that names a conversation, in the order its rows go (spec §16.1).
 EXPIRY_DELETION_ORDER: Final[tuple[str, ...]] = (
+    "verification_notes",
+    "verifications",
     "version_locks",
     "site_clearances",
     "chain_stamps",
@@ -54,8 +56,12 @@ EXPIRY_DELETION_ORDER: Final[tuple[str, ...]] = (
 )
 # Kept after expiry beside the audit events (concept §11).
 KEPT_AFTER_EXPIRY: Final[tuple[str, ...]] = ("retention_decisions",)
-# stored_objects and key_wraps name no conversation: they go through their parents.
+# stored_objects, key_wraps and verification_notes name no conversation: they go
+# through their parents.
 _DELETE: Final[dict[str, str]] = {
+    "verification_notes": "DELETE FROM verification_notes WHERE verification_id IN"
+    " (SELECT verification_id FROM verifications WHERE conversation_id = $1)",
+    "verifications": "DELETE FROM verifications WHERE conversation_id = $1",
     "version_locks": "DELETE FROM version_locks WHERE conversation_id = $1",
     "site_clearances": "DELETE FROM site_clearances WHERE conversation_id = $1",
     "chain_stamps": "DELETE FROM chain_stamps WHERE conversation_id = $1",

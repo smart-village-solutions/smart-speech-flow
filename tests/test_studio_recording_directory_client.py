@@ -157,3 +157,36 @@ async def test_members_are_every_sub_and_none_when_studio_cannot_answer():
         TENANT, "corr-1"
     )
     assert members == frozenset(user["sub"] for user in body["users"])
+
+
+@pytest.mark.asyncio
+async def test_a_snapshot_is_the_whole_directory_and_none_when_studio_cannot_answer():
+    """The nightly check and every grant read the directory strictly (spec §10.7)."""
+    refused = _client(FixedTransport(200, _body(tenantId="tenant-other")))
+    assert await StudioCustodianDirectory(refused).snapshot(TENANT, "corr-1") is None
+    assert await StudioCustodianDirectory(None).snapshot(TENANT, "corr-1") is None
+    snapshot = await StudioCustodianDirectory(_client(FixedTransport(200, _body()))).snapshot(
+        TENANT, "corr-1"
+    )
+    assert snapshot is not None and snapshot.directory_revision == _body()["directoryRevision"]
+
+
+def test_a_review_snapshot_needs_the_review_permission_and_carries_sworn_status():
+    from services.api_gateway.recording.directory import review_snapshot
+    from services.api_gateway.studio_recording_directory_client import RecordingDirectory
+
+    body = _body()
+    body["users"] = [
+        {"sub": "sworn", "displayName": "S", "permissions": [
+            "ssf.recording.review.sworn", "ssf.recording.supervise", "ssf.recording.review"]},
+        {"sub": "plain", "displayName": "P", "permissions": ["ssf.recording.review"]},
+        {"sub": "sworn-only", "displayName": "O", "permissions": ["ssf.recording.review.sworn"]},
+    ]
+    directory = RecordingDirectory.model_validate(body)
+    assert review_snapshot(directory, "sworn") == (
+        "ssf.recording.review",
+        "ssf.recording.review.sworn",
+    )
+    assert review_snapshot(directory, "plain") == ("ssf.recording.review",)
+    assert review_snapshot(directory, "sworn-only") is None
+    assert review_snapshot(directory, "absent") is None

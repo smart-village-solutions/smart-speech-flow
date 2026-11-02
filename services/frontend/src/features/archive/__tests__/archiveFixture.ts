@@ -123,8 +123,9 @@ export function openedConversation(): OpenedConversation {
       retentionUntil: '2027-10-29T10:00:00+00:00',
       legalHold: false,
       incomplete: true,
-      verification: 'not_verified',
+      verification: { status: 'not_verified', approved: 0, notApproved: 0 },
     },
+    verifications: [],
     windows: [
       {
         windowId: IDS.window,

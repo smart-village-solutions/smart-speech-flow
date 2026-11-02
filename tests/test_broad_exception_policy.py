@@ -92,8 +92,12 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ],
     # one authority's malformed answer defers its stamp and never stops the others'
     ("services/api_gateway/recording/archive_service.py", "ChainStamper._stamp"): ["fallback"],
+    # one authority's answer defers its decision stamp and never stops the others' (#619)
+    ("services/api_gateway/recording/decision_stamps.py", "DecisionStamper._stamp"): ["fallback"],
     # the stamping loop survives any one pass
     ("services/api_gateway/recording/wiring.py", "recording_stamp_task"): ["boundary"],
+    # the nightly revocation loop survives any one pass; the metric ages into its alert (#619)
+    ("services/api_gateway/recording/revocation.py", "revocation_task"): ["boundary"],
     # the retention status loop survives any one read; the gauges keep their last values
     ("services/api_gateway/recording/wiring.py", "recording_retention_status_task"): ["boundary"],
     # the retention worker's loop survives any one pass; the next one retries it

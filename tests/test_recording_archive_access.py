@@ -69,12 +69,25 @@ class FakeAccess:
             (),
         )
 
-    async def openable(self, tenant_id, sub, conversation_id, now, *, supervisor=False):
+    async def openable(
+        self, tenant_id, sub, conversation_id, now, *, supervisor=False, reviewer=False
+    ):
+        self.reviewer = reviewer
         return self._ok(sub, conversation_id)
 
     async def object_location(
-        self, tenant_id, sub, conversation_id, entry_id, object_type, now, *, supervisor=False
+        self,
+        tenant_id,
+        sub,
+        conversation_id,
+        entry_id,
+        object_type,
+        now,
+        *,
+        supervisor=False,
+        reviewer=False,
     ):
+        self.reviewer = reviewer
         if not self._ok(sub, conversation_id):
             return None
         return self.locations.get((entry_id, object_type))

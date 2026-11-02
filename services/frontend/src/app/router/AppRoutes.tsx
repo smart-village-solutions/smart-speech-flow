@@ -13,6 +13,8 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import { useServices } from '@/app/providers/services';
 import { ArchiveScreen } from '@/features/archive/ArchiveScreen';
 import { ARCHIVE_PERMISSIONS, ARCHIVE_VIEW } from '@/features/archive/useArchive';
+import { ReviewsScreen } from '@/features/review/ReviewsScreen';
+import { REVIEW_PERMISSION, REVIEWS_VIEW } from '@/features/review/useReviews';
 import { CeremonyScreen } from '@/features/ceremony/CeremonyScreen';
 import { CEREMONY_VIEW, CUSTODIAN, TENANT_MANAGE } from '@/features/ceremony/useCeremony';
 import { KeysScreen } from '@/features/keys/KeysScreen';
@@ -100,6 +102,7 @@ const STAFF_SCREENS = {
   [KEY_RECOVERY_VIEW]: KeyRecoveryScreen,
   [RECOVERY_REQUESTS_VIEW]: RecoveryRequestsScreen,
   [RECOVERY_APPROVALS_VIEW]: RecoveryApprovalsScreen,
+  [REVIEWS_VIEW]: ReviewsScreen,
 } as const;
 type StaffView = 'dashboard' | typeof KEYS_VIEW | keyof typeof STAFF_SCREENS;
 const RESUMABLE: ReadonlySet<string> = new Set([KEYS_VIEW, ...Object.keys(STAFF_SCREENS)]);
@@ -118,6 +121,7 @@ const OFFERED: Record<keyof typeof STAFF_SCREENS, () => boolean> = {
   [KEY_RECOVERY_VIEW]: () => ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission)),
   [RECOVERY_REQUESTS_VIEW]: () => hasPermission(SUPERVISE),
   [RECOVERY_APPROVALS_VIEW]: () => hasPermission(CUSTODIAN),
+  [REVIEWS_VIEW]: () => hasPermission(REVIEW_PERMISSION),
 };
 
 function opener(view: keyof typeof STAFF_SCREENS, setView: (view: StaffView) => void) {
@@ -161,6 +165,7 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
         onOpenArchive={opener(ARCHIVE_VIEW, setView)}
         onOpenRecoveryRequests={opener(RECOVERY_REQUESTS_VIEW, setView)}
         onOpenRecoveryApprovals={opener(RECOVERY_APPROVALS_VIEW, setView)}
+        onOpenReviews={opener(REVIEWS_VIEW, setView)}
         {...shared}
       />
     );

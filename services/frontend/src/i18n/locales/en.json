@@ -164,7 +164,8 @@
       "archive": "My recordings",
       "recoveryRequests": "Recovery requests",
       "recoveryApprovals": "Recovery approvals",
-      "keyRecovery": "My key recovery"
+      "keyRecovery": "My key recovery",
+      "reviews": "Reviews"
     },
     "dashboard": {
       "welcome": {
@@ -468,7 +469,67 @@
       "hold": "Legal hold",
       "retention": "Kept until {{date}}",
       "verification": {
-        "not_verified": "Not verified"
+        "status": {
+          "not_verified": "Not verified",
+          "in_review": "In review",
+          "decided": "{{approved}} approved, {{notApproved}} not approved"
+        },
+        "state": {
+          "awaiting": "Awaiting review",
+          "in_review": "In review",
+          "approved": "Approved",
+          "not_approved": "Not approved",
+          "declined": "Declined",
+          "withdrawn": "Withdrawn"
+        },
+        "category": {
+          "translation_error": "Translation error",
+          "omission": "Omission",
+          "asr_error": "Speech recognition error",
+          "meaning_altered": "Meaning altered",
+          "misunderstanding": "Misunderstanding",
+          "suggestion": "Suggested correction",
+          "limitation": "Limitation of the assessment"
+        },
+        "suggestion": "Suggestion:",
+        "sworn": "Sworn",
+        "broken": "This verification record failed its integrity check. Its result is not shown.",
+        "requested": "Requested {{time}}",
+        "decided": "decided {{time}}",
+        "closeReason": {
+          "declined": "declined by the reviewer",
+          "key_retired": "withdrawn: the reviewer's key was replaced or retired",
+          "permission_revoked": "withdrawn: the reviewer no longer holds the review permission"
+        },
+        "olderHead": "entries added after this review: {{count}}",
+        "stampAt": "timestamped {{time}}",
+        "missingKeyNotes": "some notes are under keys you hold no wrap for",
+        "reassign": "Assign another reviewer",
+        "records": "Verification",
+        "request": "Request verification",
+        "missingKeys": "Request verification is available once every part of this conversation is open to you. Recover the missing parts first.",
+        "noneMatch": "No reviewer covers every language of this conversation.",
+        "allReviewers": "Show all reviewers",
+        "dialogTitle": "Request verification",
+        "next": "Next",
+        "assign": "Assign",
+        "cancel": "Cancel",
+        "error": {
+          "NOT_A_REVIEWER": "This person no longer holds the review permission.",
+          "REVIEWER_NOT_ELIGIBLE": "This person cannot be assigned to this conversation.",
+          "ASSIGNMENT_EXISTS": "This reviewer already has an open assignment for this conversation.",
+          "KEY_CHANGED": "Your key has changed. Unlock it again and retry.",
+          "REVIEWER_KEY_CHANGED": "The reviewer's key has changed. Pick them again.",
+          "SIGNATURE_INVALID": "The wraps could not be verified. Reload and retry.",
+          "SCOPE_NOT_COVERED": "Not every part of the conversation could be wrapped. Reload and retry.",
+          "DIRECTORY_UNAVAILABLE": "The reviewer list could not be read from Studio. Try again later.",
+          "FAILED": "The verification could not be requested. Try again.",
+          "FINGERPRINT_MISMATCH": "The reviewer's keys do not match the fingerprint served for them. Do not assign; tell your administrator."
+        },
+        "fingerprint": "Fingerprint of {{name}}",
+        "fingerprintHint": "Compare it with the reviewer by phone before you assign. Only this person will be able to open the conversation.",
+        "wrapping": "Wrapping the conversation keys…",
+        "stepUpBody": "Assigning a reviewer hands them this conversation, so it needs a fresh second-factor sign-in."
       },
       "checking": "Checking integrity …",
       "integrity": {
@@ -695,7 +756,8 @@
         "SCOPE_TOO_LARGE": "These conversations hold more keys than one request can carry. Choose fewer.",
         "SHARE_STALE": "Your share belongs to an earlier key and opens nothing any more. Ask an administrator to change the custodians (Change custodians); you can still hand this share over there with your earlier key.",
         "KEY_CHANGED": "Your key has been replaced in the meantime. Please reload the page.",
-        "PERMISSION_REQUIRED": "You no longer hold the permission this needs."
+        "PERMISSION_REQUIRED": "You no longer hold the permission this needs.",
+        "REVIEW_IN_PROGRESS": "You are reviewing one of these conversations. Finish or decline that review first."
       },
       "retry": "Try again",
       "kind": {
@@ -719,6 +781,68 @@
       "stepUpBody": "Requesting needs a fresh sign-in with your second factor.",
       "open": "Recover access",
       "banner": "Conversations your key can't open: {{count}}"
+    },
+    "review": {
+      "title": "Reviews",
+      "intro": "Conversations assigned to you for verification. You see every processing stage, add notes per message and record a signed decision. Your access ends with the decision.",
+      "locked": "Unlock your archive key to open an assignment.",
+      "unlock": "Unlock key",
+      "unavailable": "The reviews could not be loaded. Try again later.",
+      "empty": "No conversations are assigned to you.",
+      "requestedBy": "requested by {{name}}",
+      "status": {
+        "awaiting": "Awaiting review",
+        "in_review": "In review",
+        "approved": "Approved",
+        "not_approved": "Not approved",
+        "declined": "Declined",
+        "withdrawn": "Withdrawn",
+        "closed": "Closed"
+      },
+      "assignedBy": "Assigned by {{name}}, fingerprint:",
+      "start": "Start review",
+      "decline": "Decline",
+      "afterHead": "Added after your review started: not part of this review.",
+      "category": "Category",
+      "findingText": "Finding",
+      "findingSuggestion": "Suggested correction (optional)",
+      "removeFinding": "Remove",
+      "addFinding": "Add a finding",
+      "overall": "Overall note",
+      "overallCount": "{{used}} / 8000",
+      "saved": "All notes saved (encrypted).",
+      "unsaved": "Unsaved changes.",
+      "save": "Save draft",
+      "decide": "Decide",
+      "decision": {
+        "title": "Record your decision",
+        "submit": "Sign and submit",
+        "approved": "Approved: the translation quality is acceptable",
+        "not_approved": "Not approved: I cannot confirm the translation quality",
+        "hint": "Your decision is signed with your key and timestamped. It cannot be changed afterwards, and your access to the conversation ends."
+      },
+      "cancel": "Cancel",
+      "error": {
+        "NOT_A_REVIEWER": "You no longer hold the review permission.",
+        "VERIFICATION_CLOSED": "This assignment is closed.",
+        "KEY_CHANGED": "Your key has changed. This assignment returns to the employee.",
+        "SIGNATURE_INVALID": "The signature did not verify. Unlock your key again and retry.",
+        "BAD_NOTES": "Some notes could not be saved. Reload and retry.",
+        "DIRECTORY_UNAVAILABLE": "Your permissions could not be read from Studio. Try again later.",
+        "PERMISSIONS_CHANGED": "Your permissions changed during the review. Try again.",
+        "FAILED": "That did not work. Try again.",
+        "SAVE_FAILED": "The draft could not be saved. Try again.",
+        "NOT_STARTED": "Start the review first.",
+        "VERIFICATION_NOT_FOUND": "This assignment is no longer open to you.",
+        "HEAD_CHANGED": "The conversation changed since you opened it. It has been reloaded; start again."
+      },
+      "declineTitle": "Decline this assignment?",
+      "declineBody": "The conversation returns to the employee, who can assign someone else. Your notes are deleted.",
+      "declineConfirm": "Decline",
+      "done": {
+        "decided": "Your decision has been recorded.",
+        "declined": "You declined the assignment."
+      }
     }
   }
 }

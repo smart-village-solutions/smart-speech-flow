@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { OwnConversation } from '@/domain/archive/archive.types';
 import { formatDate, formatTimeRange, minutesBetween } from './format';
 import { useArchiveList } from './useArchive';
+import { summaryLabel } from './summary';
 
 function Chip({ label, alert = false }: Readonly<{ label: string; alert?: boolean }>) {
   const tone = alert ? 'text-fg-status-alert' : 'text-fg-status';
@@ -45,7 +46,7 @@ function Row({
           )}
           {row.incomplete && <Chip label={t('admin.archive.incomplete')} alert />}
           {row.legalHold && <Chip label={t('admin.archive.hold')} />}
-          <Chip label={t(`admin.archive.verification.${row.verification}`)} />
+          <Chip label={summaryLabel(t, row.verification)} />
         </span>
       </button>
     </li>

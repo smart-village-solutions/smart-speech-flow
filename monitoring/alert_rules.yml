@@ -562,6 +562,21 @@ groups:
           summary: Archive versions are held without a legal hold.
           description: "{{ $value }} versions on the {{ $labels.site }} archive site are held although no legal hold applies, and no hold_off decision later than the hold exists to lift them. After a restore, have a supervisor lift the hold again; otherwise check the audit log for the conversation's decisions. See docs/operations/runbooks/recording-retention-deployment.md, 'Alerts'."
 
+  # Recording revocation (#619). The gateway runs the nightly check that removes
+  # access whose Studio permission is gone. A guard that doubts the directory
+  # skips the tenant on purpose and leaves this timestamp to age.
+  - name: ssf-recording-revocation
+    rules:
+      - alert: RecordingRevocationStale
+        expr: time() - ssf_recording_revocation_last_success_timestamp_seconds > 93600
+        for: 30m
+        labels:
+          severity: warning
+          component: recording
+        annotations:
+          summary: The nightly revocation check has not succeeded for over a day.
+          description: "For at least one tenant, the nightly check that removes reviewers' and recovered supervisors' access after Studio withdraws their permission has not finished for over 26 hours. Look for 'recording.revocation.skipped' in the audit log and the gateway's 'recording_revocation_skipped guard=' log line: unreadable or unstable means Studio's directory could not be read reliably, implausible that it listed none of the tenant's key holders, bound that it would have removed too many people at once. See docs/operations/runbooks/recording-revocation.md."
+
   # Quality telemetry is optional and must never page: a dead collector or a
   # dead ClickHouse cannot affect translation, sessions or WebSocket delivery.
   # Everything here is a warning by design. Metric names were read from a

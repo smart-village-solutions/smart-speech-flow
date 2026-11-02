@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { OpenedConversation, WindowFacts } from '@/domain/archive/archive.types';
 import { Button } from '@/ui/primitives/Button';
@@ -13,6 +14,8 @@ interface EntryCardProps {
   keys: ReadonlyMap<string, CryptoKey>;
   /** Absent while an earlier amendment waits for confirmation. */
   onAmend?: (entryId: string) => void;
+  /** Reviewers' findings, or the review screen's note editor (spec §10.7). */
+  children?: ReactNode;
 }
 
 function WindowDivider({ window, closing }: Readonly<{ window: WindowFacts; closing: boolean }>) {
@@ -33,7 +36,11 @@ function WindowDivider({ window, closing }: Readonly<{ window: WindowFacts; clos
   );
 }
 
-function Content({ view, opened, keys }: Readonly<Omit<EntryCardProps, 'onAmend'>>) {
+function Content({
+  view,
+  opened,
+  keys,
+}: Readonly<Pick<EntryCardProps, 'view' | 'opened' | 'keys'>>) {
   const { t } = useTranslation();
   if (view.state !== 'ok' || view.record === undefined) {
     return (
@@ -50,7 +57,7 @@ function Content({ view, opened, keys }: Readonly<Omit<EntryCardProps, 'onAmend'
 }
 
 /** One entry with its playbacks and amendments beside it; originals are never edited. */
-export function EntryCard({ view, opened, keys, onAmend }: Readonly<EntryCardProps>) {
+export function EntryCard({ view, opened, keys, onAmend, children }: Readonly<EntryCardProps>) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
   const sender =
@@ -86,6 +93,7 @@ export function EntryCard({ view, opened, keys, onAmend }: Readonly<EntryCardPro
             {t('admin.archive.amend')}
           </Button>
         )}
+        {children}
       </li>
       {view.closes && <WindowDivider window={view.closes} closing />}
     </>

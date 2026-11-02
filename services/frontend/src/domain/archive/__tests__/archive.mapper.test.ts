@@ -16,7 +16,7 @@ const opened = {
     retention_until: 'r',
     legal_hold: false,
     incomplete: false,
-    verification: 'not_verified',
+    verification: { status: 'not_verified', approved: 0, not_approved: 0 },
   },
   windows: [
     {
@@ -62,7 +62,7 @@ describe('archive mapper', () => {
           incomplete: true,
           messages: 3,
           amendments: 1,
-          verification: 'not_verified',
+          verification: { status: 'not_verified', approved: 0, not_approved: 0 },
         },
       ],
     });
@@ -73,7 +73,7 @@ describe('archive mapper', () => {
       recovered: false,
       incomplete: true,
       messages: 3,
-      verification: 'not_verified',
+      verification: { status: 'not_verified', approved: 0, notApproved: 0 },
     });
   });
 
@@ -92,7 +92,7 @@ describe('archive mapper', () => {
           incomplete: false,
           messages: 1,
           amendments: 0,
-          verification: 'not_verified',
+          verification: { status: 'not_verified', approved: 0, not_approved: 0 },
         },
       ],
     });

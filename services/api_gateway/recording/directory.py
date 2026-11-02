@@ -12,7 +12,7 @@ from ..studio_recording_directory_client import (
 )
 from ..studio_runtime_token import StudioTokenError
 from ..studio_v1 import StudioV1ClientError
-from .permissions import CUSTODIAN
+from .permissions import CUSTODIAN, REVIEW, REVIEW_PERMISSIONS
 
 
 class NameSource(Protocol):
@@ -42,6 +42,10 @@ class StudioCustodianDirectory:
             return None
         return {sub: user.display_name for sub, user in directory.holders_of(CUSTODIAN).items()}
 
+    async def snapshot(self, tenant_id: str, correlation_id: str) -> RecordingDirectory | None:
+        """The whole directory, or None when Studio cannot answer: never an empty one by mistake."""
+        return await self._fetch(tenant_id, correlation_id)
+
     async def members(self, tenant_id: str, correlation_id: str) -> frozenset[str] | None:
         """Every sub the directory lists; None when Studio cannot answer, so that a failure
         is never mistaken for an empty directory."""
@@ -55,3 +59,11 @@ class StudioCustodianDirectory:
         """
         directory = await self._fetch(tenant_id, correlation_id)
         return {} if directory is None else {u.sub: u.display_name for u in directory.users}
+
+
+def review_snapshot(directory: RecordingDirectory, sub: str) -> tuple[str, ...] | None:
+    """The reviewer permissions a decision snapshots (A.3a); None without `review` itself."""
+    user = next((user for user in directory.users if user.sub == sub), None)
+    if user is None or REVIEW not in user.permissions:
+        return None
+    return tuple(sorted(set(user.permissions) & set(REVIEW_PERMISSIONS)))

@@ -44,6 +44,13 @@ UNREQUESTED = (
     "  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = $4"
     "  AND r.status = 'open' AND r.expires_at > $2)"
 )
+# The requester ($4) reviews it under an open assignment: recovering would keep the
+# assigner's wraps as their own (§10.7).
+REVIEWING_REQUESTER = (
+    "EXISTS (SELECT 1 FROM verifications v WHERE v.tenant_id = c.tenant_id"
+    "  AND v.conversation_id = c.conversation_id AND v.reviewer_sub = $4"
+    "  AND v.status IN ('awaiting', 'in_review'))"
+)
 _CANDIDATE_COLUMNS = (
     "SELECT c.conversation_id, c.started_at, c.ended_at, c.retention_until, c.legal_hold,"
     " c.incomplete, array(SELECT k.key_id::text FROM conversation_keys k"
@@ -52,6 +59,7 @@ _CANDIDATE_COLUMNS = (
 CANDIDATES = (
     f"{_CANDIDATE_COLUMNS} FROM conversations c WHERE c.employee_sub = $1"
     f" AND {RECOVERABLE} AND NOT {ACCESSIBLE} AND {UNREPORTED} AND {UNREQUESTED}"
+    f" AND NOT {REVIEWING_REQUESTER}"
     " AND c.started_at >= $5 AND c.started_at < $6"
     " ORDER BY c.started_at DESC, c.conversation_id DESC LIMIT 50"
 )
@@ -84,11 +92,19 @@ REQUESTER_KEY = (
 FILING_CHECK = (
     "SELECT c.conversation_id, c.employee_sub,"
     f" ({RECOVERABLE} AND {UNREPORTED}) AS recoverable, ({ACCESSIBLE}) AS accessible,"
+    f" {REVIEWING_REQUESTER} AS reviewing,"
     " EXISTS (SELECT 1 FROM recovery_request_keys rk JOIN recovery_requests r"
     "  ON r.tenant_id = rk.tenant_id AND r.request_id = rk.request_id"
     "  WHERE rk.conversation_id = c.conversation_id AND r.requester_sub = $4"
     "  AND r.status = 'open' AND r.expires_at > $2) AS requested"
     " FROM conversations c WHERE c.conversation_id = ANY($1::uuid[])"
+)
+# Taken before FILING_CHECK, in its own statement: a statement that waited for a row lock
+# still reads its subqueries from its own start, so it would miss the assignment it waited
+# for (§10.7). The check that follows starts after the lock, and sees it.
+FILING_LOCK = (
+    "SELECT 1 FROM conversations WHERE conversation_id = ANY($1::uuid[])"
+    " ORDER BY conversation_id FOR SHARE"
 )
 REMAINING = (
     "SELECT k.conversation_id, k.key_id FROM recovery_request_keys k JOIN conversations c"
@@ -99,6 +115,12 @@ REMAINING = (
 )
 # Orders a write against a shred, as refuse_after_shred does (§16.1).
 REMAINING_LOCKED = REMAINING + " FOR SHARE OF c"
+# Any remaining conversation ($2) the requester ($1) reviews; read under REMAINING_LOCKED,
+# which an assignment's FOR UPDATE of the conversation waits for (§10.7).
+REVIEWING_REMAINING = (
+    "SELECT EXISTS (SELECT 1 FROM verifications WHERE reviewer_sub = $1"
+    " AND conversation_id = ANY($2::uuid[]) AND status IN ('awaiting', 'in_review'))"
+)
 LATEST_DECISION = (
     "SELECT d.attempt, d.decision, EXISTS (SELECT 1 FROM recovery_rejections j"
     "  WHERE j.tenant_id = d.tenant_id AND j.request_id = d.request_id"

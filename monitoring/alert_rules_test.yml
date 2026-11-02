@@ -806,3 +806,34 @@ tests:
       - eval_time: 59m
         alertname: RecordingRetentionHoldMismatch
         exp_alerts: []
+
+  # Recording revocation (#619). A last success at minute 0: past 26 h, firing thirty minutes on.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_recording_revocation_last_success_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x1700"
+    alert_rule_test:
+      - eval_time: 26h20m
+        alertname: RecordingRevocationStale
+        exp_alerts: []
+      - eval_time: 26h40m
+        alertname: RecordingRevocationStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: recording
+              job: api_gateway
+              instance: api_gateway:8000
+            exp_annotations:
+              summary: The nightly revocation check has not succeeded for over a day.
+              description: "For at least one tenant, the nightly check that removes reviewers' and recovered supervisors' access after Studio withdraws their permission has not finished for over 26 hours. Look for 'recording.revocation.skipped' in the audit log and the gateway's 'recording_revocation_skipped guard=' log line: unreadable or unstable means Studio's directory could not be read reliably, implausible that it listed none of the tenant's key holders, bound that it would have removed too many people at once. See docs/operations/runbooks/recording-revocation.md."
+
+  # A check succeeding every night never fires.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_recording_revocation_last_success_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x1439 86400+0x1500"
+    alert_rule_test:
+      - eval_time: 49h
+        alertname: RecordingRevocationStale
+        exp_alerts: []

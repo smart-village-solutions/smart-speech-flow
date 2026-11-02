@@ -1,5 +1,6 @@
 import type { ObjectAddress } from './aead';
 import type { Bytes } from './bytes';
+import type { NoteAddress, VerificationSignatureFields } from './verification';
 
 /** Who a key belongs to; both values are part of its fingerprint and its blob's AAD. */
 export interface KeyOwner {
@@ -37,6 +38,19 @@ export interface WrapToOpen {
   creatorSignature: Bytes;
 }
 
+/** Who a conversation key is re-wrapped for: a reviewer (spec §10.7). */
+export interface WrapRecipient {
+  sub: string;
+  encPub: Bytes;
+  fingerprint: Bytes;
+}
+
+export interface MadeWrap {
+  keyId: string;
+  blob: string;
+  signature: Bytes;
+}
+
 /** The browser's side of the archive crypto. Features reach it through this port only. */
 export interface ArchiveCrypto {
   createKeys(passphrase: string, owner: Readonly<KeyOwner>): Promise<NewKeys>;
@@ -65,6 +79,29 @@ export interface ArchiveCrypto {
   openObject(key: CryptoKey, address: Readonly<ObjectAddress>, envelope: Bytes): Promise<Bytes>;
   /** A.3 under the conversation key. */
   sealObject(key: CryptoKey, address: Readonly<ObjectAddress>, plaintext: Bytes): Promise<Bytes>;
+  /**
+   * Opens the caller's wrap (with the same checks as `openWrap`), seals the key
+   * for `recipient` and signs the new wrap; the raw key never outlives the call.
+   */
+  rewrapFor(
+    wrap: Readonly<WrapToOpen>,
+    keys: Readonly<UnlockedKeys>,
+    signers: ReadonlyMap<string, Bytes>,
+    recipient: Readonly<WrapRecipient>
+  ): Promise<MadeWrap>;
+  /** A.3a under the entry's conversation key. */
+  sealNote(key: CryptoKey, address: Readonly<NoteAddress>, plaintext: Bytes): Promise<Bytes>;
+  /** Rejects on any envelope that fails A.3a for `address`. */
+  openNote(key: CryptoKey, address: Readonly<NoteAddress>, envelope: Bytes): Promise<Bytes>;
+  signVerification(
+    keys: Readonly<UnlockedKeys>,
+    fields: Readonly<VerificationSignatureFields>
+  ): Promise<Bytes>;
+  verifyVerification(
+    sigPub: Bytes,
+    signature: Bytes,
+    fields: Readonly<VerificationSignatureFields>
+  ): Promise<boolean>;
 }
 
 /** Holds the unlocked keys for the life of the tab; never persisted. */

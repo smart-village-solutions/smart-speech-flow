@@ -70,9 +70,10 @@ def test_fewer_than_k_partials_do_not_recover_the_key():
 def test_lagrange_weights_over_any_dealer_set_rebuild_the_secret():
     coefficients = [41, 7, 19]
     for indices in ([1, 2, 3], [2, 4, 5], [1, 3, 9]):
-        total = sum(
-            lagrange_at_zero(i, indices) * ref.evaluate(coefficients, i) for i in indices
-        ) % ORDER
+        total = (
+            sum(lagrange_at_zero(i, indices) * ref.evaluate(coefficients, i) for i in indices)
+            % ORDER
+        )
         assert total == 41
     assert lagrange_at_zero(3, [1, 3]) == ref.lagrange_at_zero(3, [1, 3])
 

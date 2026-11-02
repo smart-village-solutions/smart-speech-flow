@@ -7,6 +7,7 @@ them; the opening rule and its audit live in the service and the database.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -19,6 +20,7 @@ from ..recording.ceremony_repository import PostgresCeremonyRepository
 from ..recording.crypto.encoding import b64url, from_b64url
 from ..recording.permissions import (
     RECORDING_PERMISSIONS,
+    REVIEW,
     SUPERVISE,
     coded,
     permissions_of,
@@ -26,10 +28,12 @@ from ..recording.permissions import (
 )
 from ..recording.repository import RecordingStorageUnavailable
 from ..recording.storage.archive import OBJECT_TYPES
+from ..recording.verification_model import VerificationResult, summary
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
 from .recording_generations import trust_body
+from .recording_verifications import record_body
 
 router = APIRouter(
     prefix="/api/admin/recording/archive",
@@ -85,7 +89,7 @@ class AmendmentBody(BaseModel):
 class IntegrityBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    stage: Literal["trust", "wrap", "chain", "stamp", "object"]
+    stage: Literal["trust", "wrap", "chain", "stamp", "object", "verification"]
 
 
 def _answer(error: ArchiveAccessError) -> HTTPException:
@@ -102,12 +106,47 @@ def _supervisor(claims: dict[str, Any]) -> bool:
     return SUPERVISE in permissions_of(claims)
 
 
+def _reviewer(claims: dict[str, Any]) -> bool:
+    """Reaches objects and reports of an open assignment of the caller (§10.7), never an open."""
+    return REVIEW in permissions_of(claims)
+
+
 def _time(value: Any) -> str | None:
     return None if value is None else value.isoformat()
 
 
-def opened_body(opened: OpenedConversation) -> dict[str, Any]:
+def _result_body(result: VerificationResult, names: Mapping[str, str]) -> dict[str, Any]:
+    row = result.row
+    body = record_body(row) | {"reviewer_name": names.get(row.reviewer_sub), "outcome": row.outcome}
+    if row.outcome is None:
+        return body
+    key = result.reviewer_key
+    return body | {
+        "overall_note": None if row.overall_note is None else b64url(row.overall_note),
+        "notes": [
+            {"entry_id": n.entry_id, "key_id": n.key_id, "ciphertext": b64url(n.ciphertext)}
+            for n in result.notes
+        ],
+        "signature": None if row.signature is None else b64url(row.signature),
+        "reviewer_key": (
+            None
+            if key is None
+            else {
+                "key_version": key.key_version,
+                "enc_pub": b64url(key.enc_pub),
+                "sig_pub": b64url(key.sig_pub),
+            }
+        ),
+        "tsa_token": None if row.tsa_token is None else b64url(row.tsa_token),
+    }
+
+
+def opened_body(
+    opened: OpenedConversation, names: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    known = names or {}
     return {
+        "verifications": [_result_body(result, known) for result in opened.verifications],
         "conversation": {
             "conversation_id": opened.conversation_id,
             "employee_sub": opened.employee_sub,
@@ -117,7 +156,7 @@ def opened_body(opened: OpenedConversation) -> dict[str, Any]:
             "retention_until": opened.retention_until.isoformat(),
             "legal_hold": opened.legal_hold,
             "incomplete": opened.incomplete,
-            "verification": "not_verified",
+            "verification": summary([result.row.status for result in opened.verifications]),
         },
         "windows": [
             {
@@ -223,7 +262,11 @@ async def trust(
 
 @router.get("/{conversation_id}")
 async def open_one(
-    conversation_id: uuid.UUID, context: TenantContext, claims: RecordingUser, access: Access
+    conversation_id: uuid.UUID,
+    request: Request,
+    context: TenantContext,
+    claims: RecordingUser,
+    access: Access,
 ) -> dict[str, Any]:
     try:
         opened = await access.open(
@@ -231,7 +274,11 @@ async def open_one(
         )
     except ArchiveAccessError as error:
         raise _answer(error) from None
-    return opened_body(opened)
+    reviewers = {result.row.reviewer_sub for result in opened.verifications}
+    names = await access.names_of(
+        context.tenant_id, reviewers, correlation_id_from_request(request)
+    )
+    return opened_body(opened, names)
 
 
 @router.get("/{conversation_id}/objects/{entry_id}/{object_type}")
@@ -253,6 +300,7 @@ async def one_object(
             str(entry_id),
             object_type,
             supervisor=_supervisor(claims),
+            reviewer=_reviewer(claims),
         )
     except ArchiveAccessError as error:
         raise _answer(error) from None
@@ -308,6 +356,7 @@ async def integrity_failure(
             str(conversation_id),
             body.stage,
             supervisor=_supervisor(claims),
+            reviewer=_reviewer(claims),
         )
     except ArchiveAccessError as error:
         raise _answer(error) from None

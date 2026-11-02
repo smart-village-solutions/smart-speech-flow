@@ -42,6 +42,7 @@ from .gateway_metrics import GatewayMetrics
 from .logging_setup import configure_logging
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware, RateLimits
+from .recording.revocation import revocation_task
 from .recording.wiring import (
     close_recording,
     connect_recording,
@@ -176,6 +177,7 @@ def _build_dependencies(
         websocket_metrics=metrics.websocket,
         audio_storage_metrics=metrics.audio_storage,
         retention_worker_metrics=metrics.retention_workers,
+        revocation_metrics=metrics.revocation,
         translation_refiner=pipeline.refiner,
         pipeline_admission=pipeline.admission,
         quality_telemetry=pipeline.quality_telemetry,
@@ -318,6 +320,7 @@ def _start_background_tasks(
         asyncio.create_task(recording_tick_task(dependencies)),
         asyncio.create_task(recording_stamp_task(dependencies)),
         asyncio.create_task(recording_retention_status_task(dependencies)),
+        asyncio.create_task(revocation_task(dependencies)),
     ]
 
 
@@ -545,7 +548,9 @@ from .routes import (
     recording_recovery,
     recording_resharing,
     recording_retention,
+    recording_reviews,
     recording_session,
+    recording_verifications,
     session,
 )
 from .routes.health import router as health_router
@@ -573,6 +578,8 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(recording_ceremony.router)
     app.include_router(recording_resharing.router)
     app.include_router(recording_leavers.router)
+    app.include_router(recording_verifications.router)
+    app.include_router(recording_reviews.router)
     app.include_router(recording_key_confirmation.router)
     app.include_router(recording_session.router)
     app.include_router(recording_retention.router)

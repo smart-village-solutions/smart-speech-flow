@@ -85,3 +85,20 @@ async def test_a_swap_cancels_a_pending_key_of_the_retired_one():
     )
     assert await swap_key(store, RECORD, 1, NOW) is None
     assert _events(connection) == 2  # key_reenrolment.cancelled, then key_reenrolled
+
+
+async def test_a_swap_withdraws_the_reviewers_open_assignments_drafts_first():
+    """§10.7: a retired key can never decide, so its reviews return to the employee."""
+    store, connection = _store(
+        {ACTIVE: OLD, "ORDER BY verification_id FOR UPDATE": [{"verification_id": uuid.uuid4()}]}
+    )
+    assert await swap_key(store, RECORD, 1, NOW) is None
+    drafts = next(
+        i for i, c in enumerate(connection.calls) if "DELETE FROM verification_notes" in c
+    )
+    closed = next(
+        i for i, c in enumerate(connection.calls) if "UPDATE verifications SET status" in c
+    )
+    wraps = next(i for i, c in enumerate(connection.calls) if c.startswith(WRAPS))
+    assert drafts < closed < wraps
+    assert _events(connection) == 2  # withdrawn, then key_reenrolled
