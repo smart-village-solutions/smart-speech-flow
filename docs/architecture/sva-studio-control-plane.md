@@ -196,6 +196,37 @@ opposite failure behaviour:
 SSF keeps its own ten guest languages; Studio texts are used only for languages
 Studio provides. German is staff-only.
 
+## Recording administration and login MFA
+
+The recording administration contract uses a 720-hour (30-day) retention
+fallback. Studio resolves a tenant override before the installation default
+and sends one effective `recording.retentionHours`, with a maximum of 8760
+hours. A retention default never enables recording: tenant enablement is an
+explicit choice and missing or invalid policy keeps recording unavailable.
+Existing archive expiry dates are not rewritten by default changes.
+
+Studio's current service execution context calls the tenant `instanceId`;
+that canonical value maps to SSF's `tenantId`. Installation defaults live in
+the SSF plugin's singleton server settings. Within the plugin, recording
+policy must be resolved separately from content suppression metadata, which
+also uses the name `enabled`.
+
+The plugin registers the recording permissions and the live recording-directory
+endpoint. The Studio host supplies a tenant-bound authoritative IAM reader;
+the plugin does not query IAM tables. Reviewer competence languages are
+separate from interface language. Recording grants are explicit and do not
+follow automatically from configuration-administration rights.
+
+Ordinary-login MFA is optional unless the tenant requires it. Studio Core/IAM
+owns the tenant authentication policy, its desired and verified applied state,
+and reconciliation into Keycloak. Users enroll their factor in Keycloak.
+Sensitive recording-key actions still require a fresh MFA step-up, independently
+of whether the ordinary tenant login requires MFA.
+
+See the [recording administration change](../../openspec/changes/add-studio-recording-administration/design.md)
+for the implementation boundaries and acceptance criteria. These target rules
+are not evidence that an installation has been deployed or enabled.
+
 ## First Delivery Runtime Flows
 
 ### Create a tenant

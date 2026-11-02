@@ -167,6 +167,7 @@ async def test_the_kassel_tenant_carries_every_guest_language_shape() -> None:
         ("tenant-fulda", None),
         ("tenant-marburg", None),
         ("tenant-kassel", "storage-disabled"),
+        ("tenant-kassel", "legacy-storage-ask"),
     ],
 )
 async def test_the_retired_storage_fields_the_mock_still_sends_are_ignored(
