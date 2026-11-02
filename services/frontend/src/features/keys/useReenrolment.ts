@@ -1,40 +1,33 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import type { KeyOwner } from '@/core/crypto/archive-crypto.port';
-import { AppError } from '@/core/http/AppError';
+import { fromServerCode } from '@/core/http/AppError';
 import type { Reenrolled } from '@/domain/recording/recording.types';
-import { type EnrolmentError, useNewKeySubmit } from './useEnrolment';
-import { OWN_KEY_QUERY } from './useKeys';
+import { ENROLMENT_CODES, type EnrolmentError, useNewKeySubmit } from './useEnrolment';
 
-export type ReenrolmentError = EnrolmentError | 'changed' | 'ceremony';
+export type ReenrolmentError = EnrolmentError | 'changed' | 'ceremony' | 'mail';
 
-const CODES: Record<string, ReenrolmentError> = {
-  STEP_UP_REQUIRED: 'stepUp',
+const CODES: Readonly<Record<string, ReenrolmentError>> = {
+  ...ENROLMENT_CODES,
   KEY_CHANGED: 'changed',
   CEREMONY_IN_PROGRESS: 'ceremony',
+  MAIL_UNAVAILABLE: 'mail',
 };
 
 function reenrolmentError(caught: unknown): ReenrolmentError {
-  const code = caught instanceof AppError ? caught.serverCode : undefined;
-  return (code !== undefined && CODES[code]) || 'failed';
+  return fromServerCode(caught, CODES, 'failed');
 }
 
 /** A new key pair for a lost passphrase, replacing the version the screen showed (spec §9.6). */
 export function useReenrolment(owner: Readonly<KeyOwner>, replacesVersion: number) {
-  const { archiveCrypto, recordingKeys, keyVault } = useServices();
-  const queryClient = useQueryClient();
+  const { archiveCrypto, recordingKeys } = useServices();
   const [result, setResult] = useState<Reenrolled | null>(null);
   const step = useNewKeySubmit(
     owner,
     async (passphrase) => {
       const created = await archiveCrypto.createKeys(passphrase, owner);
-      const done = await recordingKeys.reenrol(created.unlocked, created.blob, replacesVersion);
-      // Only once the gateway took it: a refused or failed re-enrolment leaves the old key
-      // unlocked, and a pending one keeps it in use until the link is opened.
-      if (done.status === 'active') keyVault.hold(created.unlocked);
-      setResult(done);
-      await queryClient.invalidateQueries({ queryKey: OWN_KEY_QUERY });
+      // The old key stays unlocked and in use until the mailed link is confirmed (§9.9).
+      setResult(await recordingKeys.reenrol(created.unlocked, created.blob, replacesVersion));
     },
     reenrolmentError
   );

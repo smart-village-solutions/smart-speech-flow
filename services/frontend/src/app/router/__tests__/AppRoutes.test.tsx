@@ -87,6 +87,22 @@ describe('tenant login routes', () => {
     expect(requireKeycloakLogin).not.toHaveBeenCalled();
   });
 
+  it('opens the mailed key confirmation link without a login', async () => {
+    const lookups = recordAuthorization('/api/recording/key-confirmation/lookup');
+    server.use(
+      http.post('*/api/recording/key-confirmation/lookup', () =>
+        HttpResponse.json({ detail: { error_code: 'LINK_EXPIRED', message: 'x' } }, { status: 410 })
+      )
+    );
+    window.history.replaceState(null, '', `/key-confirmation#${'A'.repeat(43)}`);
+    onTestFinished(() => window.history.replaceState(null, '', '/'));
+    renderWithProviders(<AppRoutes />, { route: '/key-confirmation' });
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(requireKeycloakLogin).not.toHaveBeenCalled();
+    expect(lookups).toEqual([null]);
+  });
+
   it('resolves the full directory entry and shows the dashboard on the tenant callback', async () => {
     renderWithProviders(
       <>

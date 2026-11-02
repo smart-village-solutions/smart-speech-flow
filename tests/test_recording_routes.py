@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
+from services.api_gateway.recording.crypto.encoding import b64url
+from services.api_gateway.recording.key_confirmation_repository import PendingKey
 from services.api_gateway.recording.keys import KeyEnrolmentService
 from services.api_gateway.recording.reenrolment import Reenrolled, ReenrolmentError
 from services.api_gateway.recording.reenrolment_repository import ReenrolmentImpact
@@ -26,6 +29,8 @@ def _claims(*, permissions=("ssf.recording.request",), fresh=True) -> dict:
         "sub": "alice",
         "_ssf_verified_tenant_id": TENANT,
         "ssf_permissions": list(permissions),
+        "email": "alice@example.org",
+        "email_verified": True,
     }
     if fresh:
         claims |= {"acr": "mfa", "auth_time": int(time.time()) - 5}
@@ -78,6 +83,40 @@ def test_enrolment_without_a_fresh_mfa_login_asks_for_step_up(client_for):
     assert _code(response) == "STEP_UP_REQUIRED"
 
 
+def test_enrolment_pins_the_verified_address(client_for):
+    repository = FakeRecordingRepository()
+    service = KeyEnrolmentService(repository=repository, server_layer=ServerLayer(os.urandom(32)))
+    client_for(_claims(), service).post("/api/admin/recording/keys", json=enrolment_body())
+    assert repository.keys[(TENANT, "alice")].email == "alice@example.org"
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        {"email_verified": False},
+        {"email_verified": "true"},
+        {"email_verified": None},
+        {"email": ""},
+        {"email": "a" * 255},
+        {"email": None},
+        {"email": ["alice@example.org"]},
+    ],
+)
+def test_enrolment_needs_a_verified_address(client_for, address):
+    repository = FakeRecordingRepository()
+    service = KeyEnrolmentService(repository=repository, server_layer=ServerLayer(os.urandom(32)))
+    claims = _claims() | address
+    response = client_for(claims, service).post("/api/admin/recording/keys", json=enrolment_body())
+    assert (response.status_code, _code(response)) == (409, "EMAIL_NOT_VERIFIED")
+    assert repository.keys == {}
+
+
+def test_an_address_of_254_characters_is_enough(client_for):
+    claims = _claims() | {"email": "a" * 254}
+    response = client_for(claims).post("/api/admin/recording/keys", json=enrolment_body())
+    assert response.status_code == 201
+
+
 def test_a_second_enrolment_conflicts(client_for):
     client = client_for(_claims())
     assert client.post("/api/admin/recording/keys", json=enrolment_body()).status_code == 201
@@ -127,8 +166,8 @@ def test_a_blob_the_server_layer_cannot_open_is_a_coded_error(client_for):
 
 
 class FakeReenrolment:
-    def __init__(self, error: str | None = None, status: str = "active") -> None:
-        self.error, self.status = error, status
+    def __init__(self, error: str | None = None, status: str = "active", waiting=None) -> None:
+        self.error, self.status, self.waiting = error, status, waiting
         self.calls: list[tuple] = []
 
     async def reenrol(self, tenant_id, user_sub, enrolment, replaces_version):
@@ -141,6 +180,11 @@ class FakeReenrolment:
         if self.error is not None:
             raise ReenrolmentError(self.error)
         return ReenrolmentImpact(True, 2, 1)
+
+    async def pending(self, tenant_id, user_sub):
+        if self.error is not None:
+            raise ReenrolmentError(self.error)
+        return self.waiting
 
 
 @pytest.fixture
@@ -187,6 +231,8 @@ def test_a_re_enrolment_without_a_fresh_mfa_login_asks_for_step_up(reenrolment_c
         ("key_changed", 409, "KEY_CHANGED"),
         ("ceremony_in_progress", 409, "CEREMONY_IN_PROGRESS"),
         ("invalid", 422, "INVALID_ENROLMENT"),
+        ("email_not_verified", 409, "EMAIL_NOT_VERIFIED"),
+        ("mail_unavailable", 503, "MAIL_UNAVAILABLE"),
         ("unavailable", 503, "RECORDING_UNAVAILABLE"),
     ],
 )
@@ -203,7 +249,12 @@ def test_a_re_enrolment_needs_the_version_it_replaces(reenrolment_client):
 
 def test_the_impact_tells_a_custodian_the_shares_left(reenrolment_client):
     client = reenrolment_client(_claims(), FakeReenrolment())
-    assert client.get(REENROL).json() == {"custodian": True, "k": 2, "usable_after": 1}
+    assert client.get(REENROL).json() == {
+        "custodian": True,
+        "k": 2,
+        "usable_after": 1,
+        "pending": None,
+    }
     failing = reenrolment_client(_claims(), FakeReenrolment("unavailable"))
     assert failing.get(REENROL).status_code == 503
 
@@ -212,3 +263,14 @@ def test_own_key_names_its_version(client_for):
     client = client_for(_claims())
     client.post("/api/admin/recording/keys", json=enrolment_body())
     assert client.get("/api/admin/recording/keys/me").json()["key_version"] == 1
+
+
+def test_the_impact_names_a_pending_key(reenrolment_client):
+    expires = datetime(2026, 11, 2, 10, 0, tzinfo=timezone.utc)
+    waiting = PendingKey(b"\x05" * 32, expires)
+    client = reenrolment_client(_claims(), FakeReenrolment(waiting=waiting))
+    pending = client.get(REENROL).json()["pending"]
+    assert pending["fingerprint"] == b64url(b"\x05" * 32)
+    assert len(pending["fingerprint_display"].split()) == 10
+    assert pending["expires_at"] == expires.isoformat()
+    assert reenrolment_client(_claims(), FakeReenrolment()).get(REENROL).json()["pending"] is None

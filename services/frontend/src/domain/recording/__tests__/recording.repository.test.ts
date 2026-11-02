@@ -5,6 +5,7 @@ import { readConfig } from '@/app/config/env';
 import { toBase64Url } from '@/core/crypto/bytes';
 import { publicPoint } from '@/core/crypto/curve';
 import { createHttpClient } from '@/core/http/client';
+import { createKeyConfirmationRepository } from '@/domain/recording/keyConfirmation.repository';
 import { createRecordingKeysRepository } from '@/domain/recording/recording.repository';
 import { server } from '@/test/setup';
 
@@ -92,14 +93,24 @@ describe('recording keys repository', () => {
         );
       }),
       http.get(`${BASE}/api/admin/recording/keys/reenrolment`, () =>
-        HttpResponse.json({ custodian: true, k: 2, usable_after: 1 })
+        HttpResponse.json({
+          custodian: true,
+          k: 2,
+          usable_after: 1,
+          pending: { fingerprint, fingerprint_display: display, expires_at: '2026-11-02T10:00:00+00:00' },
+        })
       )
     );
     const repo = repository();
     const done = await repo.reenrol({ encPub: publicPoint(5n), sigPub: publicPoint(6n) }, '{"v":1}', 2);
     expect(done.status).toBe('pending_confirmation');
     expect(sent).toMatchObject({ blob: '{"v":1}', replaces_version: 2 });
-    expect(await repo.reenrolmentImpact()).toEqual({ custodian: true, k: 2, usableAfter: 1 });
+    expect(await repo.reenrolmentImpact()).toEqual({
+      custodian: true,
+      k: 2,
+      usableAfter: 1,
+      pending: { fingerprintDisplay: display, expiresAt: '2026-11-02T10:00:00+00:00' },
+    });
   });
 
   it('refuses a status it does not know', async () => {
@@ -111,5 +122,61 @@ describe('recording keys repository', () => {
     await expect(
       repository().reenrol({ encPub: publicPoint(5n), sigPub: publicPoint(6n) }, '{"v":1}', 1)
     ).rejects.toThrow();
+  });
+});
+
+describe('key confirmation repository', () => {
+  const token = 'A'.repeat(43);
+  const confirmation = () =>
+    createKeyConfirmationRepository(createHttpClient(readConfig({ VITE_API_BASE_URL: BASE }), () => 'de'));
+
+  it('looks the link up without a login and posts only the token', async () => {
+    let sent: unknown;
+    let authorization: string | null = 'unset';
+    server.use(
+      http.post(`${BASE}/api/recording/key-confirmation/lookup`, async ({ request }) => {
+        sent = await request.json();
+        authorization = request.headers.get('Authorization');
+        return HttpResponse.json({
+          fingerprint,
+          fingerprint_display: display,
+          requested_at: '2026-11-02T09:30:00+00:00',
+          expires_at: '2026-11-02T10:00:00+00:00',
+        });
+      })
+    );
+    expect(await confirmation().lookup(token)).toEqual({
+      fingerprintDisplay: display,
+      requestedAt: '2026-11-02T09:30:00+00:00',
+      expiresAt: '2026-11-02T10:00:00+00:00',
+    });
+    expect(sent).toEqual({ token });
+    expect(authorization).toBeNull();
+    expect(getAdminAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('confirms and declines', async () => {
+    const declined = vi.fn();
+    server.use(
+      http.post(`${BASE}/api/recording/key-confirmation/confirm`, () =>
+        HttpResponse.json({ fingerprint, fingerprint_display: display })
+      ),
+      http.post(`${BASE}/api/recording/key-confirmation/decline`, () => {
+        declined();
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    expect((await confirmation().confirm(token)).fingerprintDisplay).toBe(display);
+    await confirmation().decline(token);
+    expect(declined).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces the refusal code', async () => {
+    server.use(
+      http.post(`${BASE}/api/recording/key-confirmation/confirm`, () =>
+        HttpResponse.json({ detail: { error_code: 'LINK_EXPIRED', message: 'x' } }, { status: 410 })
+      )
+    );
+    await expect(confirmation().confirm(token)).rejects.toMatchObject({ serverCode: 'LINK_EXPIRED' });
   });
 });

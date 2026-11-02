@@ -21,6 +21,7 @@ from ..recording.permissions import (
     coded,
     require_permission,
     require_step_up,
+    verified_email,
 )
 from ..recording.reenrolment import KeyReenrolment, ReenrolmentError
 from ..recording.repository import KeyAlreadyEnrolledError, RecordingStorageUnavailable
@@ -63,6 +64,8 @@ _REENROLMENT_ANSWERS: Final[dict[str, tuple[int, str]]] = {
     "key_changed": (409, "KEY_CHANGED"),
     "ceremony_in_progress": (409, "CEREMONY_IN_PROGRESS"),
     "invalid": (422, "INVALID_ENROLMENT"),
+    "email_not_verified": (409, "EMAIL_NOT_VERIFIED"),
+    "mail_unavailable": (503, "MAIL_UNAVAILABLE"),
     "unavailable": (503, "RECORDING_UNAVAILABLE"),
 }
 
@@ -114,9 +117,12 @@ async def own_key(
 async def enrol_key(
     body: EnrolmentBody, context: TenantContext, claims: RecordingUser, service: KeyService
 ) -> dict[str, str]:
+    email = verified_email(claims)
+    if email is None:
+        raise coded(409, "EMAIL_NOT_VERIFIED", "The account has no verified email address")
     try:
         enrolment = Enrolment(from_b64url(body.enc_pub), from_b64url(body.sig_pub), body.blob)
-        fingerprint = await service.enrol(context.tenant_id, claims["sub"], enrolment)
+        fingerprint = await service.enrol(context.tenant_id, claims["sub"], enrolment, email)
     except ValueError:  # InvalidEnrolment, or base64 that does not decode
         raise coded(422, "INVALID_ENROLMENT", "The keys or the sealed blob are invalid") from None
     except KeyAlreadyEnrolledError:
@@ -151,9 +157,21 @@ async def reenrol_key(
 async def reenrolment_impact(
     context: TenantContext, claims: RecordingUser, service: Reenrolment
 ) -> dict[str, Any]:
-    """What re-enrolling would cost: a custodian learns how many usable shares remain."""
+    """What re-enrolling would cost, and the key waiting for its mailed link, if any."""
     try:
         impact = await service.impact(context.tenant_id, claims["sub"])
+        pending = await service.pending(context.tenant_id, claims["sub"])
     except ReenrolmentError:
         raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
-    return {"custodian": impact.custodian, "k": impact.k, "usable_after": impact.usable_after}
+    waiting = None
+    if pending is not None:
+        waiting = {
+            **_fingerprint_body(pending.fingerprint),
+            "expires_at": pending.expires_at.isoformat(),
+        }
+    return {
+        "custodian": impact.custodian,
+        "k": impact.k,
+        "usable_after": impact.usable_after,
+        "pending": waiting,
+    }

@@ -18,14 +18,28 @@ export interface EnrolledKey {
   fingerprintDisplay: string;
 }
 
-/** Active now, or waiting for the emailed confirmation link (spec §9.6). */
+/** Waiting for the emailed confirmation link; opening it activates the key (spec §9.9). */
 export interface Reenrolled extends EnrolledKey {
-  status: 'active' | 'pending_confirmation';
+  status: 'pending_confirmation';
 }
 
-/** What re-enrolling would cost a custodian: the shares still usable after it. */
+/** A re-enrolled key waiting for its mailed link (spec §9.9). */
+export interface PendingReenrolment {
+  fingerprintDisplay: string;
+  expiresAt: string;
+}
+
+/** What re-enrolling would cost a custodian, and the key already waiting, if any. */
 export interface ReenrolmentImpact {
   custodian: boolean;
   k: number | null;
   usableAfter: number | null;
+  pending: PendingReenrolment | null;
+}
+
+/** What the mailed link's page shows before its owner confirms or declines. */
+export interface LinkDetails {
+  fingerprintDisplay: string;
+  requestedAt: string;
+  expiresAt: string;
 }

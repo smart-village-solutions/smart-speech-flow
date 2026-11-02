@@ -222,6 +222,54 @@ production_compose exec -T ssf-postgres sh -ec \
 
 Expected: one `active` row for the tenant.
 
+## Step 8 — The mail relay for re-enrolment links (#632)
+
+A user who forgot their passphrase sets up a new key, but it becomes active
+only once they open a one-time link mailed to the address stored with their
+current key (spec §9.9). Without a relay, re-enrolment answers 503
+`MAIL_UNAVAILABLE`; first enrolment, which stores the address, needs no mail.
+
+**Before you start.**
+- The relay must offer TLS with a certificate a standard client trusts. The
+  gateway always verifies it; there is no setting to turn that off.
+- `CLIENT_BASE_URL` (already `https://dialog.kassel.de` in the compose file) is
+  where the link points.
+- Each tenant realm's access token must carry `email` and `email_verified`.
+  Keycloak's default `email` client scope adds both; check once by enrolling a
+  test user (Step 6). Enrolment answers 409 `EMAIL_NOT_VERIFIED` otherwise.
+
+**The password file**, readable by the gateway's user (Step 1's numbers):
+
+```bash
+sudo install -m 0400 -o 100 -g 101 /dev/stdin /etc/ssf/recording-secrets/smtp-password
+# paste the relay password, then Ctrl-D
+```
+
+**`.env`:**
+
+```
+SSF_SMTP_HOST=<relay host>
+SSF_SMTP_PORT=587
+SSF_SMTP_SECURITY=starttls
+SSF_SMTP_FROM=KasselDIALOG <noreply@dialog.kassel.de>
+SSF_SMTP_USERNAME=<relay user>
+SSF_SMTP_PASSWORD_FILE=/run/secrets/ssf-recording/smtp-password
+```
+
+`SSF_SMTP_SECURITY` is `starttls` (port 587) or `tls` (port 465). `none` is
+refused in production. Username and password file go together or not at all.
+
+```bash
+production_compose up -d api_gateway
+production_compose logs api_gateway | grep -i "re-enrolment mail"
+```
+
+Expected: no line. `Re-enrolment mail disabled: ...` names the missing or
+refused setting, never its value. Then re-enrol a test user from the keys
+screen: the mail arrives in German and English, and its link opens the
+confirm page without a login. A failed send logs `Re-enrolment mail failed:
+<error type>` and the user sees "cannot be sent right now".
+
 ## Rollback
 
 Unset `SSF_RECORDING_APP_PASSWORD` in `.env` and run

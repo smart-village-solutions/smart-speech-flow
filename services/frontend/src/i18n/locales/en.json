@@ -271,7 +271,28 @@
         "done": "Your new key is active.",
         "changed": "Your key has been replaced in the meantime. Please reload the page.",
         "ceremony": "Not possible while a key ceremony you take part in is running.",
-        "failed": "The new key could not be set up."
+        "failed": "The new key could not be set up.",
+        "pendingUntil": "Open the link from our email before {{time}}. Only then does this key become active:",
+        "mailUnavailable": "The confirmation email cannot be sent right now. Please try again later.",
+        "emailNotVerified": "Your key has no email address to send the confirmation link to. Please contact your administrator.",
+        "ended": "The link was declined or has expired; your previous key stays in use. Set up a new key again if you still need one."
+      },
+      "emailNotVerified": "Your account has no verified email address. Please verify it in your account settings; that is where we send the link if you ever need a new key.",
+      "confirmation": {
+        "title": "Confirm your new key",
+        "body": "A new archive key was set up for your account on {{date}} at {{time}}. It becomes active only once you confirm it here.",
+        "hint": "Compare the fingerprint with the one your keys screen showed after you set it up.",
+        "confirm": "Confirm key",
+        "decline": "This wasn't me",
+        "confirmed": "Your new key is active.",
+        "confirmedNext": "Unlock it on the Archive keys screen with your new passphrase. It opens your earlier conversations only after key recovery, which you request there.",
+        "declined": "The new key was discarded; your previous key stays in use. Please tell your administrator, because someone else requested it.",
+        "invalid": "This link is not valid or has already been used. If you already confirmed it, your new key is active.",
+        "expired": "This link has expired. Please set up the new key again.",
+        "ceremony": "Not possible while a key ceremony you take part in is running. Try again after the ceremony, while the link is still valid.",
+        "failed": "That did not work. Please try again.",
+        "missing": "This page needs the link from your email. Please open it from the email again.",
+        "retry": "Try again"
       }
     },
     "ceremony": {

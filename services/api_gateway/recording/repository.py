@@ -47,6 +47,8 @@ class UserKeyRecord:
     # The server-layer envelope of the passphrase-sealed blob; None once deleted.
     encrypted_private: bytes | None
     created_at: datetime
+    # Where a re-enrolment of this key is confirmed (§9.9); None once retired.
+    email: str | None = None
 
 
 async def bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
@@ -99,8 +101,8 @@ async def append_audits(connection: asyncpg.Connection, events: Sequence[AuditEv
 async def insert_user_key(connection: asyncpg.Connection, record: UserKeyRecord) -> None:
     await connection.execute(
         "INSERT INTO user_keys (tenant_id, user_sub, key_version, enc_pub,"
-        " sig_pub, fingerprint, encrypted_private, created_at)"
-        " VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        " sig_pub, fingerprint, encrypted_private, created_at, email)"
+        " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         record.tenant_id,
         record.user_sub,
         record.key_version,
@@ -109,6 +111,7 @@ async def insert_user_key(connection: asyncpg.Connection, record: UserKeyRecord)
         record.fingerprint,
         record.encrypted_private,
         record.created_at,
+        record.email,
     )
 
 
@@ -129,6 +132,7 @@ def user_key_from_row(row: Any) -> UserKeyRecord:
         fingerprint=bytes(row["fingerprint"]),
         encrypted_private=None if encrypted is None else bytes(encrypted),
         created_at=row["created_at"],
+        email=row.get("email"),
     )
 
 

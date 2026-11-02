@@ -27,20 +27,28 @@ const ownKey: OwnKey = {
   encPub: new Uint8Array(65),
   sigPub: new Uint8Array(65),
   blob: '{"v":1}',
-  fingerprint: new Uint8Array(32),
+  fingerprint: new Uint8Array(32).fill(0xab),
   fingerprintDisplay: 'abab abab abab abab abab abab abab abab abab abab',
   createdAt: '2026-10-26T09:00:00+00:00',
   keyVersion: 1,
 };
 
-function render(overrides: { enrolled?: OwnKey | null; enrol?: RecordingKeysRepository['enrol']; unlock?: ArchiveCrypto['unlock'] } = {}) {
+function render(
+  overrides: {
+    enrolled?: OwnKey | null;
+    enrol?: RecordingKeysRepository['enrol'];
+    unlock?: ArchiveCrypto['unlock'];
+    unlocked?: UnlockedKeys;
+  } = {}
+) {
   const keyVault = createKeyVault();
+  if (overrides.unlocked) keyVault.hold(overrides.unlocked);
   const remember = vi.fn();
   const recordingKeys: RecordingKeysRepository = {
     ownKey: vi.fn().mockResolvedValue(overrides.enrolled ?? null),
     enrol: overrides.enrol ?? vi.fn().mockResolvedValue({ fingerprint: keys.fingerprint, fingerprintDisplay: 'x' }),
     reenrol: vi.fn(),
-    reenrolmentImpact: vi.fn(),
+    reenrolmentImpact: vi.fn().mockResolvedValue({ custodian: false, k: null, usableAfter: null, pending: null }),
   };
   const archiveCrypto: ArchiveCrypto = {
     createKeys: vi.fn().mockResolvedValue({ blob: '{"v":1}', unlocked: keys }),
@@ -123,5 +131,26 @@ describe('KeysScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sperren' }));
     expect(keyVault.current()).toBeNull();
     expect(await screen.findByRole('button', { name: 'Entsperren' })).toBeInTheDocument();
+  });
+
+  it('asks for a verified email address when the gateway refuses enrolment without one', async () => {
+    render({ enrol: vi.fn().mockRejectedValue(new AppError('validation', { status: 409, serverCode: 'EMAIL_NOT_VERIFIED' })) });
+    await typePassphrase('Passphrase', STRONG);
+    await typePassphrase('Passphrase wiederholen', STRONG);
+    await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
+    expect(await screen.findByText(/keine bestätigte E-Mail-Adresse/)).toBeInTheDocument();
+  });
+
+  it('locks the vault once the served key is no longer the unlocked one', async () => {
+    const elsewhere = { ...ownKey, fingerprint: new Uint8Array(32).fill(0xcd), keyVersion: 2 };
+    const { keyVault } = render({ enrolled: elsewhere, unlocked: keys });
+    await waitFor(() => expect(keyVault.current()).toBeNull());
+    expect(await screen.findByRole('button', { name: 'Entsperren' })).toBeInTheDocument();
+  });
+
+  it('keeps the vault open while the served key is the unlocked one', async () => {
+    const { keyVault } = render({ enrolled: ownKey, unlocked: keys });
+    expect(await screen.findByRole('button', { name: 'Sperren' })).toBeInTheDocument();
+    expect(keyVault.current()).toBe(keys);
   });
 });

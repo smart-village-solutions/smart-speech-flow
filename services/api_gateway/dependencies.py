@@ -106,6 +106,7 @@ class GatewayDependencies:
     recording_recovery_requests: Any = None
     # Employee key recovery's re-enrolment (#617b), wired with the keys.
     recording_reenrolment: Any = None
+    recording_key_confirmations: Any = None
     recording_resharing: Any = None
     # Leavers (#617d), wired with the keys.
     recording_leavers: Any = None

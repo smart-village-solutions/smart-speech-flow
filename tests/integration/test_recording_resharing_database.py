@@ -23,8 +23,13 @@ from services.api_gateway.recording.crypto.curve import ORDER, decode_point, enc
 from services.api_gateway.recording.crypto.encoding import b64url, from_b64url
 from services.api_gateway.recording.recovery_requests_model import Approval, NewRequest, Refused
 from services.api_gateway.recording.recovery_requests_repository import PostgresRecoveryRequests
-from services.api_gateway.recording.reenrolment_repository import PostgresKeyReenrolment
-from services.api_gateway.recording.repository import UserKeyRecord
+from services.api_gateway.recording.reenrolment_repository import (
+    PostgresKeyReenrolment,
+    lock_active_key,
+    reenrolment_refusal,
+)
+from services.api_gateway.recording.repository import UserKeyRecord, bind_tenant
+from tests.recording_swap import swap_key
 from services.api_gateway.recording.resharing import ResharingService
 from services.api_gateway.recording.resharing_model import ResharingStart
 from tests import recording_crypto_reference as ref
@@ -764,9 +769,11 @@ async def test_a_dealer_cannot_re_enrol_while_the_resharing_runs(store, owner, a
     ceremonies, resharing = _services(store)
     shares = await _first_generation(ceremonies)
     await _reshare_and_deal(ceremonies, resharing, shares)
-    swap = PostgresKeyReenrolment(archive._pool)
-    assert await swap.check(TENANT, "anna", 1, NOW) == Refused("ceremony_in_progress")
-    assert await swap.check(TENANT, "carla", 1, NOW) is None
+    async with archive._pool.acquire() as connection, connection.transaction():
+        await bind_tenant(connection, TENANT)
+        for sub, refused in (("anna", Refused("ceremony_in_progress")), ("carla", None)):
+            old = await lock_active_key(connection, sub)
+            assert await reenrolment_refusal(connection, old, sub, 1, NOW) == refused
 
 
 async def test_the_swap_waits_for_an_activation_holding_the_key_row(store, owner, archive):
@@ -788,7 +795,7 @@ async def test_the_swap_waits_for_an_activation_holding_the_key_row(store, owner
         await transaction.start()
         await holder.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", TENANT)
         await holder.execute("SELECT 1 FROM recovery_keys WHERE status = 'active' FOR UPDATE")
-        swap = asyncio.create_task(PostgresKeyReenrolment(archive._pool).swap(record, 1, NOW))
+        swap = asyncio.create_task(swap_key(archive._pool, record, 1, NOW))
         await asyncio.sleep(0.5)
         assert not swap.done()
         await transaction.rollback()

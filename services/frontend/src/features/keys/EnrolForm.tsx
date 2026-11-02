@@ -7,6 +7,7 @@ import { type EnrolmentError, useEnrolment } from './useEnrolment';
 const ERROR_KEYS: Record<Exclude<EnrolmentError, 'stepUp'>, string> = {
   mismatch: 'admin.keys.passphraseMismatch',
   weak: 'admin.keys.passphraseWeak',
+  email: 'admin.keys.emailNotVerified',
   failed: 'admin.keys.enrolFailed',
 };
 

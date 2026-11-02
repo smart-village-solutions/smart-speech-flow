@@ -1,4 +1,4 @@
-"""Re-enrolment's swap (spec §9.6; migration 007).
+"""Re-enrolment's swap (spec §9.6; migration 007), run only by the mailed link's confirm (§9.9).
 
 One transaction, in the lock order every recovery writer keeps: the caller's
 active key row, then their open requests, then the writes, then the audit.
@@ -56,54 +56,6 @@ class PostgresKeyReenrolment:
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
 
-    async def swap(
-        self, record: UserKeyRecord, replaces_version: int, now: datetime
-    ) -> Refused | None:
-        """Retires `replaces_version` for `record`, or refuses and changes nothing."""
-
-        async def work(connection: asyncpg.Connection) -> Refused | None:
-            old = await connection.fetchrow(
-                "SELECT key_version, fingerprint FROM user_keys"
-                " WHERE user_sub = $1 AND retired_at IS NULL FOR UPDATE",
-                record.user_sub,
-            )
-            # Before the requests: a resharing's activation takes this row, then them (§9.7).
-            await connection.execute(
-                "SELECT 1 FROM recovery_keys WHERE status = 'active' FOR SHARE"
-            )
-            refused = await _refusal(connection, old, record.user_sub, replaces_version, now)
-            if refused is not None:
-                return refused
-            retired = await retire_key(
-                connection, record.tenant_id, record.user_sub, old, record.user_sub, now, left=False
-            )
-            events = retired.events
-            await insert_user_key(connection, record)
-            if retired.custodian_of is not None:
-                events.append(
-                    _event(record, "recovery.share.stale", str(retired.custodian_of), now)
-                )
-            events.append(_event(record, "key_reenrolled", f"user-key:{record.key_version}", now))
-            await append_audits(connection, events)
-            return None
-
-        return await self._run(record.tenant_id, work)
-
-    async def check(
-        self, tenant_id: str, sub: str, replaces_version: int, now: datetime
-    ) -> Refused | None:
-        """The swap's refusals, read before a confirmation is asked for; the swap checks again."""
-
-        async def work(connection: asyncpg.Connection) -> Refused | None:
-            old = await connection.fetchrow(
-                "SELECT key_version, fingerprint FROM user_keys"
-                " WHERE user_sub = $1 AND retired_at IS NULL",
-                sub,
-            )
-            return await _refusal(connection, old, sub, replaces_version, now)
-
-        return await self._run(tenant_id, work)
-
     async def impact(self, tenant_id: str, sub: str) -> ReenrolmentImpact:
         async def work(connection: asyncpg.Connection) -> ReenrolmentImpact:
             current = await connection.fetchval(
@@ -123,11 +75,42 @@ class PostgresKeyReenrolment:
         return await self._run(tenant_id, work)
 
 
+async def lock_active_key(connection: asyncpg.Connection, sub: str) -> Any:
+    """The swap's first locks: the caller's active key row, then the active recovery key."""
+    old = await connection.fetchrow(
+        "SELECT key_version, fingerprint, email FROM user_keys"
+        " WHERE user_sub = $1 AND retired_at IS NULL FOR UPDATE",
+        sub,
+    )
+    # Before the requests: a resharing's activation takes this row, then them (§9.7).
+    await connection.execute("SELECT 1 FROM recovery_keys WHERE status = 'active' FOR SHARE")
+    return old
+
+
+async def complete_swap(
+    connection: asyncpg.Connection,
+    record: UserKeyRecord,
+    old: Any,
+    now: datetime,
+    events: list[AuditEvent],
+) -> None:
+    """Retires `old` for `record` once the refusals passed; `events` go first in the audit."""
+    retired = await retire_key(
+        connection, record.tenant_id, record.user_sub, old, record.user_sub, now, left=False
+    )
+    events = events + retired.events
+    await insert_user_key(connection, record)
+    if retired.custodian_of is not None:
+        events.append(_event(record, "recovery.share.stale", str(retired.custodian_of), now))
+    events.append(_event(record, "key_reenrolled", f"user-key:{record.key_version}", now))
+    await append_audits(connection, events)
+
+
 def _event(record: UserKeyRecord, event_type: str, ref: str, now: datetime) -> AuditEvent:
     return AuditEvent(record.tenant_id, record.user_sub, event_type, ref, now)
 
 
-async def _refusal(
+async def reenrolment_refusal(
     connection: asyncpg.Connection, old: Any, sub: str, replaces_version: int, now: datetime
 ) -> Refused | None:
     if old is None:

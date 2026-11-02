@@ -25,6 +25,7 @@ from services.api_gateway.recording.recovery_requests_model import (
 )
 from services.api_gateway.recording.recovery_requests_sql import USABLE_SHARES
 from services.api_gateway.recording.reenrolment_repository import PostgresKeyReenrolment
+from tests.recording_swap import swap_key
 from services.api_gateway.recording.repository import (
     PostgresRecordingRepository,
     UserKeyRecord,
@@ -464,7 +465,8 @@ def _new_key(sub="alice", version=2, at=NOW) -> UserKeyRecord:
 
 
 async def _reenrol(archive, sub="alice", *, replaces=1):
-    return await PostgresKeyReenrolment(archive._pool).swap(
+    return await swap_key(
+        archive._pool,
         _new_key(sub, replaces + 1), replaces, NOW
     )
 
@@ -736,7 +738,8 @@ async def test_a_second_concurrent_re_enrolment_hears_the_key_changed(archive, o
         first = asyncio.create_task(_reenrol(archive))
         await asyncio.sleep(0.2)
         second = asyncio.create_task(
-            PostgresKeyReenrolment(archive._pool).swap(
+            swap_key(
+                archive._pool,
                 UserKeyRecord(
                     TENANT,
                     "alice",
