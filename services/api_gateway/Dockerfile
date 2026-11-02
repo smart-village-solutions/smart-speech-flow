@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS wheel-builder
+FROM python:3.15-slim AS wheel-builder
 
 WORKDIR /build
 COPY services/api_gateway/requirements.txt ./requirements.txt
@@ -32,7 +32,7 @@ RUN python -m pip wheel \
     --wheel-dir /wheels \
     -r requirements.txt
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 COPY --from=wheel-builder /wheels /wheels
