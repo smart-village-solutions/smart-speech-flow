@@ -37,19 +37,18 @@ def test_every_runtime_fixture_is_named_after_its_tenant() -> None:
         assert "authorizationRevision" not in raw
 
 
-def test_the_three_tenants_still_send_every_retired_storage_shape() -> None:
-    storage = {
-        tenant: contract_fixtures.runtime_configuration_v2(tenant, None)[
-            "conversationContentStorage"
-        ]
-        for tenant in contract_fixtures.RUNTIME_V2_TENANTS
-    }
+def test_normal_tenants_only_send_disabled_storage_compatibility_fields() -> None:
+    for tenant in contract_fixtures.RUNTIME_V2_TENANTS:
+        body = contract_fixtures.runtime_configuration_v2(tenant, None)
+        assert body["conversationContentStorage"] == {"mode": "disabled", "retentionHours": None}
 
-    assert storage == {
-        "tenant-fulda": {"mode": "disabled", "retentionHours": None},
-        "tenant-kassel": {"mode": "ask", "retentionHours": 4320},
-        "tenant-marburg": {"mode": "ask", "retentionHours": 0},
-    }
+
+def test_named_legacy_input_is_still_accepted_and_ignored() -> None:
+    body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "legacy-storage-ask")
+    assert body["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
+    read = parse_runtime_configuration_v2(body, expected_tenant_id="tenant-kassel")
+    assert read.policy.tenant_id == "tenant-kassel"
+    assert not hasattr(read.policy, "retention_hours")
 
 
 @pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
@@ -95,7 +94,7 @@ def test_the_installation_body_parses_without_dropping_content(
 def test_revisions_are_canonical_sha256_and_follow_the_body() -> None:
     plain = contract_fixtures.runtime_configuration_v2("tenant-kassel", None)
     again = contract_fixtures.runtime_configuration_v2("tenant-kassel", None)
-    disabled = contract_fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
+    disabled = contract_fixtures.runtime_configuration_v2("tenant-kassel", "recording-disabled")
     installation = contract_fixtures.installation_content_v2(None)
 
     assert plain == again
@@ -225,7 +224,7 @@ def test_invalid_content_without_guest_languages_serves_the_body(
     body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
 
     assert body["guestLanguages"] == []
-    assert body["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
+    assert body["conversationContentStorage"] == {"mode": "disabled", "retentionHours": None}
 
 
 def _write_runtime(directory, file_tenant: str, body_tenant: str) -> None:

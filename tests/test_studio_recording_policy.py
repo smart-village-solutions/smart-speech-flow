@@ -56,3 +56,24 @@ def test_an_invalid_block_disables_recording_and_keeps_the_rest(change, caplog) 
     assert read.policy.tenant_id == TENANT
     assert read.content.guest_languages
     assert any("recording" in record.getMessage() for record in caplog.records)
+
+
+def test_default_recording_retention_is_thirty_days_with_named_override() -> None:
+    default = parse_runtime_configuration_v2(
+        contract_fixtures.runtime_configuration_v2(TENANT, None), expected_tenant_id=TENANT
+    ).policy.recording
+    override = parse_runtime_configuration_v2(
+        contract_fixtures.runtime_configuration_v2(TENANT, "recording-retention-override"),
+        expected_tenant_id=TENANT,
+    ).policy.recording
+    assert default is not None and default.retention_hours == 720
+    assert override is not None and override.retention_hours == 240
+
+
+def test_normal_mock_content_retires_storage_questions() -> None:
+    for tenant in contract_fixtures.RUNTIME_V2_TENANTS:
+        body = contract_fixtures.runtime_configuration_v2(tenant, None)
+        assert body["conversationContentStorage"] == {"mode": "disabled", "retentionHours": None}
+        assert all(
+            entry["guest"]["storageQuestionHtml"] is None for entry in body["guestLanguages"]
+        )

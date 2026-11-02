@@ -10,14 +10,14 @@
     "icon": null
   },
   "conversationContentStorage": {
-    "mode": "ask",
-    "retentionHours": 0
+    "mode": "disabled",
+    "retentionHours": null
   },
   "staff": {
     "locale": "de-DE",
     "dashboard": {
       "headline": "Willkommen in der Testumgebung",
-      "explanationHtml": "<p>Testumgebung: gespeicherte Inhalte werden nicht automatisch gelöscht.</p>",
+      "explanationHtml": "<p>Testumgebung: Gespräche werden in Echtzeit übersetzt.</p>",
       "callToAction": "Neues Gespräch starten",
       "load": {
         "headline": "Systemauslastung",
@@ -51,8 +51,8 @@
       "staffName": "Englisch",
       "icon": null,
       "guest": {
-        "explanationHtml": "<p>Test environment: stored conversations are kept without an expiry.</p>",
-        "storageQuestionHtml": "<p>I agree to the storage of my conversation data.</p>"
+        "explanationHtml": "<p>Test environment: conversations are translated in real time.</p>",
+        "storageQuestionHtml": null
       }
     }
   ]

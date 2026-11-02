@@ -55,6 +55,18 @@ def _storage_disabled(body: dict[str, Any]) -> None:
         language["guest"]["storageQuestionHtml"] = None
 
 
+def _legacy_storage_ask(body: dict[str, Any]) -> None:
+    # Deliberate old-producer regression input; never an ordinary tenant default.
+    body["conversationContentStorage"] = {"mode": "ask", "retentionHours": 4320}
+    for language in body["guestLanguages"]:
+        language["guest"]["storageQuestionHtml"] = "<p>Legacy ignored storage prompt.</p>"
+
+
+def _recording_retention_override(body: dict[str, Any]) -> None:
+    if "recording" in body:
+        body["recording"]["retentionHours"] = 240
+
+
 def _invalid_guest_form(body: dict[str, Any]) -> None:
     # The gateway drops a guest language whose form is invalid; the policy stays valid.
     if not body["guestLanguages"]:
@@ -84,6 +96,8 @@ def _recording_disabled(body: dict[str, Any]) -> None:
 
 _RUNTIME_SCENARIOS: dict[str, Transform] = {
     "storage-disabled": _storage_disabled,
+    "legacy-storage-ask": _legacy_storage_ask,
+    "recording-retention-override": _recording_retention_override,
     "recording-disabled": _recording_disabled,
     "invalid-content": _invalid_guest_form,
 }

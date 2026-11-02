@@ -173,7 +173,10 @@ def test_v2_runtime_applies_the_scenario_per_request() -> None:
         "mode": "disabled",
         "retentionHours": None,
     }
-    assert plain.json()["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
+    assert plain.json()["conversationContentStorage"] == {
+        "mode": "disabled",
+        "retentionHours": None,
+    }
     assert invalid.json() == contract_fixtures.runtime_configuration_v2(
         "tenant-kassel", "invalid-content"
     )
