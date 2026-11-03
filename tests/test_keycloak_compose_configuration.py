@@ -67,7 +67,7 @@ def test_keycloak_runbook_uses_the_configured_hostname_and_preserves_private_por
 def test_keycloak_runtime_image_explicitly_uses_the_unprivileged_image_user() -> None:
     """Make the final Keycloak image's runtime identity unambiguous to scanners."""
     final_stage = KEYCLOAK_DOCKERFILE.read_text().split(
-        "FROM quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b\n", 1
+        "FROM quay.io/keycloak/keycloak@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b\n", 1
     )[1]
 
     assert "USER 1000" in final_stage
