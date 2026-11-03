@@ -33,9 +33,16 @@ function requestError(mismatch: boolean, stage: RequestStage, error: unknown): s
 
 /** Reviewers covering every language of the conversation, unless the caller asks for all. */
 export function covering(candidates: readonly ReviewerCandidate[], languages: readonly string[]) {
-  return candidates.filter((candidate) =>
-    languages.every((lang) => candidate.languages.includes(lang))
-  );
+  return candidates.filter((candidate) => {
+    const spoken = new Set(candidate.languages.map(primaryLanguage));
+    return languages.every((lang) => spoken.has(primaryLanguage(lang)));
+  });
+}
+
+/** Studio sends BCP 47 tags such as `en-US`; a conversation names the bare language. */
+function primaryLanguage(tag: string): string {
+  const end = tag.indexOf('-');
+  return (end === -1 ? tag : tag.slice(0, end)).toLowerCase();
 }
 
 /** Wraps every conversation key for the reviewer in the browser, then assigns (spec §10.7). */

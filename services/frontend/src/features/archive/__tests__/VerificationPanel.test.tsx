@@ -166,7 +166,7 @@ describe('VerificationPanel (spec §10.7)', () => {
     );
     expect(await screen.findByText(computed)).toBeInTheDocument();
     expect(screen.queryByText('SERVED-rita')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: v.assign }));
+    await userEvent.click(await screen.findByRole('button', { name: v.assign }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(archiveCrypto.rewrapFor).toHaveBeenCalledWith(
       expect.objectContaining({ keyId: IDS.key, recipientRef: 'alice' }),
@@ -194,7 +194,7 @@ describe('VerificationPanel (spec §10.7)', () => {
     await userEvent.click(screen.getByRole('button', { name: v.request }));
     await userEvent.click(await screen.findByRole('radio'));
     await userEvent.click(screen.getByRole('button', { name: v.next }));
-    await userEvent.click(screen.getByRole('button', { name: v.assign }));
+    await userEvent.click(await screen.findByRole('button', { name: v.assign }));
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
   });
 
@@ -209,7 +209,7 @@ describe('VerificationPanel (spec §10.7)', () => {
     await userEvent.click(screen.getByRole('button', { name: v.request }));
     await userEvent.click(await screen.findByRole('radio'));
     await userEvent.click(screen.getByRole('button', { name: v.next }));
-    await userEvent.click(screen.getByRole('button', { name: v.assign }));
+    await userEvent.click(await screen.findByRole('button', { name: v.assign }));
     expect(await screen.findByText(v.stepUpBody)).toBeInTheDocument();
   });
 
