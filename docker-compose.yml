@@ -338,6 +338,10 @@ services:
     # Nothing on disk (D12): live conversations are in memory only, and a
     # Redis restart ends them.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # The image declares VOLUME /data. Without a mount of its own, a recreate
+    # re-attaches the previous container's volume and Redis loads its dump.
+    tmpfs:
+      - /data
     expose:
       - "6379"
     restart: always
@@ -438,7 +442,7 @@ services:
       start_period: 20s
 
   keycloak:
-    image: ssf-keycloak:26.7.2
+    image: ssf-keycloak:26.8.1
     build:
       context: .
       dockerfile: services/keycloak/Dockerfile

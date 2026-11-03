@@ -60,9 +60,28 @@ rotate the initial administrator password after first login.
 
 Before every upgrade, create an encrypted compressed PostgreSQL logical backup
 with `pg_dump`, store a SHA-256 checksum, and restore it into a temporary
-database to verify it. Review Keycloak migration notes, change only the pinned
-Keycloak tag, rebuild, recreate only Keycloak, and repeat verification. On
-failure, restore the preceding pinned tag; never remove `keycloak-postgres-data`.
+database to verify it. Review Keycloak migration notes, bind the tested image ID in the production
+Compose file and `deploy/production/known-good-images.lock`, and recreate only
+Keycloak. Verify the resolved local production tag against the locked image ID
+before starting it; a tag alone is not an identity check. Keep both Dockerfile
+base-image references pinned to the tested version and digest.
+
+After a schema migration, an image-only downgrade is not a rollback. Keep
+regular access and provisioning writers stopped, restore the verified preceding
+Keycloak database backup with its original owner and required roles, and restore
+the matching configuration and old image before private acceptance and reopening.
+Never start the old image against a migrated schema or remove
+`keycloak-postgres-data`. If access has already reopened, preserve and reconcile
+intervening writes before restoring data.
+
+The Kassel upgrade to 26.8.1 uses local reference
+`ssf-keycloak:prod-2681-5ebdcb0`, locked to image ID
+`sha256:03a99f77ebfa395d7d672feaeff6a2d1cb8676a2e03f417dfba6f09eafca9f10`.
+The matching encrypted final dump, roles, configuration and evidence are retained
+under `backups/kc-upgrade-26-8-1-20261025-kassel-live/`; private recipient keys stay
+in its protected `keys/` directory. Earlier encrypted old-image archives remain
+available in the preceding upgrade-probe backups. Do not delete rollback evidence
+until retention is explicitly approved.
 
 Never expose PostgreSQL or Keycloak management port 9000 to work around an
 incident.

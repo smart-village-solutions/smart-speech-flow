@@ -1,0 +1,16 @@
+# The archive on the gateway host itself, with no replica yet
+# (archive-storage-deployment.md, "Single-host deployment"). The retention worker
+# reaches ssf-postgres on the gateway's network instead of over a private link.
+#
+#   docker compose --project-name ssf-archive --env-file /etc/ssf-archive/archive.env \
+#     --file /opt/ssf-archive/docker-compose.yml \
+#     --file /opt/ssf-archive/docker-compose.single-host.yml ...
+
+services:
+  retention:
+    networks: [default, ssf-backend]
+
+networks:
+  ssf-backend:
+    external: true
+    name: ssf-backend_default
