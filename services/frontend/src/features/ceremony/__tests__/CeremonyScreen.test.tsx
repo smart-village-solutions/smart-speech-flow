@@ -61,6 +61,41 @@ describe('CeremonyScreen', () => {
     await waitFor(() => expect(recoveryCeremony.start).toHaveBeenCalledWith(1, ['anna', 'bernd'], device.publicKey));
   });
 
+  it('applies the recovery mode Studio sets instead of offering a choice', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    vi.mocked(hasPermission).mockReturnValue(true);
+    const studioMode = vi.fn().mockResolvedValue('standard');
+    const { recoveryCeremony, device } = render({ ...noKey, ceremony: null }, { repository: { studioMode } });
+    expect(await screen.findByText('In Studio festgelegt')).toBeInTheDocument();
+    const fixed = screen.getByRole('radio', { name: /Standard-Wiederherstellung/ });
+    expect(fixed).toBeChecked();
+    expect(fixed).toBeDisabled();
+    expect(screen.getAllByRole('radio')).toHaveLength(1);
+    await userEvent.click(screen.getByText('Anna'));
+    await userEvent.click(screen.getByText('Bernd'));
+    await userEvent.click(screen.getByRole('button', { name: 'Zeremonie starten' }));
+    await waitFor(() => expect(recoveryCeremony.start).toHaveBeenCalledWith(1, ['anna', 'bernd'], device.publicKey));
+  });
+
+  it('waits for Studio before the ceremony can start', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    vi.mocked(hasPermission).mockReturnValue(true);
+    const studioMode = vi.fn().mockReturnValue(new Promise(() => {}));
+    render({ ...noKey, ceremony: null }, { repository: { studioMode } });
+    for (const name of ['Anna', 'Bernd', 'Carla']) await userEvent.click(await screen.findByText(name));
+    expect(screen.getByRole('button', { name: 'Zeremonie starten' })).toBeDisabled();
+  });
+
+  it('offers the choice when Studio cannot be read', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    vi.mocked(hasPermission).mockReturnValue(true);
+    const studioMode = vi.fn().mockRejectedValue(new AppError('server', { status: 503, serverCode: 'STUDIO_UNAVAILABLE' }));
+    render({ ...noKey, ceremony: null }, { repository: { studioMode } });
+    await waitFor(() => expect(studioMode).toHaveBeenCalled());
+    expect(await screen.findAllByRole('radio')).toHaveLength(2);
+    expect(screen.queryByText('In Studio festgelegt')).not.toBeInTheDocument();
+  });
+
   it('asks for a fresh MFA login and comes back to the ceremony', async () => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
     vi.mocked(hasPermission).mockReturnValue(true);
@@ -202,6 +237,33 @@ describe('CeremonyScreen', () => {
     });
     const line = await screen.findByText('Freigabebereite Personen: 2 · Nötige Freigaben: 2');
     expect(line).toHaveClass('text-fg-status-alert');
+  });
+
+  it('flags a key whose mode differs from the one Studio sets', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    vi.mocked(hasPermission).mockReturnValue(true);
+    const studioMode = vi.fn().mockResolvedValue('standard');
+    render({ recoveryKey: activeKey(), ceremony: null, lastFailed: null, chain: null }, { repository: { studioMode } });
+    expect(await screen.findByText(/entspricht nicht dem in Studio festgelegten Modus/)).toBeInTheDocument();
+  });
+
+  it('never asks Studio on behalf of a custodian', async () => {
+    const studioMode = vi.fn().mockResolvedValue('standard');
+    render({ recoveryKey: activeKey(), ceremony: null, lastFailed: null, chain: null }, { repository: { studioMode } });
+    expect(await screen.findByText(/Erweiterte Wiederherstellung/)).toBeInTheDocument();
+    expect(studioMode).not.toHaveBeenCalled();
+  });
+
+  it('raises no flag when the key matches Studio', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    vi.mocked(hasPermission).mockReturnValue(true);
+    const studioMode = vi.fn().mockResolvedValue('enhanced');
+    render({ recoveryKey: activeKey(), ceremony: null, lastFailed: null, chain: null }, { repository: { studioMode } });
+    await waitFor(() => expect(studioMode).toHaveBeenCalled());
+    // A flag would follow the answer within milliseconds; give it time to appear.
+    await expect(
+      screen.findByText(/entspricht nicht dem in Studio festgelegten Modus/, {}, { timeout: 300 })
+    ).rejects.toThrow();
   });
 
   it('reads correctly for a standard key with a single approval', async () => {

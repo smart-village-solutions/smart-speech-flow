@@ -86,6 +86,7 @@ export function render(
       { sub: 'carla', displayName: 'Carla', fingerprintDisplay: 'cccc' },
       { sub: 'dora', displayName: 'Dora', fingerprintDisplay: null },
     ]),
+    studioMode: vi.fn().mockResolvedValue(null),
     start: vi.fn().mockResolvedValue(ceremony()),
     deal: vi.fn().mockResolvedValue(undefined),
     subshares: vi.fn().mockResolvedValue(new Map()),

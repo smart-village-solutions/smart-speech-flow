@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { RecoveryKey } from '@/domain/recovery/recovery.types';
 import { Button } from '@/ui/primitives/Button';
 import { recoveryModeText } from './recoveryMode';
+import { useStudioRecoveryMode } from './useStudioRecoveryMode';
 
 /** The tenant's active recovery key; recording may be enabled from here on (spec §9.2). */
 interface RecoveryKeyCardProps {
@@ -12,6 +13,9 @@ interface RecoveryKeyCardProps {
 
 export function RecoveryKeyCard({ recoveryKey, onReshare }: Readonly<RecoveryKeyCardProps>) {
   const { t, i18n } = useTranslation();
+  // Only an administrator can act on it, by changing the approvers (#680).
+  const studio = useStudioRecoveryMode(onReshare !== undefined);
+  const mismatch = studio.mode !== null && studio.mode !== recoveryKey.mode;
   const left = recoveryKey.holders.filter((holder) => holder.left).map((holder) => holder.displayName ?? holder.holderRef);
 
   return (
@@ -28,6 +32,11 @@ export function RecoveryKeyCard({ recoveryKey, onReshare }: Readonly<RecoveryKey
         // One stale custodian more and a resharing would have to wait for the paper shares (§9.6).
         <p className={`text-label ${recoveryKey.usableShares > recoveryKey.k ? 'text-fg-muted' : 'text-fg-status-alert'}`}>
           {t('admin.ceremony.usableShares', { usable: recoveryKey.usableShares, k: recoveryKey.k })}
+        </p>
+      )}
+      {mismatch && (
+        <p role="alert" className="text-note text-fg-status-alert">
+          {t('admin.ceremony.modeMismatch', { mode: t(`admin.ceremony.modeName.${studio.mode}`) })}
         </p>
       )}
       {recoveryKey.previousHadPaper && (

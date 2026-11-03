@@ -7,6 +7,7 @@ import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
 import { RecoveryModeChoice } from './RecoveryModeChoice';
 import { CEREMONY_VIEW } from './useCeremony';
+import { thresholdOf, useStudioRecoveryMode } from './useStudioRecoveryMode';
 import { type StartError, useStartCeremony } from './useStartCeremony';
 
 const ERROR_KEYS: Record<Exclude<StartError, 'stepUp'>, string> = {
@@ -21,12 +22,14 @@ export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
   const [chosen, setChosen] = useState<string[]>([]);
   const [k, setK] = useState(2);
   const [paper, setPaper] = useState(true);
+  const studio = useStudioRecoveryMode();
+  const threshold = studio.mode === null ? k : thresholdOf(studio.mode);
 
   if (error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void start({ k, custodians: chosen, paper });
+    void start({ k: threshold, custodians: chosen, paper });
   };
 
   return (
@@ -34,7 +37,7 @@ export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.ceremony.startTitle')}</h2>
       <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.startBody')}</p>
       <CandidateList chosen={chosen} onChange={setChosen} />
-      <RecoveryModeChoice k={k} onChange={setK} />
+      <RecoveryModeChoice k={threshold} onChange={setK} fromStudio={studio.mode !== null} />
       <Checkbox checked={paper} onCheckedChange={setPaper}>
         {t('admin.ceremony.paperLabel')}
       </Checkbox>
@@ -47,7 +50,7 @@ export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
         type="submit"
         variant="compact"
         className="self-start bg-accent text-accent-on"
-        disabled={pending || chosen.length < k + 1}
+        disabled={pending || studio.pending || chosen.length < threshold + 1}
       >
         {t(pending ? 'admin.ceremony.startPending' : 'admin.ceremony.startAction')}
       </Button>

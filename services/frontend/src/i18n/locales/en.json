@@ -314,6 +314,12 @@
       "notEnrolled": "no archive keys yet",
       "modeLabel": "Recovery mode",
       "totalShares": "Shares in total: {{n}}",
+      "modeFromStudio": "Set in Studio",
+      "modeMismatch": "This key does not match the mode set in Studio ({{mode}}). Change the recovery approvers to align it.",
+      "modeName": {
+        "standard": "Standard recovery",
+        "enhanced": "Enhanced recovery"
+      },
       "paperLabel": "Print a paper backup on this device",
       "startAction": "Start ceremony",
       "startPending": "Starting …",

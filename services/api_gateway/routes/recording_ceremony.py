@@ -17,7 +17,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..dependencies import optional_container
+from ..dependencies import get_studio_runtime_flow, optional_container
 from ..recording.ceremony import CeremonyService, CeremonyState, HolderView, StartRequest
 from ..recording.ceremony_model import (
     CeremonyError,
@@ -37,7 +37,9 @@ from ..recording.permissions import (
     require_step_up,
 )
 from ..recording.repository import RecordingStorageUnavailable
-from ..studio_runtime_flow import correlation_id_from_request
+from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
+from ..studio_v1 import StudioV1ClientError
+from ..studio_v2 import StudioContractError
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
 from .recording_generations import generation_body
@@ -246,6 +248,26 @@ async def ceremony_state(
     except RecordingStorageUnavailable as error:
         raise refused(error) from None
     return _dealer_view(state, claims["sub"])
+
+
+@router.get("/studio-mode")
+async def studio_recovery_mode(
+    context: TenantContext,
+    _admin: Admin,
+    flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
+) -> dict[str, Any]:
+    """The recovery mode the tenant's Studio policy sets (#680); None without a policy.
+
+    Read once by the administrator's forms, not polled with the ceremony state.
+    """
+    if flow is None:
+        return {"recovery_mode": None}
+    try:
+        runtime = await flow.client.fetch(context.tenant_id, f"recovery-mode-{uuid.uuid4().hex}")
+    except (StudioV1ClientError, StudioContractError):
+        raise coded(503, "STUDIO_UNAVAILABLE", "Studio cannot be read right now") from None
+    policy = runtime.policy.recording
+    return {"recovery_mode": None if policy is None else policy.recovery_mode}
 
 
 @router.get("/candidates")
