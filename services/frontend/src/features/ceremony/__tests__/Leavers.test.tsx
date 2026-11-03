@@ -52,7 +52,7 @@ describe('leavers', () => {
       screen.getByText(/Eingerichtet am 15\.01\.2026 · Gespräche: 12 · letztes am 30\.09\.2026/)
     ).toBeInTheDocument();
     expect(screen.getByText('Carla')).toBeInTheDocument();
-    expect(screen.getByText('Verwahrende')).toBeInTheDocument();
+    expect(screen.getByText('Freigabeberechtigte')).toBeInTheDocument();
     expect(screen.getByText(/noch kein Gespräch/)).toBeInTheDocument();
   });
 
@@ -71,7 +71,7 @@ describe('leavers', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Als ausgeschieden markieren' })
     );
-    expect(screen.getByText(/über den Ausnahmezugang erreichbar/)).toBeInTheDocument();
+    expect(screen.getByText(/über den Ausnahmezugriff erreichbar/)).toBeInTheDocument();
     expect(screen.queryByText(/Ihr Anteil bleibt/)).not.toBeInTheDocument();
     expect(recoveryCeremony.markLeaver).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Endgültig markieren' }));
@@ -90,7 +90,7 @@ describe('leavers', () => {
       await screen.findByRole('button', { name: 'Als ausgeschieden markieren' })
     );
     expect(
-      screen.getByText(/Ihr Anteil bleibt, bis die Verwahrenden geändert sind/)
+      screen.getByText(/Ihr Anteil bleibt, bis die Freigabeberechtigten geändert sind/)
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
     expect(screen.getByRole('button', { name: 'Als ausgeschieden markieren' })).toBeInTheDocument();

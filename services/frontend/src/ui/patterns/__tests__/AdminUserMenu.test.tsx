@@ -48,7 +48,7 @@ describe('AdminUserMenu', () => {
       locale: 'de',
     });
     await open();
-    expect(screen.queryByRole('button', { name: 'Wiederherstellungsanträge' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ausnahmezugriffe' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
     expect(approvals).toHaveBeenCalledOnce();
     unmount();
@@ -56,7 +56,7 @@ describe('AdminUserMenu', () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryRequests={requests} />, { locale: 'de' });
     await open();
     expect(screen.queryByRole('button', { name: 'Wiederherstellungsfreigaben' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsanträge' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Ausnahmezugriffe' }));
     expect(requests).toHaveBeenCalledOnce();
   });
 
