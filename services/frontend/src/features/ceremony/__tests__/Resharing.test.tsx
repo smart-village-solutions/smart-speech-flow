@@ -139,6 +139,24 @@ describe('changing custodians', () => {
     );
   });
 
+  it('changes the approvers in the recovery mode Studio sets', async () => {
+    const studioMode = vi.fn().mockResolvedValue('standard');
+    const { recoveryCeremony } = render(withKey(null), { repository: { studioMode } });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Freigabeberechtigte ändern' })
+    );
+    expect(await screen.findByText('In Studio festgelegt')).toBeInTheDocument();
+    for (const name of ['Anna', 'Bernd']) await userEvent.click(await screen.findByText(name));
+    await userEvent.click(screen.getByText('anna'));
+    await userEvent.click(screen.getByText('Papieranteil paper-1'));
+    await userEvent.click(screen.getByRole('button', { name: 'Änderung starten' }));
+    await waitFor(() =>
+      expect(recoveryCeremony.startResharing).toHaveBeenCalledWith(
+        expect.objectContaining({ k: 1, custodians: ['anna', 'bernd'], dealers: [1, 4] })
+      )
+    );
+  });
+
   it('keeps a key needing three approvals as a choice after picking another mode', async () => {
     render(withKey(null, { recoveryKey: activeKey({ holders, k: 3 }) }));
     await userEvent.click(

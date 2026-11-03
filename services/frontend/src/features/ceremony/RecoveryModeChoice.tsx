@@ -14,12 +14,20 @@ interface RecoveryModeChoiceProps {
   onChange: (k: number) => void;
   /** The active key's threshold, when changing its approvers. */
   held?: number;
+  /** Studio's policy sets the mode: `k` is shown as the only, fixed choice (#680). */
+  fromStudio?: boolean;
 }
 
-export function RecoveryModeChoice({ k, onChange, held }: Readonly<RecoveryModeChoiceProps>) {
+export function RecoveryModeChoice({
+  k,
+  onChange,
+  held,
+  fromStudio = false,
+}: Readonly<RecoveryModeChoiceProps>) {
   const { t } = useTranslation();
   const name = useId();
-  const choices = held === undefined || MODES.includes(held) ? MODES : [...MODES, held];
+  const offered = held === undefined || MODES.includes(held) ? MODES : [...MODES, held];
+  const choices = fromStudio ? [k] : offered;
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-1 text-note text-fg-strong">{t('admin.ceremony.modeLabel')}</legend>
@@ -30,11 +38,15 @@ export function RecoveryModeChoice({ k, onChange, held }: Readonly<RecoveryModeC
             name={name}
             className="mt-1"
             checked={k === value}
+            disabled={fromStudio}
             onChange={() => onChange(value)}
           />
           {recoveryModeText(t, value)}
         </label>
       ))}
+      {fromStudio && (
+        <p className="text-meta text-fg-muted">{t('admin.ceremony.modeFromStudio')}</p>
+      )}
     </fieldset>
   );
 }

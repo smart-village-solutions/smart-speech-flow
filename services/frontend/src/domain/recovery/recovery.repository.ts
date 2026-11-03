@@ -1,7 +1,15 @@
 import type { AxiosInstance } from 'axios';
 import { type Bytes, scalarToBytes, toBase64Url } from '@/core/crypto/bytes';
 import type { Confirmation } from '@/core/crypto/ceremony-crypto.port';
-import { toCandidates, toCeremony, toCeremonyState, toDealerKey, toLeavers, toSubshares } from './recovery.mapper';
+import {
+  toCandidates,
+  toCeremony,
+  toCeremonyState,
+  toDealerKey,
+  toLeavers,
+  toStudioMode,
+  toSubshares,
+} from './recovery.mapper';
 import type {
   AbortReason,
   Ceremony,
@@ -11,6 +19,7 @@ import type {
   LeaverCandidate,
   NewDealing,
   ReceivedSubshares,
+  RecoveryKey,
 } from './recovery.types';
 
 const BASE = '/api/admin/recording/ceremony';
@@ -19,6 +28,8 @@ const LEAVERS = '/api/admin/recording/leavers';
 export interface RecoveryCeremonyRepository {
   state(): Promise<CeremonyState>;
   candidates(): Promise<CustodianCandidate[]>;
+  /** The mode Studio's recording policy sets; null when Studio sends none (#680). */
+  studioMode(): Promise<RecoveryKey['mode'] | null>;
   start(k: number, custodians: readonly string[], paperDevicePub: Bytes | null): Promise<Ceremony>;
   deal(ceremonyId: string, dealing: Readonly<NewDealing>): Promise<void>;
   subshares(ceremonyId: string): Promise<ReceivedSubshares>;
@@ -62,6 +73,10 @@ export function createRecoveryCeremonyRepository(http: AxiosInstance): RecoveryC
 
     async candidates() {
       return toCandidates((await http.get<unknown>(`${BASE}/candidates`)).data);
+    },
+
+    async studioMode() {
+      return toStudioMode((await http.get<unknown>(`${BASE}/studio-mode`)).data);
     },
 
     async start(k, custodians, paperDevicePub) {

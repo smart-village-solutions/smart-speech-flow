@@ -7,6 +7,7 @@ import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
 import { RecoveryModeChoice } from './RecoveryModeChoice';
+import { thresholdOf, useStudioRecoveryMode } from './useStudioRecoveryMode';
 import { DealerPicker } from './DealerPicker';
 import { CEREMONY_VIEW } from './useCeremony';
 import { type ResharingError, useStartResharing } from './useStartResharing';
@@ -34,16 +35,25 @@ export function ReshareForm({ tenantId, recoveryKey, onCancel }: Readonly<Reshar
   const [dealers, setDealers] = useState<number[]>([]);
   const [k, setK] = useState(recoveryKey.k);
   const [paper, setPaper] = useState(false);
+  const studio = useStudioRecoveryMode();
+  const threshold = studio.mode === null ? k : thresholdOf(studio.mode);
 
   if (error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   const ready =
+    !studio.pending &&
     dealers.length === recoveryKey.k &&
-    custodians.length >= k + 1 &&
+    custodians.length >= threshold + 1 &&
     custodians.length <= MAX_CUSTODIANS;
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void start({ k, custodians, dealers, paper, holdersCeremonyId: recoveryKey.holdersCeremonyId });
+    void start({
+      k: threshold,
+      custodians,
+      dealers,
+      paper,
+      holdersCeremonyId: recoveryKey.holdersCeremonyId,
+    });
   };
 
   return (
@@ -56,7 +66,12 @@ export function ReshareForm({ tenantId, recoveryKey, onCancel }: Readonly<Reshar
       </h2>
       <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.reshare.intro')}</p>
       <CandidateList chosen={custodians} onChange={setCustodians} />
-      <RecoveryModeChoice k={k} onChange={setK} held={recoveryKey.k} />
+      <RecoveryModeChoice
+        k={threshold}
+        onChange={setK}
+        held={recoveryKey.k}
+        fromStudio={studio.mode !== null}
+      />
       <Checkbox checked={paper} onCheckedChange={setPaper}>
         {t('admin.ceremony.paperLabel')}
       </Checkbox>

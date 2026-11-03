@@ -183,10 +183,13 @@ the gateway only relays and checks what they publish (spec §9.2).
 - Every custodian has enrolled personal keys (Step 6) and knows their
   passphrase. One without keys is listed as "noch keine Archivschlüssel" and
   cannot be chosen.
-- Choose `k`, the shares needed to open a conversation. Name at least `k + 1`
-  custodians, at most 10, so a recovery can proceed when the requester is a
-  custodian. `k = 1` is the standard mode and offers no cryptographic
-  separation; `k ≥ 2` is the enhanced mode.
+- Decide the recovery mode in the tenant's Studio recording settings
+  (**Wiederherstellungsmodus**): standard needs one approval (`k = 1`) and
+  offers no cryptographic separation; enhanced needs two (`k = 2`). The
+  ceremony applies Studio's mode and shows it as "In Studio festgelegt"; only
+  without a Studio policy does the administrator choose there. Name at least
+  `k + 1` custodians (recovery approvers), at most 10, so a recovery can
+  proceed when the requester is one of them.
 - For a paper backup, prepare a dedicated ceremony device that no custodian
   uses, with a printer attached. The tenant administrator signs in on it.
   The paper backup is `k` sheets, each given to a different person.

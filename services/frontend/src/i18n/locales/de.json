@@ -314,6 +314,12 @@
       "notEnrolled": "noch keine Archivschlüssel",
       "modeLabel": "Wiederherstellungsmodus",
       "totalShares": "Anteile insgesamt: {{n}}",
+      "modeFromStudio": "In Studio festgelegt",
+      "modeMismatch": "Dieser Schlüssel entspricht nicht dem in Studio festgelegten Modus ({{mode}}). Ändern Sie die Freigabeberechtigten, um ihn anzupassen.",
+      "modeName": {
+        "standard": "Standard-Wiederherstellung",
+        "enhanced": "Erweiterte Wiederherstellung"
+      },
       "paperLabel": "Papiersicherung auf diesem Gerät drucken",
       "startAction": "Zeremonie starten",
       "startPending": "Wird gestartet …",

@@ -8,6 +8,7 @@ import type {
   DealerKey,
   LeaverCandidate,
   ReceivedSubshares,
+  RecoveryKey,
   ServedChain,
   ServedGeneration,
 } from './recovery.types';
@@ -259,6 +260,13 @@ export function toCeremonyState(body: unknown): CeremonyState {
         ? null
         : { ceremonyId: parsed.last_failed.ceremony_id, reason: parsed.last_failed.reason, endedAt: parsed.last_failed.ended_at },
   };
+}
+
+const studioMode = z.object({ recovery_mode: z.enum(['standard', 'enhanced']).nullable() });
+
+/** The recovery mode the tenant's Studio policy sets; null without a policy (#680). */
+export function toStudioMode(body: unknown): RecoveryKey['mode'] | null {
+  return studioMode.parse(body).recovery_mode;
 }
 
 export function toCandidates(body: unknown): CustodianCandidate[] {

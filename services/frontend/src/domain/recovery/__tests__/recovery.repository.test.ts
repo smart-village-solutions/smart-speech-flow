@@ -87,6 +87,20 @@ describe('recovery ceremony repository', () => {
     vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue('staff-token');
   });
 
+  it.each([
+    ['standard', 'standard'],
+    ['enhanced', 'enhanced'],
+    [null, null],
+  ] as const)('reads the recovery mode Studio sets (%s)', async (sent, read) => {
+    server.use(http.get(`${URL}/studio-mode`, () => HttpResponse.json({ recovery_mode: sent })));
+    expect(await repository().studioMode()).toBe(read);
+  });
+
+  it('refuses a recovery mode Studio does not define', async () => {
+    server.use(http.get(`${URL}/studio-mode`, () => HttpResponse.json({ recovery_mode: 'strict' })));
+    await expect(repository().studioMode()).rejects.toThrow();
+  });
+
   it('reads why the last ceremony ended', async () => {
     server.use(
       http.get(URL, () =>

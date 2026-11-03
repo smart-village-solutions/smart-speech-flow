@@ -3555,6 +3555,30 @@
         ]
       }
     },
+    "/api/admin/recording/ceremony/studio-mode": {
+      "get": {
+        "description": "The recovery mode the tenant's Studio policy sets (#680); None without a policy.\n\nRead once by the administrator's forms, not polled with the ceremony state.",
+        "operationId": "studio_recovery_mode_api_admin_recording_ceremony_studio_mode_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Studio Recovery Mode Api Admin Recording Ceremony Studio Mode Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Studio Recovery Mode",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
     "/api/admin/recording/ceremony/{ceremony_id}/abort": {
       "post": {
         "operationId": "abort_api_admin_recording_ceremony__ceremony_id__abort_post",
