@@ -71,7 +71,7 @@ describe('leavers', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Als ausgeschieden markieren' })
     );
-    expect(screen.getByText(/über den Ausnahmezugang erreichbar/)).toBeInTheDocument();
+    expect(screen.getByText(/über den Ausnahmezugriff erreichbar/)).toBeInTheDocument();
     expect(screen.queryByText(/Ihr Anteil bleibt/)).not.toBeInTheDocument();
     expect(recoveryCeremony.markLeaver).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Endgültig markieren' }));

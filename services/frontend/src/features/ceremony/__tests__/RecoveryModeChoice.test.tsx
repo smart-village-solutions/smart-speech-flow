@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react';
+import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -20,11 +21,19 @@ describe('RecoveryModeChoice', () => {
     expect(onChange).toHaveBeenCalledWith(1);
   });
 
-  it('keeps an older key that needs more approvals as a third choice', () => {
-    renderWithProviders(<RecoveryModeChoice k={3} onChange={vi.fn()} />, { locale: 'de' });
+  it("keeps the current key's own mode as a choice after switching away from it", async () => {
+    function Form() {
+      const [k, setK] = useState(3);
+      return <RecoveryModeChoice k={k} held={3} onChange={setK} />;
+    }
+    renderWithProviders(<Form />, { locale: 'de' });
+    const kept = screen.getByRole('radio', {
+      name: /Erweiterte Wiederherstellung: 3 Freigaben nötig/,
+    });
+    expect(kept).toBeChecked();
+    await userEvent.click(screen.getByRole('radio', { name: /Standard-Wiederherstellung/ }));
     expect(screen.getAllByRole('radio')).toHaveLength(3);
-    expect(
-      screen.getByRole('radio', { name: /Erweiterte Wiederherstellung: 3 Freigaben nötig/ })
-    ).toBeChecked();
+    await userEvent.click(screen.getByRole('radio', { name: /3 Freigaben nötig/ }));
+    expect(screen.getByRole('radio', { name: /3 Freigaben nötig/ })).toBeChecked();
   });
 });

@@ -56,7 +56,7 @@ export function ReshareForm({ tenantId, recoveryKey, onCancel }: Readonly<Reshar
       </h2>
       <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.reshare.intro')}</p>
       <CandidateList chosen={custodians} onChange={setCustodians} />
-      <RecoveryModeChoice k={k} onChange={setK} />
+      <RecoveryModeChoice k={k} onChange={setK} held={recoveryKey.k} />
       <Checkbox checked={paper} onCheckedChange={setPaper}>
         {t('admin.ceremony.paperLabel')}
       </Checkbox>

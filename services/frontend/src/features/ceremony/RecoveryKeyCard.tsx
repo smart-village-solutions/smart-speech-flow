@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { RecoveryKey } from '@/domain/recovery/recovery.types';
 import { Button } from '@/ui/primitives/Button';
+import { recoveryModeText } from './recoveryMode';
 
 /** The tenant's active recovery key; recording may be enabled from here on (spec §9.2). */
 interface RecoveryKeyCardProps {
@@ -17,10 +18,9 @@ export function RecoveryKeyCard({ recoveryKey, onReshare }: Readonly<RecoveryKey
     <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5">
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.ceremony.keyActiveTitle')}</h2>
       <p className="text-note leading-chat text-fg-muted">
-        {recoveryKey.mode === 'standard'
-          ? t('admin.ceremony.modeStandard')
-          : t('admin.ceremony.modeEnhanced', { k: recoveryKey.k })}
+        {recoveryModeText(t, recoveryKey.k)}
       </p>
+      <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.totalShares', { n: recoveryKey.n })}</p>
       <p className="text-note leading-chat text-fg-muted">
         {t('admin.ceremony.transcriptLabel')} <code>{recoveryKey.transcriptDisplay}</code>
       </p>

@@ -139,6 +139,17 @@ describe('changing custodians', () => {
     );
   });
 
+  it('keeps a key needing three approvals as a choice after picking another mode', async () => {
+    render(withKey(null, { recoveryKey: activeKey({ holders, k: 3 }) }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Freigabeberechtigte ändern' })
+    );
+    const kept = screen.getByRole('radio', { name: /3 Freigaben nötig/ });
+    expect(kept).toBeChecked();
+    await userEvent.click(screen.getByRole('radio', { name: /Standard-Wiederherstellung/ }));
+    expect(screen.getByRole('radio', { name: /3 Freigaben nötig/ })).not.toBeChecked();
+  });
+
   it('names custodians who left and marks them among the dealers', async () => {
     const names: Readonly<Record<string, string>> = { bernd: 'Bernd', carla: 'Carla' };
     const leftHolders = holders.map((h) =>
