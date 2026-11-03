@@ -32,6 +32,15 @@ def test_redis_writes_nothing_to_disk(compose) -> None:
 
 
 @STACKS
+def test_redis_data_directory_is_its_own_tmpfs(compose) -> None:
+    # The image declares VOLUME /data: without this mount, a recreate re-attached the
+    # old redis-data volume on production (2026-11-03) and loaded its dump.
+    redis = _service(compose, "redis")
+
+    assert "/data" in [str(path) for path in redis.get("tmpfs", [])]
+
+
+@STACKS
 def test_delivery_audio_lives_only_on_the_gateways_tmpfs(compose) -> None:
     gateway = _service(compose, "api_gateway")
     tmpfs = [

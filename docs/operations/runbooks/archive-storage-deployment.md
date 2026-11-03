@@ -46,6 +46,44 @@ differs should stop the rollout rather than be repeated.
   and drops its lock (verified 2026-10-27). What the replica protects against is
   the loss of the primary, deletions, and anything done through the S3 API.
 
+## Single-host deployment (production since 2026-11-03)
+
+Production currently runs the primary on the gateway host itself, with no
+replica. **Adding the off-site replica (Step 4) is recommended**: until then the
+archive has no copy at another location, and root on the gateway host also
+reaches the store.
+
+What differs from the steps below:
+
+- `/etc/ssf-archive/archive.env` sets `SSF_ARCHIVE_LISTEN_ADDRESS` to the
+  gateway network's bridge address (`172.18.0.1`, the gateway of
+  `ssf-backend_default`) and `SSF_ARCHIVE_LINK_ADDRESS` to `127.0.0.1`. S3 is
+  then reachable from the host and its containers only, and the filer from the
+  host only. The gateway's `SSF_ARCHIVE_ENDPOINT` is `http://172.18.0.1:8333`.
+- Every `archive_compose` command adds
+  `--file /opt/ssf-archive/docker-compose.single-host.yml`. It joins the
+  retention worker to `ssf-backend_default`, so it reaches `ssf-postgres:5432`
+  directly: `SSF_RETENTION_DATABASE_URL` is
+  `postgresql://ssf_recording_retention@ssf-postgres:5432/ssf_recording`, the
+  database is published nowhere new, and Step 3 of
+  recording-retention-deployment.md (the link) is skipped.
+- Only the primary's retention worker runs, and `SSF_RECORDING_REPLICA_PASSWORD`
+  stays unset, so the replica role cannot log in.
+
+Until the replica exists:
+
+- An expired conversation still becomes unreadable on its retention date and
+  its versions are deleted from the primary once their lock lapses. Its rows in
+  `ssf_recording` stay, because they are removed only once both sites have
+  cleared it. The replica's worker clears them on its first passes.
+- The gateway expects both sites, so `RecordingRetentionWorkerSilent` and
+  `ArchiveReplicaBehind` fire for `site="replica"`. No Alertmanager is
+  configured, so they show in Prometheus without paging anyone.
+
+To add the replica later, follow Steps 1 and 4 and recreate the primary with
+`SSF_ARCHIVE_LINK_ADDRESS` on the private link; the existing buckets and
+versions stay.
+
 ## Every command names its stack
 
 On the gateway host:
