@@ -5,7 +5,7 @@ import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
-import { ThresholdSelect } from './ThresholdSelect';
+import { RecoveryModeChoice } from './RecoveryModeChoice';
 import { CEREMONY_VIEW } from './useCeremony';
 import { type StartError, useStartCeremony } from './useStartCeremony';
 
@@ -14,7 +14,7 @@ const ERROR_KEYS: Record<Exclude<StartError, 'stepUp'>, string> = {
   failed: 'admin.ceremony.startFailed',
 };
 
-/** The tenant administrator names the custodians and the threshold (spec §9.1, §9.2). */
+/** The tenant administrator names the recovery approvers and the mode (spec §9.1, §9.2). */
 export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
   const { t } = useTranslation();
   const { start, error, pending } = useStartCeremony(tenantId);
@@ -34,8 +34,7 @@ export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.ceremony.startTitle')}</h2>
       <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.startBody')}</p>
       <CandidateList chosen={chosen} onChange={setChosen} />
-      <ThresholdSelect k={k} onChange={setK} />
-      <p className="text-meta text-fg-muted">{t(k === 1 ? 'admin.ceremony.modeStandard' : 'admin.ceremony.modeEnhanced')}</p>
+      <RecoveryModeChoice k={k} onChange={setK} />
       <Checkbox checked={paper} onCheckedChange={setPaper}>
         {t('admin.ceremony.paperLabel')}
       </Checkbox>

@@ -115,7 +115,9 @@ describe('changing custodians', () => {
 
   it('lets an admin choose exactly k current holders, never one whose share is lost', async () => {
     const { recoveryCeremony } = render(withKey(null));
-    await userEvent.click(await screen.findByRole('button', { name: 'Verwahrende ändern' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Freigabeberechtigte ändern' })
+    );
     for (const name of ['Anna', 'Bernd', 'Carla'])
       await userEvent.click(await screen.findByText(name));
     const submit = screen.getByRole('button', { name: 'Änderung starten' });
@@ -146,7 +148,7 @@ describe('changing custodians', () => {
     expect(
       await screen.findByText(/Ausgeschieden: Bernd und Carla\. Ihre Anteile gelten weiter/)
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Verwahrende ändern' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Freigabeberechtigte ändern' }));
     expect(
       await screen.findByText('nutzbar mit früherem Schlüssel · ausgeschieden')
     ).toBeInTheDocument();
@@ -162,7 +164,9 @@ describe('changing custodians', () => {
           ),
       },
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Verwahrende ändern' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Freigabeberechtigte ändern' })
+    );
     for (const name of ['Anna', 'Bernd', 'Carla', 'anna', 'bernd'])
       await userEvent.click(await screen.findByText(name));
     await userEvent.click(screen.getByRole('button', { name: 'Änderung starten' }));
@@ -182,7 +186,7 @@ describe('changing custodians', () => {
     );
     expect(await screen.findByText(/Vernichten Sie die alten Papieranteile/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Die bisherigen Verwahrenden behalten ihre Anteile/)
+      screen.getByText(/Die bisherigen Freigabeberechtigten behalten ihre Anteile/)
     ).toBeInTheDocument();
   });
 
@@ -191,7 +195,7 @@ describe('changing custodians', () => {
       crypto: { certifyChain: vi.fn().mockReturnValue(new Promise(() => undefined)) },
     });
     expect(
-      await screen.findByText(/Protokolle der bisherigen Verwahrenden werden geprüft/)
+      await screen.findByText(/Protokolle der bisherigen Freigabeberechtigten werden geprüft/)
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Dieses Blatt weitergeben' })

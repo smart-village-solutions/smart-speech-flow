@@ -49,6 +49,17 @@ describe('CeremonyScreen', () => {
     expect(paperDevice.current()).toBe(device);
   });
 
+  it('starts in standard mode with two recovery approvers', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    vi.mocked(hasPermission).mockReturnValue(true);
+    const { recoveryCeremony, device } = render({ ...noKey, ceremony: null });
+    await userEvent.click(await screen.findByRole('radio', { name: /Standard-Wiederherstellung/ }));
+    await userEvent.click(screen.getByText('Anna'));
+    await userEvent.click(screen.getByText('Bernd'));
+    await userEvent.click(screen.getByRole('button', { name: 'Zeremonie starten' }));
+    await waitFor(() => expect(recoveryCeremony.start).toHaveBeenCalledWith(1, ['anna', 'bernd'], device.publicKey));
+  });
+
   it('asks for a fresh MFA login and comes back to the ceremony', async () => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
     vi.mocked(hasPermission).mockReturnValue(true);
@@ -176,8 +187,8 @@ describe('CeremonyScreen', () => {
       lastFailed: null,
       chain: null,
     });
-    expect(await screen.findByText(/2 von 5 Anteilen öffnen gemeinsam ein Gespräch/)).toBeInTheDocument();
-    expect(screen.queryByText(/nötigen Anteilen nutzbar/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Erweiterte Wiederherstellung: 2 Freigaben nötig/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nutzbar:/)).not.toBeInTheDocument();
   });
 
   it('warns when no more than k custodian shares are still usable', async () => {
@@ -187,7 +198,7 @@ describe('CeremonyScreen', () => {
       lastFailed: null,
       chain: null,
     });
-    const line = await screen.findByText('2 von 2 nötigen Anteilen nutzbar');
+    const line = await screen.findByText('Nutzbar: 2 Anteile, nötig: 2 Freigaben');
     expect(line).toHaveClass('text-fg-status-alert');
   });
 });

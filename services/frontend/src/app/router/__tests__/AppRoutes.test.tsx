@@ -273,7 +273,7 @@ describe('tenant login routes', () => {
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.queryByRole('button', { name: 'Wiederherstellungsanträge' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ausnahmezugriffe' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
     expect(
       await screen.findByRole('heading', { name: 'Wiederherstellungsfreigaben' })

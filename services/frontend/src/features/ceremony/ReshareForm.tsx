@@ -6,7 +6,7 @@ import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
-import { ThresholdSelect } from './ThresholdSelect';
+import { RecoveryModeChoice } from './RecoveryModeChoice';
 import { DealerPicker } from './DealerPicker';
 import { CEREMONY_VIEW } from './useCeremony';
 import { type ResharingError, useStartResharing } from './useStartResharing';
@@ -56,7 +56,7 @@ export function ReshareForm({ tenantId, recoveryKey, onCancel }: Readonly<Reshar
       </h2>
       <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.reshare.intro')}</p>
       <CandidateList chosen={custodians} onChange={setCustodians} />
-      <ThresholdSelect k={k} onChange={setK} />
+      <RecoveryModeChoice k={k} onChange={setK} />
       <Checkbox checked={paper} onCheckedChange={setPaper}>
         {t('admin.ceremony.paperLabel')}
       </Checkbox>
