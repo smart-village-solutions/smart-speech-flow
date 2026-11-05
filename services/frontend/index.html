@@ -12,22 +12,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>%APP_NAME%</title>
-    <script>
-      (() => {
-        try {
-          const savedTheme = localStorage.getItem('ssf-theme');
-          let theme = 'light';
-          if (savedTheme === 'dark' || savedTheme === 'light') {
-            theme = savedTheme;
-          } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            theme = 'dark';
-          }
-          document.documentElement.classList.toggle('dark', theme === 'dark');
-        } catch {
-          // Keep the light default if browser preferences or storage are unavailable.
-        }
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
