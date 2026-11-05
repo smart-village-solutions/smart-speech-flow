@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
+import { loadEnv } from 'vite';
+import { securityHeaders } from './security/securityPolicy.ts';
 
 const localHttpTarget = `${'http'}://localhost:8000`;
 const localWsTarget = `${'ws'}://localhost:8000`;
@@ -11,6 +13,7 @@ const appName = (
     app: { name: string };
   }
 ).app.name;
+const previewPolicy = securityHeaders(loadEnv('production', import.meta.dirname, ''), false);
 
 export default defineConfig({
   plugins: [
@@ -50,6 +53,9 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  preview: {
+    headers: { [previewPolicy.name]: previewPolicy.policy },
   },
   test: {
     exclude: [...configDefaults.exclude, 'e2e/**'],
