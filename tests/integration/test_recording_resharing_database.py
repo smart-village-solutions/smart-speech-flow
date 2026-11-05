@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import os
 import uuid
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import asyncpg
@@ -105,10 +106,20 @@ async def store(owner):
 
 
 def _services(store) -> tuple[CeremonyService, ResharingService]:
+    # The rows these tests file are dated NOW, so the services count from NOW too: on the
+    # real clock a request filed at NOW lapses seven days later. One shared clock that
+    # moves on with every call keeps "the latest ceremony" well ordered.
+    ticks = itertools.count()
+
+    def clock() -> datetime:
+        return NOW + timedelta(seconds=next(ticks))
+
     directory = FakeCustodianDirectory({sub: sub.title() for sub in HOLDERS})
     return (
-        CeremonyService(repository=store, directory=directory, secrets=SECRETS),
-        ResharingService(repository=store, directory=directory, server_layer=SECRETS.server_layer),
+        CeremonyService(repository=store, directory=directory, secrets=SECRETS, clock=clock),
+        ResharingService(
+            repository=store, directory=directory, server_layer=SECRETS.server_layer, clock=clock
+        ),
     )
 
 
