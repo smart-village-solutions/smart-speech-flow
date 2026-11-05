@@ -1,0 +1,108 @@
+name: Frontend integrity monitor
+
+# Compares the live frontend with the fingerprint recorded at deploy time (#620).
+# Off until the repository variable FRONTEND_MONITOR_URL is set.
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      self_test:
+        description: Build this commit, change one byte, and show the alarm (opens an issue labelled bundle-integrity-test)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-integrity-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Compare the live site with its fingerprint
+    if: vars.FRONTEND_MONITOR_URL != '' && !inputs.self_test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MONITOR_URL: ${{ vars.FRONTEND_MONITOR_URL }}
+      ASSIGNEES: ${{ vars.FRONTEND_MONITOR_ASSIGNEES }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check
+        run: python -m scripts.frontend_integrity check --url "$MONITOR_URL" --manifest deploy/production/frontend-manifest.json --out verdict.json
+
+      - name: Alert
+        run: python -m scripts.frontend_integrity alert --verdict verdict.json --repository "$GITHUB_REPOSITORY" --assignees "$ASSIGNEES"
+
+  self-test:
+    name: Show the monitor alerting on a modified bundle
+    if: github.event_name == 'workflow_dispatch' && inputs.self_test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build the image
+        run: |
+          docker build \
+            --build-arg VITE_API_BASE_URL=https://api.example.test \
+            --build-arg VITE_WS_BASE_URL=wss://api.example.test \
+            --build-arg VITE_KEYCLOAK_URL=https://auth.example.test \
+            --build-arg VITE_KEYCLOAK_CLIENT_ID=ssf-frontend \
+            --tag ssf-frontend-selftest services/frontend
+
+      - name: Record its fingerprint
+        run: python -m scripts.frontend_integrity record --image ssf-frontend-selftest --commit "$GITHUB_SHA" --manifest selftest-manifest.json --out selftest-manifest.json
+
+      - name: The unchanged image matches
+        run: |
+          docker run -d --name selftest -p 127.0.0.1:8080:8080 ssf-frontend-selftest
+          for _ in $(seq 30); do curl -fsS http://127.0.0.1:8080/health >/dev/null && break; sleep 1; done
+          python -m scripts.frontend_integrity check --url http://127.0.0.1:8080 --manifest selftest-manifest.json --out clean.json
+          python3 -c 'import json, sys; sys.exit(json.load(open(sys.argv[1]))["outcome"] != "match")' clean.json
+
+      - name: Change one byte of a chunk
+        run: |
+          chunk=$(docker exec selftest sh -c 'ls /usr/share/nginx/html/assets/*.js | sort | head -n 1')
+          docker exec -u 0 selftest sh -c 'printf "\n" >> "$1"' sh "$chunk"
+          echo "CHUNK=${chunk#/usr/share/nginx/html/}" >> "$GITHUB_ENV"
+
+      - name: The monitor alarms
+        run: |
+          python -m scripts.frontend_integrity check --url http://127.0.0.1:8080 --manifest selftest-manifest.json --out tampered.json
+          python3 -c 'import json, os, sys; v = json.load(open(sys.argv[1])); sys.exit(not (v["outcome"] == "mismatch" and os.environ["CHUNK"] + " differs (HTTP 200)" in v["findings"]))' tampered.json
+          if python -m scripts.frontend_integrity alert --verdict tampered.json --repository "$GITHUB_REPOSITORY" --label bundle-integrity-test; then
+            echo "::error::the alert step did not fail on a modified bundle"
+            exit 1
+          fi
+          echo "The monitor alarmed on $CHUNK and opened an issue labelled bundle-integrity-test."
