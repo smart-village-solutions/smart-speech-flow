@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import itertools
 import json
 import os
 import uuid
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import asyncpg
 import pytest
 
-from services.api_gateway.recording.verification_sql import APPROVED as _APPROVED
 from services.api_gateway.recording.audit import AuditEvent, chain_is_intact
 from services.api_gateway.recording.ceremony import CeremonyService, StartRequest
 from services.api_gateway.recording.ceremony_model import CeremonyError, CeremonyRecord
@@ -30,10 +28,22 @@ from services.api_gateway.recording.reenrolment_repository import (
     reenrolment_refusal,
 )
 from services.api_gateway.recording.repository import UserKeyRecord, bind_tenant
-from tests.recording_swap import swap_key
 from services.api_gateway.recording.resharing import ResharingService
 from services.api_gateway.recording.resharing_model import ResharingStart
+from services.api_gateway.recording.verification_sql import APPROVED as _APPROVED
 from tests import recording_crypto_reference as ref
+from tests.integration.test_recording_archive_access_database import _ended
+from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
+    _ARCHIVE_TABLES,
+    NOW,
+    TENANT,
+    archive,
+    owner,
+)
+from tests.integration.test_recording_recovery_requests_database import (  # noqa: F401
+    file_directly,
+    recovery_key,
+)
 from tests.recording_ceremony_actors import (
     ANNA,
     BERND,
@@ -47,19 +57,8 @@ from tests.recording_ceremony_actors import (
     reshare_dealing,
     share_proof,
 )
-from tests.recording_fakes import FakeCustodianDirectory
-from tests.integration.test_recording_archive_access_database import _ended
-from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
-    _ARCHIVE_TABLES,
-    NOW,
-    TENANT,
-    archive,
-    owner,
-)
-from tests.integration.test_recording_recovery_requests_database import (  # noqa: F401
-    file_directly,
-    recovery_key,
-)
+from tests.recording_fakes import FakeCustodianDirectory, ticking_clock
+from tests.recording_swap import swap_key
 
 pytestmark = pytest.mark.integration
 
@@ -109,11 +108,7 @@ def _services(store) -> tuple[CeremonyService, ResharingService]:
     # The rows these tests file are dated NOW, so the services count from NOW too: on the
     # real clock a request filed at NOW lapses seven days later. One shared clock that
     # moves on with every call keeps "the latest ceremony" well ordered.
-    ticks = itertools.count()
-
-    def clock() -> datetime:
-        return NOW + timedelta(seconds=next(ticks))
-
+    clock = ticking_clock(NOW)
     directory = FakeCustodianDirectory({sub: sub.title() for sub in HOLDERS})
     return (
         CeremonyService(repository=store, directory=directory, secrets=SECRETS, clock=clock),
