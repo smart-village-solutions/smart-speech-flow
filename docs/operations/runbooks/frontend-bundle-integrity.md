@@ -14,6 +14,13 @@ API, socket and Keycloak origins are always the ones compiled into the bundle.
 The build argument `SSF_CSP_MODE` selects `report-only` (the default) or
 `enforce`. A build that leaves it out never enforces by accident.
 
+`SSF_CSP_MODE` covers the policy only. `X-Frame-Options: DENY` and `nosniff`
+are enforced from the first deploy in both modes, so no other site can frame
+`dialog.kassel.de` from then on. Before this change no HTML response carried
+`X-Frame-Options`, and Report-Only mode never reports framing, so a site that
+embeds the frontend breaks without warning. The app itself uses no iframe of
+its own origin.
+
 In Report-Only mode the policy has no `report-uri`: violations show only in the
 browser console. On an iPad, connect it to a Mac and use Safari's Web Inspector.
 

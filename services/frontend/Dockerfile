@@ -47,6 +47,14 @@ RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
       *localhost*|*127.0.0.1*) echo >&2 "VITE_WS_BASE_URL must not target localhost"; exit 1 ;; \
     esac
 
+# The policy comes from the same build values the bundle is compiled with (#620),
+# and runs first so a bad value fails before the long build.
+RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
+    VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
+    VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
+    SSF_CSP_MODE="${SSF_CSP_MODE}" \
+    node security/writeSecurityHeaders.ts /app/security-headers.conf
+
 # Build the application
 RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
     VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
@@ -54,13 +62,6 @@ RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
     VITE_KEYCLOAK_CLIENT_ID="${VITE_KEYCLOAK_CLIENT_ID}" \
     VITE_BRAND="${VITE_BRAND}" \
     npm run build
-
-# The policy comes from the same build values the bundle was compiled with (#620).
-RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
-    VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
-    VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
-    SSF_CSP_MODE="${SSF_CSP_MODE}" \
-    node security/writeSecurityHeaders.ts /app/security-headers.conf
 
 # Stage 2: Serve with non-root Nginx
 FROM nginxinc/nginx-unprivileged:alpine

@@ -2,10 +2,12 @@ type PolicyMode = 'enforce' | 'report-only';
 
 export class ReleaseConfigError extends Error {}
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const LOCAL_HOSTS = new Set(['localhost', '0.0.0.0', '[::1]', '[::]']);
+// URL has already normalised short and decimal forms, so 127.1 arrives as 127.0.0.1.
+const LOOPBACK_V4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 function isLocal(hostname: string): boolean {
-  return LOCAL_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  return LOCAL_HOSTS.has(hostname) || LOOPBACK_V4.test(hostname) || hostname.endsWith('.localhost');
 }
 
 function parse(raw: string): URL | undefined {

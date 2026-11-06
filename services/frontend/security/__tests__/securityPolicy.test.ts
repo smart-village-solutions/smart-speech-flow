@@ -38,7 +38,16 @@ describe('originOf', () => {
     expect(() => originOf(plainHttp('api.example.test'), ['https:'], true)).toThrow(ReleaseConfigError);
   });
 
-  it.each(['https://localhost', 'https://127.0.0.1:8443', 'https://[::1]', 'https://auth.localhost'])(
+  it.each([
+    'https://localhost',
+    'https://127.0.0.1:8443',
+    'https://127.0.1.1',
+    'https://127.1',
+    'https://0.0.0.0',
+    'https://[::1]',
+    'https://[::]',
+    'https://auth.localhost',
+  ])(
     'rejects the local host %s in an image build',
     (value) => {
       expect(() => originOf(value, ['https:'], true)).toThrow(ReleaseConfigError);

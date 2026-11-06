@@ -13,56 +13,58 @@ const appName = (
     app: { name: string };
   }
 ).app.name;
-const previewPolicy = securityHeaders(loadEnv('production', import.meta.dirname, ''), false);
-
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    {
-      name: 'localized-document-title',
-      transformIndexHtml: (html: string) =>
-        html.replace(
-          '%APP_NAME%',
-          appName.replace(/[&<>"']/g, (character) => {
-            const entities: Record<string, string> = {
-              '&': '&amp;',
-              '<': '&lt;',
-              '>': '&gt;',
-              '"': '&quot;',
-              "'": '&#39;',
-            };
-            return entities[character];
-          })
-        ),
-    },
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(import.meta.dirname, './src'),
-    },
-  },
-  server: {
-    proxy: {
-      '/api': {
-        target: localHttpTarget,
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  // The preview policy follows the env files of the mode Vite was started with.
+  const previewPolicy = securityHeaders(loadEnv(mode, import.meta.dirname, ''), false);
+  return {
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'localized-document-title',
+        transformIndexHtml: (html: string) =>
+          html.replace(
+            '%APP_NAME%',
+            appName.replace(/[&<>"']/g, (character) => {
+              const entities: Record<string, string> = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+              };
+              return entities[character];
+            })
+          ),
       },
-      '/ws': {
-        target: localWsTarget,
-        ws: true,
+    ],
+    resolve: {
+      alias: {
+        '@': path.resolve(import.meta.dirname, './src'),
       },
     },
-  },
-  preview: {
-    headers: { [previewPolicy.name]: previewPolicy.policy },
-  },
-  test: {
-    exclude: [...configDefaults.exclude, 'e2e/**'],
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    css: false,
-    restoreMocks: true,
-  },
+    server: {
+      proxy: {
+        '/api': {
+          target: localHttpTarget,
+          changeOrigin: true,
+        },
+        '/ws': {
+          target: localWsTarget,
+          ws: true,
+        },
+      },
+    },
+    preview: {
+      headers: { [previewPolicy.name]: previewPolicy.policy },
+    },
+    test: {
+      exclude: [...configDefaults.exclude, 'e2e/**'],
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: ['./src/test/setup.ts'],
+      css: false,
+      restoreMocks: true,
+    },
+  };
 });
