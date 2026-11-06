@@ -3,7 +3,7 @@
 import shutil
 
 from scripts.frontend_integrity.check import DEEP_LINK, check, confirmed
-from scripts.frontend_integrity.site import fetch
+from scripts.frontend_integrity.site import UnreachableError, fetch
 from tests.operations.frontend_integrity.frontend_integrity_fakes import (
     POLICY,
     POLICY_HEADER,
@@ -180,3 +180,24 @@ def test_the_verdict_serialises_for_the_alert_step(tmp_path):
     verdict = _verdict(SiteBehaviour(root), _manifest(fingerprint(root)))
 
     assert verdict.as_json() == {"outcome": "match", "matched": "current", "findings": []}
+
+
+def test_a_mismatch_is_kept_when_the_previous_version_cannot_be_fetched(tmp_path):
+    root = write_site(tmp_path / "site")
+    current = fingerprint(root)
+    older = write_site(tmp_path / "older")
+    (older / "assets" / "old-c.js").write_text("export const old = 1;\n")
+    manifest = _manifest(current, fingerprint(older))
+    with (root / "assets" / "lazy-b.js").open("a") as chunk:
+        chunk.write(" ")
+
+    def get(url):
+        if url.endswith("/assets/old-c.js"):
+            raise UnreachableError(f"{url}: timed out")
+        return fetch(url)
+
+    with FrontendServer(SiteBehaviour(root)) as base:
+        verdict = check(base, manifest, get)
+
+    assert verdict.outcome == "mismatch"
+    assert verdict.findings == ("assets/lazy-b.js differs (HTTP 200)",)

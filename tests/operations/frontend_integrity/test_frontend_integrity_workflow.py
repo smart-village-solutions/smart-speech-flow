@@ -65,3 +65,7 @@ def test_check_writes_a_verdict_for_the_alert_step(tmp_path):
         assert main(["check", "--url", base, "--manifest", str(manifest), "--out", str(out)]) == 0
 
     assert json.loads(out.read_text())["outcome"] == "match"
+
+
+def test_the_self_test_requires_a_newly_opened_issue():
+    assert 'grep -qx "alert: open" alert.log' in _script("self-test")

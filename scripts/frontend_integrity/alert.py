@@ -18,6 +18,7 @@ TITLE = "Frontend bundle does not match its recorded fingerprint"
 UNREACHABLE_FINDING = (
     "the site did not answer GitHub's runners twice, two minutes apart (the run log has the error)"
 )
+COMMENTS_PER_PAGE = 100
 _MARKER = re.compile(r"<!-- bundle-integrity:([0-9a-f]{16}|match) -->")
 
 
@@ -127,7 +128,16 @@ class GitHubIssues:
 
     def last_marker(self, issue: dict) -> str | None:
         """Return the newest marker the workflow itself wrote on this issue."""
-        comments = self._call("GET", f"issues/{issue['number']}/comments?per_page=100")
+        comments, page = [], 1
+        while True:
+            batch = self._call(
+                "GET",
+                f"issues/{issue['number']}/comments?per_page={COMMENTS_PER_PAGE}&page={page}",
+            )
+            comments += batch
+            if len(batch) < COMMENTS_PER_PAGE:
+                break
+            page += 1
         bodies = [issue.get("body") or ""] + [
             c["body"] or "" for c in comments if c["user"]["login"] == BOT
         ]
@@ -135,12 +145,14 @@ class GitHubIssues:
         return markers[-1] if markers else None
 
     def create(self, title: str, body: str, label: str, assignees: list[str]) -> None:
-        """Open the issue."""
-        self._call(
-            "POST",
-            "issues",
-            {"title": title, "body": body, "labels": [label], "assignees": assignees},
-        )
+        """Open the issue, then assign it: a login GitHub refuses must not stop the alarm."""
+        created = self._call("POST", "issues", {"title": title, "body": body, "labels": [label]})
+        if not assignees:
+            return
+        try:
+            self._call("POST", f"issues/{created['number']}/assignees", {"assignees": assignees})
+        except OSError as error:  # HTTPError and URLError included
+            print(f"could not assign {assignees}: {error}")
 
     def comment(self, issue: dict, body: str) -> None:
         """Comment on the open issue."""
@@ -156,4 +168,5 @@ def run_alert(verdict: dict, issues: Issues, label: str, assignees: list[str]) -
         issues.create(TITLE, action.body, label, assignees)
     elif action.kind == "comment":
         issues.comment(issue, action.body)
+    print(f"alert: {action.kind}")
     return 1 if action.failed else 0

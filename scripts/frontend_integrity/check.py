@@ -91,6 +91,9 @@ def check(base_url: str, manifest: dict, get: Getter = fetch) -> Verdict:
                 return Verdict("match", matched=name)
             reported = reported or findings
     except UnreachableError as error:
+        # A mismatch already seen outranks a later failure to fetch an older version.
+        if reported:
+            return Verdict("mismatch", findings=reported)
         return Verdict("unreachable", findings=(str(error),))
     return Verdict("mismatch", findings=reported)
 
