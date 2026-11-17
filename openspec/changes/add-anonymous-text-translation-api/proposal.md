@@ -56,3 +56,8 @@ OpenSpec workflow. On 2026-11-17 the owner waived the dedicated load test based
 on stable observed server utilization and rare laboratory usage. Finite
 operating defaults and conversation priority remain in force; the feature
 remains opt-in. No mixed-load benchmark has been performed.
+
+The owner subsequently clarified that no Keycloak login does not mean
+anonymous access: V1 requires one fixed server-configured X-API-Key. This
+correction is implemented and deployed, with the existing internal callback
+token kept separate.

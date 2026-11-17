@@ -1,7 +1,7 @@
 # Anonymous laboratory text API release
 
 Deployed on 2026-11-17 from source
-`965fd584d2e333bc5f53b81f2d5ece0c9326b64e`, including current main `2355aecc`.
+`84bfd311ba227c47d7277ef3815748fa33b9ef6c`, including current main `2355aecc`.
 The owner authorized activation and deployment, followed by a pull request
 after successful verification. Dedicated load testing was explicitly waived
 for rare laboratory usage based on stable observed server utilization.
@@ -10,8 +10,8 @@ for rare laboratory usage based on stable observed server utilization.
 
 | Service | Image | Image ID |
 | --- | --- | --- |
-| Gateway | `ssf-backend-api_gateway:prod-lab-text-965fd584` | `sha256:281b4d378051b3905001a9bcfdbf739d9567b6ea92af79b58c11a2dfe24d3e97` |
-| Translation | `ssf-backend-translation:prod-lab-text-965fd584` | `sha256:c45c69ebf2ca4c932192933cf282a27a80607569a8dfe13c12d354b5a427dab9` |
+| Gateway | `ssf-backend-api_gateway:prod-lab-key-84bfd311` | `sha256:a7389751923380dacd1ab3ed7080a75482a976564ef54c7d5feb2ff0dd634fa1` |
+| Translation | `ssf-backend-translation:prod-lab-key-84bfd311` | `sha256:7057235079109153068edef2e1a6c76cfb686e5461d348fd885ce54ba902125b` |
 
 `deploy/production/Dockerfile.text-translation` copies application code onto
 the audited, installed gateway and translation runtimes. This promotion does
@@ -19,15 +19,15 @@ not change Python dependencies, CUDA or the model selection. Both images carry
 the source revision label. Build from an immutable source export:
 
 ```bash
-git archive 965fd584d2e333bc5f53b81f2d5ece0c9326b64e | tar -x -C "$RELEASE_SOURCE"
+git archive 84bfd311ba227c47d7277ef3815748fa33b9ef6c | tar -x -C "$RELEASE_SOURCE"
 docker build --network=none --target gateway \
-  --build-arg SOURCE_REVISION=965fd584d2e333bc5f53b81f2d5ece0c9326b64e \
+  --build-arg SOURCE_REVISION=84bfd311ba227c47d7277ef3815748fa33b9ef6c \
   -f deploy/production/Dockerfile.text-translation \
-  -t ssf-backend-api_gateway:prod-lab-text-965fd584 "$RELEASE_SOURCE"
+  -t ssf-backend-api_gateway:prod-lab-key-84bfd311 "$RELEASE_SOURCE"
 docker build --network=none --target translation \
-  --build-arg SOURCE_REVISION=965fd584d2e333bc5f53b81f2d5ece0c9326b64e \
+  --build-arg SOURCE_REVISION=84bfd311ba227c47d7277ef3815748fa33b9ef6c \
   -f deploy/production/Dockerfile.text-translation \
-  -t ssf-backend-translation:prod-lab-text-965fd584 "$RELEASE_SOURCE"
+  -t ssf-backend-translation:prod-lab-key-84bfd311 "$RELEASE_SOURCE"
 ```
 
 `RELEASE_SOURCE` must be an empty existing directory; run each build from that
@@ -108,6 +108,15 @@ The operator key is retained across restarts in the host's protected `.env` as
 token and is passed only to the gateway. Never commit its value or put it in
 a query string. Client examples use `-H "X-API-Key: $SSF_API_KEY"`.
 
-Only the gateway needs replacement for this correction. When rolling back to
+The gateway enforces client-key access. The translation service was also
+promoted with a tested expiry fix that preserves known busy state during a
+pending activity refresh. When rolling back to
 an older image without client-key support, disable the feature rather than
 restoring anonymous access.
+
+The shared-key correction is deployed and verified: both public endpoints
+return 401 INVALID_API_KEY for missing/wrong keys; valid-key language discovery
+and an actual ordered translation return 200. Full platform health passed.
+The corrected pinned hermetic suite passed 5,351 tests (52 skipped, 22
+deselected), and independent review found no material issues. No secret values
+were printed, committed or placed in the image layers.

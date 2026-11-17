@@ -1,3 +1,7 @@
+# Updated on 2026-11-17: shared client X-API-Key correction and deterministic
+# busy-state expiry, source 84bfd311. Public missing/wrong keys return401;
+# valid-key translation and full platform health verified. Secrets remain
+# in the protected host environment, never in images or this audit record.
 # Updated on 2026-11-17: api_gateway and translation application code built from
 # 965fd584 (anonymous laboratory text API) on the previously audited runtimes.
 # Gateway base/rollback: ssf-backend-api_gateway:prod-24c088e8,

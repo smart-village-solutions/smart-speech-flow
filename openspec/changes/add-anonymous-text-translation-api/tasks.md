@@ -72,5 +72,9 @@ checks passed. Code review has no remaining material findings.
   missing/wrong keys, missing configuration and separation from internal auth.
 - [x] 5.2 Update OpenAPI, examples and deployment wiring without storing secrets
   in Git.
-- [ ] 5.3 Deploy the gateway correction, verify 401 without a key and successful
+- [x] 5.3 Deploy the gateway correction, verify 401 without a key and successful
   translation with the configured key, then update the existing pull request.
+
+Shared-key correction: 5,351 hermetic tests passed, 52 skipped and 22 deselected.
+Live HTTPS verification confirms 401 for missing/wrong client keys, 200 for
+valid-key discovery/translation, and healthy platform services.
