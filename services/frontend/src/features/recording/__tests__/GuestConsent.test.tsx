@@ -141,14 +141,14 @@ describe('the consent question, as the guest answers it', () => {
     });
     const { dialog } = await ask({ kind: 'resume' });
     expect(within(dialog).getByText(/Original.*de/)).toBeInTheDocument();
-    const yes = within(dialog).getByRole('button', { name: 'Abschnitt freigeben' });
-    expect(yes).toHaveAttribute('lang', 'de');
+    const accept = within(dialog).getByRole('button', { name: 'Abschnitt freigeben' });
+    expect(accept).toHaveAttribute('lang', 'de');
     expect(
       within(dialog)
         .getByText('The staff member would like to record this conversation.')
         .closest('[lang]')
     ).toHaveAttribute('lang', 'de');
-    await userEvent.click(yes);
+    await userEvent.click(accept);
     await vi.waitFor(() => expect(answers[0]).toMatchObject({ text_sha256: sha256(HTML) }));
   });
 

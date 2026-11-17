@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -32,7 +32,7 @@ from tests.recording_ceremony_actors import (
     reshare_dealing,
     share_proof,
 )
-from tests.recording_fakes import FakeCeremonyRepository, FakeCustodianDirectory
+from tests.recording_fakes import FakeCeremonyRepository, FakeCustodianDirectory, ticking_clock
 
 START = datetime(2026, 10, 30, 9, 0, tzinfo=timezone.utc)
 FIRST = (ANNA, BERND, CARLA)
@@ -95,10 +95,7 @@ async def world() -> World:
     repository = FakeCeremonyRepository(keys={h.sub: _sealed_key(h) for h in HOLDERS.values()})
     directory = FakeCustodianDirectory({sub: sub.title() for sub in HOLDERS})
     ids = iter([FIRST_ID, RESHARING_ID])
-    ticks = iter(range(10_000))
-
-    def clock() -> datetime:
-        return START + timedelta(seconds=next(ticks))
+    clock = ticking_clock(START)
 
     ceremonies = CeremonyService(
         repository=repository,

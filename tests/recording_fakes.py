@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.ceremony_model import (
@@ -16,8 +17,8 @@ from services.api_gateway.recording.ceremony_model import (
     RecoveryKeyRecord,
     RecoveryShareRecord,
     computed_transcript_hash,
-    mode_of,
     conflict,
+    mode_of,
 )
 from services.api_gateway.recording.crypto.encoding import b64url
 from services.api_gateway.recording.repository import KeyAlreadyEnrolledError, UserKeyRecord
@@ -26,6 +27,16 @@ from services.api_gateway.recording.resharing_model import (
     new_public_shares,
 )
 from tests import recording_crypto_reference as ref
+
+
+def ticking_clock(start: datetime) -> Callable[[], datetime]:
+    """A clock one second past `start` on its first reading and one second later on each next.
+
+    Rows seeded at `start` stay strictly earlier than anything a service stamps, and no two
+    readings share an instant.
+    """
+    ticks = itertools.count(1)
+    return lambda: start + timedelta(seconds=next(ticks))
 
 
 @dataclass

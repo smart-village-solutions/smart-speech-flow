@@ -21,6 +21,7 @@ COPY tsconfig.app.json ./
 COPY tsconfig.json ./
 COPY tsconfig.node.json ./
 COPY vite.config.ts ./
+COPY security ./security
 
 # Vite replaces these values while compiling the static SPA. Runtime
 # environment variables in the Nginx container cannot change the bundle.
@@ -29,6 +30,8 @@ ARG VITE_WS_BASE_URL
 ARG VITE_KEYCLOAK_URL
 ARG VITE_KEYCLOAK_CLIENT_ID
 ARG VITE_BRAND=kassel
+# report-only unless a deploy enforces it explicitly (#620).
+ARG SSF_CSP_MODE=report-only
 
 # Never produce a deployable image that sends browser traffic to localhost.
 RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
@@ -44,6 +47,14 @@ RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
       *localhost*|*127.0.0.1*) echo >&2 "VITE_WS_BASE_URL must not target localhost"; exit 1 ;; \
     esac
 
+# The policy comes from the same build values the bundle is compiled with (#620),
+# and runs first so a bad value fails before the long build.
+RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
+    VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
+    VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
+    SSF_CSP_MODE="${SSF_CSP_MODE}" \
+    node security/writeSecurityHeaders.ts /app/security-headers.conf
+
 # Build the application
 RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
     VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
@@ -57,6 +68,7 @@ FROM nginxinc/nginx-unprivileged:alpine
 
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

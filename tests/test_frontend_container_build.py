@@ -13,6 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT = REPOSITORY_ROOT / "services" / "frontend"
 API_BASE_URL = "https://api.dialog.kassel.de"
 WS_BASE_URL = "wss://api.dialog.kassel.de"
+KEYCLOAK_URL = "https://auth.dialog.kassel.de"
 
 
 def _docker_build(tag: str, *build_args: str) -> subprocess.CompletedProcess[str]:
@@ -103,6 +104,7 @@ def test_frontend_container_ignores_the_retired_demo_access_code():
             tag,
             f"VITE_API_BASE_URL={API_BASE_URL}",
             f"VITE_WS_BASE_URL={WS_BASE_URL}",
+            f"VITE_KEYCLOAK_URL={KEYCLOAK_URL}",
             "VITE_DEMO_ACCESS_CODE=explicit-public-demo-code",
         )
         assert result.returncode == 0, result.stderr
