@@ -1,18 +1,27 @@
 # API Gateway Service
 
-## Anonymous laboratory text translation
+## Shared-key laboratory text translation
 
 The optional synchronous laboratory API provides `POST /api/v1/translate` and
-`GET /api/v1/languages` without login or user API keys. It is disabled by default.
+`GET /api/v1/languages` with a fixed shared API key and no Keycloak login or per-user key management.
+It is disabled by default.
 To opt in, set `SSF_TEXT_TRANSLATION_ENABLED=1` and configure the same nonempty
 `SSF_TEXT_TRANSLATION_INTERNAL_TOKEN` in the gateway and translation service.
 Generate a private random token, for example with `openssl rand -hex 32`.
-The token authenticates service-to-service calls; external API callers do not
-need it. Do not put this token in a client application.
+The internal token authenticates service-to-service calls and must never be
+sent to API clients. Separately generate and store one fixed client key in the
+host's protected `.env` as `SSF_TEXT_TRANSLATION_API_KEY`. On the deployed host,
+the operator copy is `/etc/ssf/text-translation-api-key` (root-only). Both public endpoints
+require that key in `X-API-Key`; missing or incorrect keys return 401
+`INVALID_API_KEY` before rate accounting or inference. An enabled installation
+without a configured client key fails closed with 503. Client keys are never
+accepted in query parameters or JSON fields. Changing the key requires updating
+the server environment and recreating only the gateway.
 
 ```bash
 curl http://localhost:8000/api/v1/translate \
   -H 'Content-Type: application/json' \
+  -H "X-API-Key: $SSF_API_KEY" \
   --data '{"text":["Guten Tag.","Bitte bringen Sie Ihren Ausweis mit."],"source_lang":"de","target_lang":"en"}'
 ```
 
@@ -47,8 +56,10 @@ recovery segments, 96 attempts, eight subdivision levels and 8,192 reserved
 output tokens across attempts. These conservative finite defaults are tuning
 candidates, not measured GPU throughput guarantees.
 
+Set `SSF_API_KEY` to the shared client key supplied separately by the operator.
+
 Expected failures have `{"error":{"code":"...","message":"..."}}` with
-`limits` where applicable: 400 malformed JSON, 422 invalid fields/languages,
+`limits` where applicable: 400 malformed JSON, 401 missing/invalid API key, 422 invalid fields/languages,
 413 size or preflight work limit, 429 rate limit, 503 unavailable/full queue,
 504 processing deadline, and 502 malformed or incomplete upstream output. Rate and
 capacity rejections include `Retry-After`. Capacity failures use the stable

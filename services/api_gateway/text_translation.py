@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import math
 import os
 import re
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, TypeVar
 from uuid import uuid4
 
@@ -80,6 +81,7 @@ def unavailable() -> TranslationError:
 class TextTranslationConfig:
     enabled: bool = False
     internal_token: str = ""
+    api_key: str = field(default="", repr=False)
     languages: tuple[str, ...] = ("de", "en", "fr", "es", "ar", "tr")
     body_bytes: int = 65_536
     max_characters: int = 5_000
@@ -116,6 +118,7 @@ class TextTranslationConfig:
         return cls(
             enabled=os.getenv("SSF_TEXT_TRANSLATION_ENABLED", "0") == "1",
             internal_token=os.getenv("SSF_TEXT_TRANSLATION_INTERNAL_TOKEN", "").strip(),
+            api_key=os.getenv("SSF_TEXT_TRANSLATION_API_KEY", "").strip(),
             languages=languages,
         )
 
@@ -185,8 +188,13 @@ class TextTranslationService:
     def check_available(self) -> None:
         if not self.config.enabled:
             raise TranslationError(404, "NOT_FOUND", "Not found.")
-        if not self.config.internal_token:
+        if not self.config.internal_token or not self.config.api_key:
             raise unavailable()
+
+    def authenticate(self, supplied: str | None) -> None:
+        """Authenticate a shared server key without a user or Keycloak lookup."""
+        if not supplied or not hmac.compare_digest(supplied.encode(), self.config.api_key.encode()):
+            raise TranslationError(401, "INVALID_API_KEY", "A valid X-API-Key header is required.")
 
     def admit_caller(self, ip: str) -> None:
         now = time.monotonic()

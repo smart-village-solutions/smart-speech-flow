@@ -1,4 +1,4 @@
-"""Anonymous opt-in laboratory routes with streamed request-body limits."""
+"""Shared-key laboratory routes with streamed request-body limits."""
 
 from __future__ import annotations
 
@@ -8,8 +8,9 @@ import os
 import time
 from typing import Any, Awaitable, TypeVar
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Security
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from pydantic import ValidationError
 
 from ..dependencies import get_text_translation_service
@@ -26,10 +27,14 @@ from ..text_translation import (
 T = TypeVar("T")
 
 router = APIRouter(prefix="/api/v1", tags=["text-translation"])
+client_api_key = APIKeyHeader(
+    name="X-API-Key", scheme_name="TextTranslationApiKey", auto_error=False
+)
 _ERRORS: dict[int | str, dict[str, Any]] = {
     status: {"description": description}
     for status, description in (
         (400, "Malformed JSON"),
+        (401, "Missing or invalid X-API-Key (INVALID_API_KEY)"),
         (404, "Feature disabled"),
         (413, "Request exceeds limits"),
         (422, "Invalid fields or unsupported languages"),
@@ -51,12 +56,15 @@ def _error(exc: TranslationError) -> JSONResponse:
     return JSONResponse({"error": error}, status_code=exc.status, headers=headers)
 
 
-def _ready(service: TextTranslationService | None, request: Request) -> TextTranslationService:
+def _ready(
+    service: TextTranslationService | None, request: Request, api_key: str | None
+) -> TextTranslationService:
     if service is None:
         if os.getenv("SSF_TEXT_TRANSLATION_ENABLED", "0") != "1":
             raise TranslationError(404, "NOT_FOUND", "Not found.")
         raise unavailable()
     service.check_available()
+    service.authenticate(api_key)
     service.admit_caller(request.client.host if request.client else "unknown")
     return service
 
@@ -137,10 +145,11 @@ async def _until_disconnect(request: Request, operation: Awaitable[T]) -> T:
 async def translate(
     request: Request,
     service: TextTranslationService | None = Depends(get_text_translation_service),
+    api_key: str | None = Security(client_api_key),
 ) -> JSONResponse:
     started = time.monotonic()
     try:
-        active = _ready(service, request)
+        active = _ready(service, request, api_key)
         deadline = started + active.config.deadline_seconds
         # Includes the streamed body read, validation, queue and downstream work.
         async with asyncio.timeout(max(0, deadline - time.monotonic())):
@@ -170,10 +179,11 @@ async def translate(
 async def languages(
     request: Request,
     service: TextTranslationService | None = Depends(get_text_translation_service),
+    api_key: str | None = Security(client_api_key),
 ) -> JSONResponse:
     started = time.monotonic()
     try:
-        active = _ready(service, request)
+        active = _ready(service, request, api_key)
         result = await _until_disconnect(
             request, active.languages(started + active.config.deadline_seconds)
         )

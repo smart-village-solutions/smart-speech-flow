@@ -2883,6 +2883,13 @@
         "title": "IntegrityBody",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "TextTranslationApiKey": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
@@ -8246,6 +8253,9 @@
           "400": {
             "description": "Malformed JSON"
           },
+          "401": {
+            "description": "Missing or invalid X-API-Key (INVALID_API_KEY)"
+          },
           "404": {
             "description": "Feature disabled"
           },
@@ -8268,6 +8278,11 @@
             "description": "Total deadline exceeded"
           }
         },
+        "security": [
+          {
+            "TextTranslationApiKey": []
+          }
+        ],
         "summary": "Languages",
         "tags": [
           "text-translation"
@@ -8326,6 +8341,9 @@
           "400": {
             "description": "Malformed JSON"
           },
+          "401": {
+            "description": "Missing or invalid X-API-Key (INVALID_API_KEY)"
+          },
           "404": {
             "description": "Feature disabled"
           },
@@ -8348,6 +8366,11 @@
             "description": "Total deadline exceeded"
           }
         },
+        "security": [
+          {
+            "TextTranslationApiKey": []
+          }
+        ],
         "summary": "Translate",
         "tags": [
           "text-translation"

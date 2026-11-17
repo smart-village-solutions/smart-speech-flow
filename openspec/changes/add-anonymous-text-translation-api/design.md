@@ -14,10 +14,10 @@ unfinished. Neither behavior is acceptable for the new public API.
 
 ## Goals and non-goals
 
-The intended V1 workload is occasional laboratory use. Provide anonymous
+The intended V1 workload is occasional laboratory use. Provide shared-key-protected
 synchronous plain-text translation, automatic bounded
 segmentation and a stable external contract. No conversation creation, tenant
-selection, authentication, API-key management, ASR, TTS, LLM refinement,
+selection, Keycloak login, per-user API-key management, ASR, TTS, LLM refinement,
 HTML/document translation, automatic language detection or persisted jobs.
 Do not add a durable job queue, external broker, job IDs or result polling.
 
@@ -202,3 +202,15 @@ Sustained conversation traffic may starve API work until its deadline and
 produce 503 `SYSTEM_BUSY`; that is intentional for laboratory V1. Routes remain
 opt-in through the installation flag. Rollback disables them while leaving
 conversation routing and legacy internal mode intact.
+
+## Fixed-key access correction
+
+The owner clarified that V1 requires a fixed shared client API key, without
+Keycloak login or user-managed credentials. The gateway reads
+`SSF_TEXT_TRANSLATION_API_KEY` from its protected server environment and checks
+`X-API-Key` on both public endpoints, using constant-time comparison before
+body processing, rate accounting or upstream work. Invalid keys return 401
+`INVALID_API_KEY`; missing server configuration returns 503. The existing
+internal callback token is separate and never authenticates API clients.
+The key is generated once and persists across container restarts. OpenAPI
+publishes the header security scheme.

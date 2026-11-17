@@ -1,4 +1,4 @@
-# Change: Add an anonymous text translation API
+# Change: Add a shared-key text translation API
 
 ## Why
 
@@ -11,8 +11,9 @@ behavior and shared GPU use are unsuitable for direct public exposure.
 
 ## What Changes
 
-- Add anonymous `POST /api/v1/translate` and `GET /api/v1/languages` gateway
-  routes. No login or user API keys are required in V1.
+- Add shared-key-protected `POST /api/v1/translate` and `GET /api/v1/languages` gateway
+  routes. A fixed shared `X-API-Key` is required; no Keycloak login or per-user key
+  management is required.
 - Require a text array and explicit source and target language codes; return
   one translation per input in the original order.
 - Initially allow at most 10 entries and 5,000 Unicode code points across the

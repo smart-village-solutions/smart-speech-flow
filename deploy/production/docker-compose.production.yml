@@ -124,6 +124,7 @@ services:
     - ENABLE_PIPELINE_METADATA=true
     - SSF_TEXT_TRANSLATION_ENABLED=${SSF_TEXT_TRANSLATION_ENABLED:-0}
     - SSF_TEXT_TRANSLATION_INTERNAL_TOKEN=${SSF_TEXT_TRANSLATION_INTERNAL_TOKEN:-}
+    - SSF_TEXT_TRANSLATION_API_KEY=${SSF_TEXT_TRANSLATION_API_KEY:-}
     - SSF_TEXT_TRANSLATION_LANGUAGES=${SSF_TEXT_TRANSLATION_LANGUAGES:-de,en,fr,es,ar,tr}
     # Bounds concurrent GPU pipeline work. Set here, not left to the code
     # default, so the limit production runs on can be tuned from the env file

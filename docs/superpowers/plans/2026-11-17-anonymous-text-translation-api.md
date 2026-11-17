@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- V1 has no login, user API keys, durable jobs or additional broker.
+- V1 has no Keycloak login, per-user key management, durable jobs or additional
+  broker. The owner clarified that one fixed shared X-API-Key is required.
 - Accept 1–10 nonblank strings totaling at most 5,000 Unicode code points.
 - Preserve paragraphs; reject incomplete generation instead of silently truncating.
 - Run at most one background segment; unknown conversation activity pauses dispatch.
@@ -69,3 +70,12 @@ platform health checks passed. After integrating current main, the pinned
 hermetic suite passed 5,342 tests (52 skipped, 22 deselected). See
 `docs/operations/anonymous-text-api-release.md` for the installed images and
 rollback. Other installations remain disabled by default.
+
+## Fixed-key correction
+
+The owner clarified that the client API must require one fixed server key,
+without Keycloak. Both public endpoints now authenticate X-API-Key using
+SSF_TEXT_TRANSLATION_API_KEY, separately from the internal callback token.
+Missing/wrong keys return 401 INVALID_API_KEY before rate accounting or
+inference. Missing key configuration fails closed. The OpenAPI header scheme,
+examples and deployment wiring follow this corrected requirement.

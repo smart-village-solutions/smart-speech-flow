@@ -92,3 +92,22 @@ running images. The protected host rollout directory
 `/root/projects/ssf-operations/anonymous-text-api-20261117` contains the previous
 environment, configuration, image IDs and an image rollback override. Do not
 publish its environment backup or the private service token.
+
+## Fixed shared-key correction
+
+The owner clarified that V1 must require a fixed shared client API key without
+Keycloak login or per-user key management. Both `/api/v1/translate` and
+`/api/v1/languages` now require `X-API-Key`; the earlier anonymous examples and
+smoke checks above describe the initial rollout and are superseded by this
+access contract. Missing or incorrect keys return 401 `INVALID_API_KEY` before
+rate accounting or translation. A missing configured key returns 503.
+
+The operator key is retained across restarts in the host's protected `.env` as
+`SSF_TEXT_TRANSLATION_API_KEY`, with a root-only operator copy at
+`/etc/ssf/text-translation-api-key`. It is distinct from the private callback
+token and is passed only to the gateway. Never commit its value or put it in
+a query string. Client examples use `-H "X-API-Key: $SSF_API_KEY"`.
+
+Only the gateway needs replacement for this correction. When rolling back to
+an older image without client-key support, disable the feature rather than
+restoring anonymous access.

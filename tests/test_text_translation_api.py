@@ -26,6 +26,7 @@ class Reply:
 def translation_client(monkeypatch):
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_ENABLED", "1")
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_INTERNAL_TOKEN", "internal-test-secret")
+    monkeypatch.setenv("SSF_TEXT_TRANSLATION_API_KEY", "shared-client-test-key")
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_LANGUAGES", "de,en,fr")
     monkeypatch.setattr(
         requests, "get", lambda *a, **k: Reply({"languages": ["en", "de", "ar"], "count": 3})
@@ -40,7 +41,9 @@ def translation_client(monkeypatch):
 
     monkeypatch.setattr(requests, "post", translate)
     with installed_gateway_dependencies(app) as deps:
-        yield TestClient(app), deps
+        client = TestClient(app)
+        client.headers["X-API-Key"] = "shared-client-test-key"
+        yield client, deps
 
 
 PAYLOAD = {"text": ["Guten Tag.", "Ausweis bitte."], "source_lang": "de", "target_lang": "en"}
@@ -622,3 +625,37 @@ def test_explicit_compute_deadline_stays_504_when_conversation_arrives(
     assert response.status_code == 504
     assert response.json()["error"]["code"] == "DEADLINE_EXCEEDED"
     assert deps.service_health.circuit_breakers["translation"].failure_count == 0
+
+
+@pytest.mark.parametrize("path", ["/api/v1/languages", "/api/v1/translate"])
+@pytest.mark.parametrize("supplied", [None, "wrong-key", "internal-test-secret"])
+def test_fixed_api_key_is_required_before_rate_limit_or_upstream(
+    translation_client, path, supplied
+):
+    client, deps = translation_client
+    client.headers.pop("X-API-Key", None)
+    headers = {} if supplied is None else {"X-API-Key": supplied}
+    response = client.request(
+        "POST" if path.endswith("translate") else "GET", path, headers=headers, json=PAYLOAD
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "INVALID_API_KEY"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert deps.text_translation._callers == {}
+    assert "shared-client-test-key" not in response.text
+
+
+def test_fixed_api_key_is_not_accepted_in_query(translation_client):
+    client, _ = translation_client
+    client.headers.pop("X-API-Key", None)
+    response = client.get("/api/v1/languages?api_key=shared-client-test-key")
+    assert response.status_code == 401
+
+
+def test_enabled_without_client_api_key_fails_closed(translation_client, monkeypatch):
+    client, _ = translation_client
+    monkeypatch.delenv("SSF_TEXT_TRANSLATION_API_KEY")
+    with installed_gateway_dependencies(app):
+        response = client.get("/api/v1/languages")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "UNAVAILABLE"

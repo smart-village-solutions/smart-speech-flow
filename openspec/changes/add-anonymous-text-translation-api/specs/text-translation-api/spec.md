@@ -1,18 +1,18 @@
 ## ADDED Requirements
 
-### Requirement: Anonymous versioned text translation
+### Requirement: Shared-key versioned text translation
 
-When enabled, the gateway SHALL serve `POST /api/v1/translate` without login,
-user API keys, tenant selection or conversation creation. It SHALL accept
+When enabled, the gateway SHALL serve `POST /api/v1/translate` with a fixed server-configured API key in `X-API-Key`, without Keycloak login,
+per-user key management, tenant selection or conversation creation. It SHALL accept
 explicit supported `source_lang` and `target_lang` codes and a `text` array of
 1–10 nonblank strings totaling at most 5,000 Unicode code points. It SHALL
 reject unknown fields and non-string entries without coercion. It SHALL return
 `translations` objects containing `text`, in input order, plus `source_lang`
 and `target_lang`, or fail the whole request without partial results.
 
-#### Scenario: Anonymous ordered batch
+#### Scenario: Authenticated ordered batch
 
-- **WHEN** an anonymous caller submits two valid texts and supported languages
+- **WHEN** a caller presenting the configured shared API key submits two valid texts and supported languages
 - **THEN** the API returns two translation objects in the same order without
   creating a session or invoking ASR, TTS or refinement
 
@@ -30,7 +30,7 @@ and `target_lang`, or fail the whole request without partial results.
 
 ### Requirement: Actual translation capabilities
 
-The gateway SHALL serve anonymous `GET /api/v1/languages` as a `languages`
+The gateway SHALL serve shared-key-protected `GET /api/v1/languages` as a `languages`
 array of canonical codes from the intersection of installed translation
 capabilities and the installation API allowlist. Translation SHALL validate
 against that same set independently of guest UI and TTS language lists.
@@ -143,3 +143,25 @@ internal debug information or device details.
 - **WHEN** an anonymous translation completes or fails
 - **THEN** no input or output content is written to application persistence,
   logs, traces or analytics, and the response disables caching
+
+### Requirement: Fixed shared client API key
+
+Both public endpoints SHALL require the fixed server-configured key from
+`SSF_TEXT_TRANSLATION_API_KEY` in the `X-API-Key` header. Missing or incorrect
+keys SHALL return 401 with `INVALID_API_KEY` before reading translation input,
+caller rate accounting or upstream calls. Comparison SHALL use constant-time
+comparison. An enabled installation without a configured key SHALL fail closed
+with 503. The client key SHALL remain separate from the internal callback token
+and SHALL NOT be committed, logged or returned in errors.
+
+#### Scenario: Missing or incorrect client key
+
+- **WHEN** a caller omits the header, presents an incorrect key or supplies
+  the internal service token as a client key
+- **THEN** either public endpoint returns 401 `INVALID_API_KEY` with no-store
+  and performs no upstream operation or caller rate accounting
+
+#### Scenario: Server key is not configured
+
+- **WHEN** the feature is enabled without a fixed client key
+- **THEN** public endpoints return 503 and never allow anonymous fallback

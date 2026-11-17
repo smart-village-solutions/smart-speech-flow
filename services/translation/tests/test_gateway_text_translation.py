@@ -34,7 +34,9 @@ def laboratory(monkeypatch):
     admission = PipelineAdmission()
     service = TextTranslationService(
         CircuitBreaker("translation"),
-        TextTranslationConfig(enabled=True, internal_token="integration-secret"),
+        TextTranslationConfig(
+            enabled=True, internal_token="integration-secret", api_key="client-test-key"
+        ),
         background_busy=lambda: admission.background_busy,
     )
     gateway.dependency_overrides[get_text_translation_service] = lambda: service
@@ -61,6 +63,7 @@ def laboratory(monkeypatch):
             ),
         )
         with TestClient(gateway) as public:
+            public.headers["X-API-Key"] = "client-test-key"
             yield public, service, admission
 
 
