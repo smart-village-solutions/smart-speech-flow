@@ -1,0 +1,18 @@
+# Promote application code on the audited, already installed runtimes. This
+# release does not upgrade CUDA, model weights or Python dependencies.
+ARG GATEWAY_RUNTIME=ssf-backend-api_gateway:prod-24c088e8
+ARG TRANSLATION_RUNTIME=ssf-backend-translation:prod-2acde0bd
+
+FROM ${GATEWAY_RUNTIME} AS gateway
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision=${SOURCE_REVISION}
+COPY --chown=app:app services/api_gateway/ /app/services/api_gateway/
+COPY --chown=app:app services/__init__.py /app/services/__init__.py
+
+FROM ${TRANSLATION_RUNTIME} AS translation
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision=${SOURCE_REVISION}
+COPY --chown=appuser:appuser services/translation/app.py /app/app.py
+COPY --chown=appuser:appuser services/translation/strict_text.py /app/services/translation/strict_text.py
+COPY --chown=appuser:appuser services/gpu_metrics.py /app/services/gpu_metrics.py
+COPY --chown=appuser:appuser services/resource_metrics.py /app/services/resource_metrics.py

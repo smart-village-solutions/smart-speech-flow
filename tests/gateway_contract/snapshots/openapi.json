@@ -1590,6 +1590,22 @@
         "title": "InstallationContentResponse",
         "type": "object"
       },
+      "LanguagesResponse": {
+        "properties": {
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "languages"
+        ],
+        "title": "LanguagesResponse",
+        "type": "object"
+      },
       "LegalInformation": {
         "properties": {
           "locale": {
@@ -2592,6 +2608,45 @@
           "outcome"
         ],
         "title": "TelemetryProbeResponse",
+        "type": "object"
+      },
+      "TranslationItem": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TranslationItem",
+        "type": "object"
+      },
+      "TranslationResponse": {
+        "properties": {
+          "source_lang": {
+            "title": "Source Lang",
+            "type": "string"
+          },
+          "target_lang": {
+            "title": "Target Lang",
+            "type": "string"
+          },
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationItem"
+            },
+            "title": "Translations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "translations",
+          "source_lang",
+          "target_lang"
+        ],
+        "title": "TranslationResponse",
         "type": "object"
       },
       "UnprovidedGuestContent": {
@@ -8171,6 +8226,131 @@
         "summary": "Lookup Link",
         "tags": [
           "recording"
+        ]
+      }
+    },
+    "/api/v1/languages": {
+      "get": {
+        "operationId": "languages_api_v1_languages_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LanguagesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Malformed JSON"
+          },
+          "404": {
+            "description": "Feature disabled"
+          },
+          "413": {
+            "description": "Request exceeds limits"
+          },
+          "422": {
+            "description": "Invalid fields or unsupported languages"
+          },
+          "429": {
+            "description": "Caller rate limit"
+          },
+          "502": {
+            "description": "Unusable upstream result"
+          },
+          "503": {
+            "description": "Translation unavailable or busy"
+          },
+          "504": {
+            "description": "Total deadline exceeded"
+          }
+        },
+        "summary": "Languages",
+        "tags": [
+          "text-translation"
+        ]
+      }
+    },
+    "/api/v1/translate": {
+      "post": {
+        "operationId": "translate_api_v1_translate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "source_lang": {
+                    "title": "Source Lang",
+                    "type": "string"
+                  },
+                  "target_lang": {
+                    "title": "Target Lang",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "1–10 nonblank strings, at most 5,000 Unicode code points in total.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Text",
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "text",
+                  "source_lang",
+                  "target_lang"
+                ],
+                "title": "TranslationRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Malformed JSON"
+          },
+          "404": {
+            "description": "Feature disabled"
+          },
+          "413": {
+            "description": "Request exceeds limits"
+          },
+          "422": {
+            "description": "Invalid fields or unsupported languages"
+          },
+          "429": {
+            "description": "Caller rate limit"
+          },
+          "502": {
+            "description": "Unusable upstream result"
+          },
+          "503": {
+            "description": "Translation unavailable or busy"
+          },
+          "504": {
+            "description": "Total deadline exceeded"
+          }
+        },
+        "summary": "Translate",
+        "tags": [
+          "text-translation"
         ]
       }
     },
