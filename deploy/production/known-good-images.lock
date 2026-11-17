@@ -1,3 +1,11 @@
+# Updated on 2026-11-17: api_gateway and translation application code built from
+# 965fd584 (anonymous laboratory text API) on the previously audited runtimes.
+# Gateway base/rollback: ssf-backend-api_gateway:prod-24c088e8,
+# sha256:d4707f8e8e8292c92f0902dce87d2e14c669188fc927a9395daef823d5d12098.
+# Translation base/rollback: ssf-backend-translation:prod-2acde0bd,
+# sha256:928bfcde85dd612fd32cdf620ba63604346e1eef27ae630a46045e22c0e36a91.
+# Both remain installed. Public HTTPS batch/long-text/error checks and full
+# production health passed; the owner waived a dedicated load test.
 # Updated on 2026-11-03: api_gateway and frontend built on the host from merged
 # main 24c088e8 (recording mode through #681); keycloak records the 26.8.1 image
 # ssf-keycloak:prod-2681-5ebdcb0 that has run since 2026-11-01. Previous

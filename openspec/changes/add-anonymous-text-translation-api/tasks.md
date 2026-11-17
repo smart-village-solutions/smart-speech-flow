@@ -49,17 +49,19 @@
   configuration and rollback.
 - [x] 4.4 Record the owner's 2026-11-17 waiver of the dedicated load test based
   on stable observed utilization and sufficient capacity; no load test was run.
-- [ ] 4.5 Enable laboratory ingress when deployment is requested; V1 remains
-  off by default. The dedicated load test is no longer a prerequisite.
+- [x] 4.5 Enable laboratory ingress on the user's deployment request. Activated
+  on 2026-11-17 with public HTTPS translation and platform health verified;
+  other installations remain off by default.
 
 ## Verification status
 
 Implementation is authorized by the user and complete. Operating limits are
 finite conservative defaults. The owner waived the dedicated load test;
-real-GPU benchmarking remains optional tuning, not a completed validation claim. No deployment
-or feature enablement has been performed.
+real-GPU benchmarking remains optional tuning, not a completed validation claim. Deployment and feature enablement succeeded on 2026-11-17. See
+`docs/operations/anonymous-text-api-release.md` for image IDs, smoke results
+and rollback.
 
-Final hermetic verification using the project-pinned CI environment: 5,290 passed,
-52 skipped and 14 deselected. Gateway MyPy: no issues in 215 source files.
+Final hermetic verification after integrating main, using the project-pinned
+CI environment: 5,342 passed, 52 skipped and 22 deselected. Gateway MyPy: no issues in 215 source files.
 Black, isort, scoped Flake8, OpenSpec strict validation and diff whitespace
 checks passed. Code review has no remaining material findings.

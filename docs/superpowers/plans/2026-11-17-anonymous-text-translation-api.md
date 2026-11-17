@@ -61,7 +61,11 @@ passed 5,290 tests (52 skipped, 14 deselected) using pinned CI dependencies in
 a clean source worktree. Gateway typing passed for 215 modules; formatting,
 scoped lint, OpenSpec strict validation and whitespace checks passed.
 
-Deployment and a real-GPU mixed-load test were not performed. On 2026-11-17
+A real-GPU mixed-load test was not performed. On 2026-11-17
 the owner waived dedicated load testing for rare laboratory use based on stable
-observed utilization. The feature remains disabled by default; explicit
-deployment/enablement is the remaining operational step in OpenSpec.
+observed utilization. On the subsequent deployment request, the API was activated and deployed on
+2026-11-17; public HTTPS batch and long-text translation, error handling and
+platform health checks passed. After integrating current main, the pinned
+hermetic suite passed 5,342 tests (52 skipped, 22 deselected). See
+`docs/operations/anonymous-text-api-release.md` for the installed images and
+rollback. Other installations remain disabled by default.
