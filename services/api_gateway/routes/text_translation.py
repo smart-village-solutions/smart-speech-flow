@@ -27,9 +27,6 @@ from ..text_translation import (
 T = TypeVar("T")
 
 router = APIRouter(prefix="/api/v1", tags=["text-translation"])
-client_api_key = APIKeyHeader(
-    name="X-API-Key", scheme_name="TextTranslationApiKey", auto_error=False
-)
 _ERRORS: dict[int | str, dict[str, Any]] = {
     status: {"description": description}
     for status, description in (
@@ -145,7 +142,9 @@ async def _until_disconnect(request: Request, operation: Awaitable[T]) -> T:
 async def translate(
     request: Request,
     service: TextTranslationService | None = Depends(get_text_translation_service),
-    api_key: str | None = Security(client_api_key),
+    api_key: str | None = Security(
+        APIKeyHeader(name="X-API-Key", scheme_name="TextTranslationApiKey", auto_error=False)
+    ),
 ) -> JSONResponse:
     started = time.monotonic()
     try:
@@ -179,7 +178,9 @@ async def translate(
 async def languages(
     request: Request,
     service: TextTranslationService | None = Depends(get_text_translation_service),
-    api_key: str | None = Security(client_api_key),
+    api_key: str | None = Security(
+        APIKeyHeader(name="X-API-Key", scheme_name="TextTranslationApiKey", auto_error=False)
+    ),
 ) -> JSONResponse:
     started = time.monotonic()
     try:

@@ -295,7 +295,10 @@ class _StrictDispatch:
             remaining = self.deadline - self.loop.time()
             if self.stop.is_set() or remaining <= 0:
                 raise self.expired()
-            self.waiting = "unknown"
+            # A pending refresh is not evidence that a previously known busy
+            # state became unknown. Preserve the last observation at expiry.
+            if self.waiting is None:
+                self.waiting = "unknown"
             busy = await self.activity(remaining)
             pending = self.legacy_pending() or self.admission.in_flight
             self.waiting = (

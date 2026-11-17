@@ -172,3 +172,32 @@ async def test_activity_is_rechecked_at_worker_dispatch_after_offload_delay():
         assert model.calls == []
     finally:
         await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_known_busy_state_is_retained_while_next_activity_poll_is_pending():
+    import asyncio
+
+    from services.translation.app import TranslationAdmission
+
+    executor = strict_text.StrictTextExecutor()
+    calls = 0
+
+    async def activity(remaining):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return True
+        await asyncio.Event().wait()
+
+    try:
+        with pytest.raises(strict_text.StrictTextError) as raised:
+            await executor.run(
+                engine(), ["hello"], "de", "en", 0.08, TranslationAdmission(), activity, lambda: 0
+            )
+        assert raised.value.status == 503
+        assert raised.value.code == "SYSTEM_BUSY"
+    finally:
+        for task in list(executor.tasks):
+            task.cancel()
+        await executor.close()
