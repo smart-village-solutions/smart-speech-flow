@@ -680,3 +680,56 @@ async def test_two_enrolments_of_a_returning_leaver_make_one_key(archive, owner,
     )
     assert sorted(type(r).__name__ for r in results) == ["KeyAlreadyEnrolledError", "int"]
     assert await owner.fetchval("SELECT count(*) FROM user_keys WHERE retired_at IS NULL") == 1
+
+
+async def test_departure_after_newest_revocation_cleans_up_usable_history(archive, owner, leavers):
+    from unittest.mock import AsyncMock
+
+    from services.api_gateway.recording.leavers import Leavers
+    from tests.integration.test_recording_archive_access_database import _ended as recorded
+
+    conversation, key_id, _ = await recorded(archive, owner, employee="alice")
+    assert (
+        await owner.fetchval(
+            "SELECT count(*) FROM key_grants WHERE key_id=$1 AND user_sub='alice'", key_id
+        )
+        == 1
+    )
+    await owner.execute(
+        "UPDATE user_keys SET encrypted_private='sealed',retired_at=$1,superseded_at=$1 WHERE user_sub='alice'",
+        NOW,
+    )
+    await owner.execute(
+        "INSERT INTO user_keys(tenant_id,user_sub,key_version,enc_pub,sig_pub,fingerprint,created_at) SELECT tenant_id,user_sub,2,enc_pub,sig_pub,fingerprint,created_at FROM user_keys WHERE user_sub='alice'"
+    )
+    await owner.execute(
+        "UPDATE user_keys SET retired_at=$1,encrypted_private=NULL WHERE user_sub='alice' AND key_version=2",
+        NOW,
+    )
+    await enrol(owner, "present")
+    verifier = await owner.fetchval(
+        "SELECT sig_pub FROM user_keys WHERE user_sub='alice' AND key_version=1"
+    )
+    directory = AsyncMock()
+    directory.members.return_value = {"present"}
+    service = Leavers(store=leavers, directory=directory, clock=lambda: NOW)
+    assert [(h.sub, h.key_version) for h in await service.candidates(TENANT, "corr")] == [
+        ("alice", 1)
+    ]
+    assert await leavers.holder_subs(TENANT) == {"alice", "present"}
+    assert isinstance(await service.mark(TENANT, "admin", "alice", 1, "corr"), MarkedLeaver)
+    assert (
+        await owner.fetchval(
+            "SELECT sig_pub FROM user_keys WHERE user_sub='alice' AND key_version=1"
+        )
+        == verifier
+    )
+    assert not await owner.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM user_keys WHERE user_sub='alice' AND (state IN ('active','superseded') OR encrypted_private IS NOT NULL))"
+    )
+    assert not await owner.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM key_grants WHERE user_sub='alice')"
+    )
+    assert not await owner.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM key_wraps WHERE recipient_ref='alice')"
+    )

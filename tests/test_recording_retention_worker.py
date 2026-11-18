@@ -456,3 +456,15 @@ async def test_a_delete_the_store_refuses_without_reason_fails_the_tenant(tmp_pa
 
     assert (first.failures, first.swept, later.swept) == (1, True, True)
     assert store.beats[-1][1] == 26 * 3600.0
+
+
+async def test_legacy_tenant_is_observed_but_other_tenant_work_and_heartbeat_continue(tmp_path):
+    store = FakeRetentionStore(positions={TENANT: 4, "tenant-b": 2})
+
+    async def supports(tenant):
+        return tenant != "tenant-b"
+
+    store.supports_retention = supports
+    report = await _worker(tmp_path, store).run_once()
+    assert store.discovered == [TENANT] and report.tenants == 2 and report.failures == 0
+    assert store.beats == [(NOW, 0.0, False, 0, None)]

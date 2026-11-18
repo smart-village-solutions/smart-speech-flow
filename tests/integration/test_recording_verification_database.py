@@ -1189,3 +1189,37 @@ async def test_a_reviewer_can_decline_a_record_whose_conversation_is_gone(
     ) == Refused("verification_closed")
     assert await verifications.decline(TENANT, "rita", row.verification_id, NOW) is None
     assert await owner.fetchval("SELECT status FROM verifications") == "declined"
+
+
+async def test_partial_source_access_cannot_delegate_all_epochs(archive, owner, verifications):
+    cid, key = await _assignable(archive, owner)
+    extra = str(uuid.uuid4())
+    await owner.execute(
+        "INSERT INTO conversation_keys(tenant_id,conversation_id,key_id,epoch,created_at) VALUES ($1,$2,$3,2,$4)",
+        TENANT,
+        cid,
+        extra,
+        NOW,
+    )
+    await _key(owner, "bob")
+
+    async def transfer(key_id):
+        await owner.execute(
+            "INSERT INTO key_wraps(tenant_id,key_id,recipient_kind,recipient_ref,recipient_version,recipient_fingerprint,blob,creator_ref,creator_signature,granted_at) SELECT tenant_id,$1,'user','bob',1,recipient_fingerprint,blob,creator_ref,creator_signature,granted_at FROM key_wraps WHERE key_id=$2 AND recipient_ref='alice'",
+            key_id,
+            key,
+        )
+        await owner.execute(
+            "INSERT INTO key_grants VALUES($1,$2,'bob',1,'transfer',$3)",
+            TENANT,
+            key_id,
+            uuid.uuid4(),
+        )
+
+    await transfer(key)
+    assignment = _assignment(cid, [key, extra], requester="bob")
+    result = await verifications.assign(assignment, NOW, supervisor=False)
+    assert isinstance(result, Refused)
+    assert not await owner.fetchval("SELECT EXISTS(SELECT 1 FROM key_grants WHERE reason='review')")
+    await transfer(extra)
+    assert not isinstance(await verifications.assign(assignment, NOW, supervisor=False), Refused)

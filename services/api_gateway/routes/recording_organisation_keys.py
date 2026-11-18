@@ -33,7 +33,7 @@ router.include_router(transfer_router)
 @router.get("/organisation-keys", response_model=Registry)
 async def list_keys(request: Request, context: Tenant, claims: Reader) -> dict[str, Any]:
     org, transfers = services(request, claims)
-    permission = TENANT_MANAGE if TENANT_MANAGE in permissions_of(claims) else TRANSFER
+    permission = permissions_of(claims).intersection((TENANT_MANAGE, TRANSFER))
     await transfers.authorize(context.tenant_id, claims["sub"], permission)
     return await stored(org.list(context.tenant_id))
 

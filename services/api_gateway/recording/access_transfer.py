@@ -159,12 +159,17 @@ class AccessTransfer(Preparations):
         self.directory = directory
 
     async def authorize(
-        self, tenant: str, actor: str, permission: str, target_sub: str | None = None
+        self,
+        tenant: str,
+        actor: str,
+        permission: str | frozenset[str],
+        target_sub: str | None = None,
     ) -> None:
         directory = await self.directory.snapshot(tenant, "recording-access")
         if directory is None:
             raise error(503, "RECORDING_UNAVAILABLE")
-        if actor not in directory.holders_of(permission):
+        options = (permission,) if isinstance(permission, str) else permission
+        if not any(actor in directory.holders_of(option) for option in options):
             raise error(403, "PERMISSION_REQUIRED")
         if target_sub is not None and target_sub not in {u.sub for u in directory.users}:
             raise error(409, "KEY_VERSION_CHANGED")

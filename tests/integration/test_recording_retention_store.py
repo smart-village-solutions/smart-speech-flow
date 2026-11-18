@@ -424,3 +424,49 @@ async def test_a_late_upload_locked_from_its_own_upload_is_no_restore_conflict(
     await owner.execute("UPDATE version_locks SET locked_until = $1", own_lock + timedelta(days=3))
     [(conversation_id, reason, _)] = await store.restore_conflicts(TENANT)
     assert (conversation_id, reason) == (conversation.conversation_id, "locked_beyond_date")
+
+
+async def test_legacy_audit_high_water_remains_observable(archive, owner, stores):
+    await _stored(archive)
+    replica = stores["replica"]
+    before = await replica.audit_mark(TENANT)
+    assert before is not None
+    await owner.execute("INSERT INTO recording_protocol VALUES ($1,1)", TENANT)
+    try:
+        assert await replica.audit_mark(TENANT) == before
+        assert await replica.audit_hash_at(TENANT, before.seq) == before.hash
+        assert not await replica.supports_retention(TENANT)
+    finally:
+        await owner.execute("DELETE FROM recording_protocol WHERE tenant_id=$1", TENANT)
+
+
+async def test_worker_keeps_legacy_mark_and_shreds_due_current_recording(
+    archive, owner, stores, tmp_path
+):
+    from services.api_gateway.recording.audit import AuditEvent
+    from services.api_gateway.recording.repository import PostgresRecordingRepository
+    from services.api_gateway.recording.retention.restore_guard import AuditHighWater
+    from tests.integration.test_recording_retention_expiry_database import _expired
+    from tests.test_recording_retention_worker import _worker
+
+    legacy = str(uuid.uuid4())
+    await _expired(archive, owner)
+    await PostgresRecordingRepository(archive._pool).record_audit(
+        AuditEvent(legacy, "test", "fixture", "evidence", NOW)
+    )
+    store = stores["primary"]
+    mark = await store.audit_mark(legacy)
+    with AuditHighWater(tmp_path / "state").locked() as guard:
+        guard.observe(False, False, {legacy: mark}, advance=True)
+    await owner.execute("INSERT INTO recording_protocol VALUES ($1,1)", legacy)
+    try:
+        report = await _worker(tmp_path, store, at=NOW).run_once()
+        assert not report.halted and report.shredded == 1
+        with AuditHighWater(tmp_path / "state").locked() as guard:
+            assert guard.marks[legacy] == mark
+        assert (
+            await owner.fetchval("SELECT beat_at FROM retention_worker_status WHERE site='primary'")
+            == NOW
+        )
+    finally:
+        await owner.execute("DELETE FROM recording_protocol WHERE tenant_id=$1", legacy)

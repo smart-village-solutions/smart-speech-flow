@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from datetime import timedelta
 
+import pytest
+
 from services.api_gateway.recording.archive_service import STAMP_RETRY_INITIAL
 from services.api_gateway.recording.crypto import tags
 from services.api_gateway.recording.crypto.signatures import signed_digest
@@ -89,3 +91,20 @@ async def test_a_failed_authority_defers_with_back_off_and_a_down_store_skips():
     down = Store(down=True)
     await DecisionStamper(down, Authority(), lambda: [TENANT, "other"], lambda: NOW).run_once()
     assert down.saved == []
+
+
+@pytest.mark.parametrize("kind", ["chain", "decision"])
+async def test_stamping_an_incompatible_tenant_does_not_block_another(kind):
+    from unittest.mock import AsyncMock
+
+    from services.api_gateway.recording.archive_service import ChainStamper
+    from services.api_gateway.recording.repository import RecordingProtocolUpgradeRequired
+
+    repository = AsyncMock()
+    stamper = (ChainStamper if kind == "chain" else DecisionStamper)(
+        repository, None, lambda: ["old", "current"]
+    )
+    query = repository.pending_stamps if kind == "chain" else repository.pending_decision_stamps
+    query.side_effect = [RecordingProtocolUpgradeRequired(), []]
+    await stamper.run_once()
+    assert [call.args[0] for call in query.await_args_list] == ["old", "current"]

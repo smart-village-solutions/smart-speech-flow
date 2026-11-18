@@ -40,7 +40,7 @@ from .conversation_keys import (
     seal_object,
     wrap_key,
 )
-from .repository import RecordingStorageUnavailable, UserKeyRecord
+from .repository import RecordingProtocolUpgradeRequired, RecordingStorageUnavailable, UserKeyRecord
 from .secrets import RecordingSecrets
 from .session_state import Phase, RecordingState
 from .storage.archive import object_key
@@ -743,7 +743,7 @@ class ChainStamper:
         for tenant_id in self.tenants():
             try:
                 due = await self._repository.pending_stamps(tenant_id, self._clock())
-            except RecordingStorageUnavailable:
+            except (RecordingProtocolUpgradeRequired, RecordingStorageUnavailable):
                 continue  # this tenant's turn comes again in the next pass
             for stamp in due:
                 await self._stamp(tenant_id, stamp)

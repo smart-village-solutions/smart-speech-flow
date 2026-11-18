@@ -17,7 +17,7 @@ from .archive_service import STAMP_RETRY_CEILING, STAMP_RETRY_INITIAL
 from .crypto import tags
 from .crypto.signatures import signed_digest
 from .crypto.verification import decision_imprint, verification_fields
-from .repository import RecordingStorageUnavailable
+from .repository import RecordingProtocolUpgradeRequired, RecordingStorageUnavailable
 from .timestamps import TimestampAuthority, TimestampError
 from .verification_model import PendingDecisionStamp
 
@@ -70,7 +70,7 @@ class DecisionStamper:
                 due = await self._store.pending_decision_stamps(tenant_id, self._clock())
                 for stamp in due:
                     await self._stamp(tenant_id, stamp)
-            except RecordingStorageUnavailable:
+            except (RecordingProtocolUpgradeRequired, RecordingStorageUnavailable):
                 logger.warning("recording_decision_stamp_skipped")
 
     async def _stamp(self, tenant_id: str, stamp: PendingDecisionStamp) -> None:

@@ -45,6 +45,7 @@ from .verification_sql import (
     excluded,
     openable,
     reviewing,
+    usable_grant,
 )
 from .verification_writes import close_records
 
@@ -66,6 +67,11 @@ _CONVERSATION_LOCK = "SELECT 1 FROM conversations WHERE conversation_id = $1 FOR
 _ASSIGNABLE = (
     "SELECT c.conversation_id FROM conversations c WHERE c.conversation_id = $3"
     f" AND {openable('$1', '$2', '$4')}"
+    " AND NOT EXISTS (SELECT 1 FROM conversation_keys k WHERE k.tenant_id=c.tenant_id "
+    "AND k.conversation_id=c.conversation_id AND NOT EXISTS (SELECT 1 FROM key_wraps w "
+    "WHERE w.tenant_id=k.tenant_id AND w.key_id=k.key_id AND "
+    + usable_grant("$1", "g.reason IN ('owner','transfer')")
+    + "))"
 )
 _REVIEWER_EXCLUDED = (
     f"SELECT {excluded('$2', '$3')} FROM conversations c WHERE c.conversation_id = $1"

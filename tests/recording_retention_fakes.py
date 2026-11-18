@@ -87,6 +87,9 @@ class FakeRetentionStore:
         chain = self.audit[tenant_id]
         chain.append(f"{tenant_id}:{len(chain) + 1}")
 
+    async def supports_retention(self, tenant_id: str) -> bool:
+        return True
+
     async def tenants(self) -> list[str]:
         return sorted(self.audit)
 

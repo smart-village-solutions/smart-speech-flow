@@ -64,7 +64,11 @@ async def owner():
     if not OWNER_DSN:
         pytest.skip("SSF_RECORDING_OWNER_DATABASE_URL is not set")
     connection = await asyncpg.connect(OWNER_DSN, password=OWNER_PASSWORD)
-    await connection.execute(f"TRUNCATE {_ARCHIVE_TABLES}, audit_events, gateway_signing_keys")
+    # Archive windows read active recipients. Isolate that registry as well as the archive.
+    await connection.execute(
+        f"TRUNCATE {_ARCHIVE_TABLES}, audit_events, gateway_signing_keys, "
+        "user_keys, organisation_keys, key_preparations"
+    )
     yield connection
     await connection.close()
 

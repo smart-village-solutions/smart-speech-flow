@@ -381,3 +381,38 @@ def test_registry_rejects_non_user_tokens_and_untrusted_actor_headers(client_for
         headers={"X-Actor": "alice", "X-Tenant": "other", "X-Actor-Acr": "mfa"},
     )
     assert (response.status_code, _code(response)) == (403, "PERMISSION_REQUIRED")
+
+
+@pytest.mark.parametrize(
+    "token,live,status",
+    [
+        (
+            ("ssf.configuration.tenant.manage", "ssf.recording.access.transfer"),
+            ("ssf.recording.access.transfer",),
+            200,
+        ),
+        (("ssf.recording.access.transfer",), ("ssf.configuration.tenant.manage",), 403),
+        (("ssf.configuration.tenant.manage",), ("ssf.configuration.tenant.manage",), 200),
+    ],
+)
+def test_registry_requires_one_permission_in_both_token_and_directory(
+    client_for, monkeypatch, token, live, status
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from services.api_gateway.recording.access_transfer import AccessTransfer
+    from services.api_gateway.routes import recording_lifecycle_auth
+    from tests.recording_archive_fakes import gateway_secrets
+
+    directory = AsyncMock()
+    directory.snapshot.return_value = SimpleNamespace(
+        holders_of=lambda permission: {"alice"} if permission in live else set()
+    )
+    access = AccessTransfer(None, gateway_secrets(), directory)
+    org = AsyncMock()
+    org.list.return_value = {"keys": [], "activeKeyId": None}
+    state = SimpleNamespace(recording_access_transfer=access, recording_organisation_keys=org)
+    monkeypatch.setattr(recording_lifecycle_auth, "optional_container", lambda request: state)
+    claims = {**_claims(permissions=token), "sid": "session"}
+    assert client_for(claims).get("/api/admin/recording/v2/organisation-keys").status_code == status

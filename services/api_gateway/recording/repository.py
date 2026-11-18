@@ -15,9 +15,9 @@ from datetime import datetime
 from typing import Any, Final, Self
 
 import asyncpg
+from fastapi import HTTPException
 
 from .audit import GENESIS, AuditEvent, AuditRow, audit_hash
-from .permissions import coded
 
 COMMAND_TIMEOUT_SECONDS: Final[float] = 5.0
 DRIVER_FAILURE: Final = (
@@ -53,17 +53,35 @@ class UserKeyRecord:
     state: str = "active"
 
 
-async def bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
+class RecordingProtocolUpgradeRequired(HTTPException):
+    def __init__(self) -> None:
+        super().__init__(
+            409,
+            detail={
+                "error_code": "RECORDING_PROTOCOL_UPGRADE_REQUIRED",
+                "message": "Recording protocol upgrade required",
+            },
+        )
+
+
+async def bind_tenant_scope(connection: asyncpg.Connection, tenant_id: str) -> None:
+    """Apply tenant RLS, including for generation-independent audit evidence."""
     await connection.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", tenant_id)
-    if (
+
+
+async def legacy_protocol(connection: asyncpg.Connection, tenant_id: str) -> bool:
+    return (
         await connection.fetchval(
             "SELECT generation=1 FROM recording_protocol WHERE tenant_id=$1", tenant_id
         )
         is True
-    ):
-        raise coded(
-            409, "RECORDING_PROTOCOL_UPGRADE_REQUIRED", "Recording protocol upgrade required"
-        )
+    )
+
+
+async def bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
+    await bind_tenant_scope(connection, tenant_id)
+    if await legacy_protocol(connection, tenant_id):
+        raise RecordingProtocolUpgradeRequired()
 
 
 async def append_audit(connection: asyncpg.Connection, event: AuditEvent) -> None:

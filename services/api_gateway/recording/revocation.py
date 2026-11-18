@@ -24,7 +24,7 @@ from ..clock import utc_now
 from ..studio_recording_directory_client import RecordingDirectory
 from .permissions import REVIEW, SUPERVISE
 from .recovery_requests_model import SYSTEM_ACTOR
-from .repository import RecordingStorageUnavailable
+from .repository import RecordingProtocolUpgradeRequired, RecordingStorageUnavailable
 from .revocation_repository import Grants
 
 logger = logging.getLogger(__name__)
@@ -213,7 +213,10 @@ async def run_due(
     if due(now):
         for tenant_id in tenants:
             day = run_date(now)
-            if not await runs.claim(tenant_id, day, now, RECLAIM_AFTER):
+            try:
+                if not await runs.claim(tenant_id, day, now, RECLAIM_AFTER):
+                    continue
+            except RecordingProtocolUpgradeRequired:
                 continue
             try:
                 outcomes[tenant_id] = await check.run_tenant(tenant_id, f"revocation-{day}")
@@ -223,7 +226,13 @@ async def run_due(
                 continue
             await runs.finish(tenant_id, day, outcomes[tenant_id], now)
     if metrics is not None:
-        metrics.update({tenant_id: await runs.owed_since(tenant_id) for tenant_id in tenants})
+        owed = {}
+        for tenant_id in tenants:
+            try:
+                owed[tenant_id] = await runs.owed_since(tenant_id)
+            except RecordingProtocolUpgradeRequired:
+                continue
+        metrics.update(owed)
     return outcomes
 
 

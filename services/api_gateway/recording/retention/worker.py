@@ -40,6 +40,8 @@ UNCONFIRMED_STATE_FILE: Final[str] = "unconfirmed.json"
 class WorkerStore(RetentionRows, ExpiryRows, Protocol):
     async def tenants(self) -> list[str]: ...
 
+    async def supports_retention(self, tenant_id: str) -> bool: ...
+
     async def audit_mark(self, tenant_id: str) -> AuditMark | None: ...
 
     async def audit_hash_at(self, tenant_id: str, seq: int) -> str | None: ...
@@ -125,6 +127,7 @@ class RetentionWorker:
         tenants = await self._store.tenants()
         halted, recheck = await self._observe(tenants, advance=False)
         report = PassReport(len(tenants), halted=halted)
+        tenants = [tenant for tenant in tenants if await self._store.supports_retention(tenant)]
         report.swept = not halted and self._sweep_due(now)
         failed = await self._tenant_passes(tenants, now, report, recheck)
         # Only now, with every hold this pass applied in the audit log, may the marks move on.

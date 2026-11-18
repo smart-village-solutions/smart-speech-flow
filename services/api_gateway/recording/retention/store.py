@@ -24,6 +24,8 @@ from ..repository import (
     DRIVER_FAILURE,
     append_audit,
     bind_tenant,
+    bind_tenant_scope,
+    legacy_protocol,
     storage_unavailable,
 )
 from ..storage.archive import object_key
@@ -302,13 +304,16 @@ class PostgresRetentionStore:
     async def close(self) -> None:
         await self._pool.close()
 
-    async def _run(self, tenant_id: str | None, work: Any) -> Any:
+    async def _run(
+        self, tenant_id: str | None, work: Any, *, generation_independent: bool = False
+    ) -> Any:
         """One transaction, bound to the tenant unless the work is tenant-free."""
         try:
             async with self._pool.acquire(timeout=COMMAND_TIMEOUT_SECONDS) as connection:
                 async with connection.transaction():
                     if tenant_id is not None:
-                        await bind_tenant(connection, tenant_id)
+                        bind = bind_tenant_scope if generation_independent else bind_tenant
+                        await bind(connection, tenant_id)
                     return await work(connection)
         # The triggers' refusals, before the driver failures they subclass.
         except asyncpg.NoDataFoundError:
@@ -324,6 +329,11 @@ class PostgresRetentionStore:
 
         return [row["tenant"] for row in await self._run(None, work)]
 
+    async def supports_retention(self, tenant_id: str) -> bool:
+        return not await self._run(
+            tenant_id, lambda db: legacy_protocol(db, tenant_id), generation_independent=True
+        )
+
     async def audit_mark(self, tenant_id: str) -> AuditMark | None:
         """The tenant's last audit event; None while it has none."""
 
@@ -332,14 +342,14 @@ class PostgresRetentionStore:
                 "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1"
             )
 
-        row = await self._run(tenant_id, work)
+        row = await self._run(tenant_id, work, generation_independent=True)
         return None if row is None else AuditMark(row["seq"], bytes(row["hash"]).hex())
 
     async def audit_hash_at(self, tenant_id: str, seq: int) -> str | None:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetchval("SELECT hash FROM audit_events WHERE seq = $1", seq)
 
-        found = await self._run(tenant_id, work)
+        found = await self._run(tenant_id, work, generation_independent=True)
         return None if found is None else bytes(found).hex()
 
     async def recheck_all(self, tenant_id: str, now: datetime) -> None:

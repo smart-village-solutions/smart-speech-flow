@@ -31,12 +31,12 @@ T = TypeVar("T")
 _ACTIVITY = "c.employee_sub = u.user_sub AND c.shredded_at IS NULL"
 _LISTED = f"SELECT p.holder_ref, p.display_name{CURRENT_CUSTODIANS}"
 _HOLDERS = (
-    "SELECT u.user_sub, u.key_version, u.fingerprint, u.created_at, a.conversations,"
+    "SELECT DISTINCT ON (u.user_sub) u.user_sub, u.key_version, u.fingerprint, u.created_at, a.conversations,"
     " a.last_conversation_at, h.holder_ref IS NOT NULL AS custodian, h.display_name"
     f" FROM user_keys u LEFT JOIN ({_LISTED}) h ON h.holder_ref = u.user_sub"
     " CROSS JOIN LATERAL (SELECT count(*) AS conversations,"
     f" max(c.started_at) AS last_conversation_at FROM conversations c WHERE {_ACTIVITY}) a"
-    " WHERE u.retired_at IS NULL ORDER BY u.user_sub"
+    " WHERE u.state IN ('active','superseded') ORDER BY u.user_sub, u.key_version DESC"
 )
 # Its browser is the paper device: the ceremony cannot finish without the starter.
 _STARTED = (
@@ -81,7 +81,9 @@ class PostgresLeavers:
     async def holder_subs(self, tenant_id: str) -> frozenset[str]:
         async def work(connection: asyncpg.Connection) -> list[Any]:
             return list(
-                await connection.fetch("SELECT user_sub FROM user_keys WHERE retired_at IS NULL")
+                await connection.fetch(
+                    "SELECT DISTINCT user_sub FROM user_keys WHERE state IN ('active','superseded')"
+                )
             )
 
         return frozenset(row["user_sub"] for row in await self._run(tenant_id, work))
@@ -92,9 +94,12 @@ class PostgresLeavers:
         """Retires `key_version` of `sub` without a successor, or refuses and changes nothing."""
 
         async def work(connection: asyncpg.Connection) -> Refused | MarkedLeaver:
+            await connection.execute(
+                "SELECT 1 FROM user_keys WHERE user_sub=$1 ORDER BY key_version FOR UPDATE", sub
+            )
             old = await connection.fetchrow(
                 "SELECT key_version, fingerprint FROM user_keys"
-                " WHERE user_sub = $1 AND retired_at IS NULL FOR UPDATE",
+                " WHERE user_sub = $1 AND state IN ('active','superseded') ORDER BY key_version DESC LIMIT 1 FOR UPDATE",
                 sub,
             )
             # Before the requests: a resharing's activation takes this row, then them (§9.7).

@@ -74,7 +74,7 @@ async def retire_key(
     if left:
         await connection.execute(
             "UPDATE user_keys SET left_at=$2,encrypted_private=NULL,email=NULL "
-            "WHERE user_sub=$1 AND state='superseded'",
+            "WHERE user_sub=$1 AND state IN ('superseded','revoked')",
             sub,
             now,
         )
