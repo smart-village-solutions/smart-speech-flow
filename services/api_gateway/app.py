@@ -359,6 +359,20 @@ async def _shut_down(
         if pending:
             await asyncio.wait(pending, timeout=PRESENCE_RELEASE_SHUTDOWN_TIMEOUT_SECONDS)
         await persistence.close()
+    # Presence releases have finished writing timing metadata before closing
+    # the ledger, so a late release cannot reopen it after a clean shutdown.
+    if dependencies.session_manager.usage is not None:
+        from .conversation_usage import UsageUnavailable
+
+        try:
+            try:
+                await dependencies.session_manager.flush_conversation_usage()
+            except UsageUnavailable:
+                await dependencies.session_manager.usage.close(clean=False)
+            else:
+                await dependencies.session_manager.usage.close()
+        except UsageUnavailable:
+            _announce("Conversation usage shutdown unavailable; coverage will require recovery")
     telemetry_exporter_at_exit = dependencies.quality_telemetry_exporter
     dependencies.quality_telemetry_exporter = None
     if telemetry_exporter_at_exit is not None:
@@ -402,6 +416,13 @@ async def _start_serving(
         studio_token_provider,
         studio.content,
     )
+    from .conversation_usage import UsageUnavailable
+
+    if dependencies.session_manager.usage is not None:
+        try:
+            await dependencies.session_manager.usage.initialize()
+        except UsageUnavailable:
+            _announce("Conversation usage unavailable; dashboard reporting will return 503")
     if tenant_persistence is not None:
         # Before any request, socket or background task can see this app's sessions.
         await dependencies.session_manager.rehydrate_tenant_sessions()

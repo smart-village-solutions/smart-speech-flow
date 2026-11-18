@@ -175,6 +175,23 @@
       "intro": "$t(app.name) stellt einen virtuellen Echtzeit-Dolmetscher bereit. Starten Sie ein neues Gespräch, um sofort mit einer anderssprachigen Person zu kommunizieren — ohne Wartezeit und ohne Vorkenntnisse.",
       "newSession": "Neues Gespräch starten"
     },
+    "usage": {
+      "title": "Gesprächsminuten",
+      "period": "Letzte 30 Tage",
+      "personal": "Ich",
+      "organisation": "Organisation",
+      "organisationShort": "Org.",
+      "server": "Server",
+      "total": "Gesamt",
+      "language": "Sprache",
+      "showLanguages": "Nach Sprache anzeigen",
+      "hideLanguages": "Sprachen ausblenden",
+      "definition": "Inklusive Gesprächspausen",
+      "coverage": "Vollständige Erfassung seit {{date}} · Zeitraum noch nicht vollständig",
+      "loading": "Gesprächsminuten werden geladen …",
+      "unavailable": "Gesprächsminuten derzeit nicht abrufbar",
+      "empty": "Noch keine Gesprächsminuten erfasst"
+    },
     "load": {
       "title": "Systemauslastung",
       "ok": "Ausreichend Kapazitäten verfügbar",

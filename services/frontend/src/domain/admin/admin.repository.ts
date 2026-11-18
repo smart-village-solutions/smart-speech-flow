@@ -4,6 +4,7 @@ import { requirePathIdentifier } from '@/utils/identifiers';
 import { toAdminSessions, toCreatedSession } from './admin.mapper';
 import type { SessionCreateDto, SessionHistoryDto } from './admin.mapper';
 import type { AdminSession, CreatedSession } from './admin.types';
+import { conversationUsageSchema, type ConversationUsage } from './usage';
 
 export type RealtimeTransportKind = 'websocket' | 'polling';
 
@@ -17,6 +18,7 @@ interface CurrentSessionDto {
 }
 
 export interface AdminRepository {
+  getUsage(): Promise<ConversationUsage>;
   createSession(): Promise<CreatedSession>;
   listSessions(limit: number): Promise<AdminSession[]>;
   /** The requesting admin's own live session, or null when they have none. */
@@ -27,6 +29,11 @@ export interface AdminRepository {
 
 export function createAdminRepository(http: AxiosInstance): AdminRepository {
   return {
+    async getUsage() {
+      const response = await http.get<unknown>('/api/admin/usage');
+      return conversationUsageSchema.parse(response.data);
+    },
+
     async createSession() {
       const response = await http.post<SessionCreateDto>('/api/admin/session/create');
       return toCreatedSession(response.data);

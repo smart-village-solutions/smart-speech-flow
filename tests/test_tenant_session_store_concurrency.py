@@ -129,24 +129,24 @@ def _message(message_id: str, *, age: timedelta) -> SessionMessage:
 
 
 class SweepSaveFailsStore(MemoryTenantSessionStore):
-    """The sweep's save waits for a concurrent append, then fails; other saves succeed."""
+    """The sweep's save waits for an explicit release, then fails; other saves succeed."""
 
     def __init__(self) -> None:
         super().__init__()
         self.sweep_saving = asyncio.Event()
-        self.appended = asyncio.Event()
+        self.release_save = asyncio.Event()
         self.fail_next_save = False
 
     async def save(self, session: Session) -> None:
         if self.fail_next_save:
             self.fail_next_save = False
             self.sweep_saving.set()
-            await self.appended.wait()
+            await self.release_save.wait()
             raise ConnectionError("redis went away")
         await super().save(session)
 
 
-async def test_a_failed_sweep_keeps_a_message_appended_while_it_saved(
+async def test_a_failed_sweep_keeps_a_message_queued_while_it_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
@@ -158,14 +158,14 @@ async def test_a_failed_sweep_keeps_a_message_appended_while_it_saved(
     manager.sessions[session.key] = session
     session.messages.append(_message("expired", age=timedelta(hours=30)))
 
-    async def append_during_the_sweep() -> None:
-        await store.sweep_saving.wait()
-        await manager.add_message(session.key, _message("fresh", age=timedelta(0)))
-        store.appended.set()
-
     store.fail_next_save = True
-    appender = asyncio.create_task(append_during_the_sweep())
-    counts = await manager.sweep_expired_content(utc_now())
+    sweeping = asyncio.create_task(manager.sweep_expired_content(utc_now()))
+    await store.sweep_saving.wait()
+    appender = asyncio.create_task(
+        manager.add_message(session.key, _message("fresh", age=timedelta(0)))
+    )
+    store.release_save.set()
+    counts = await sweeping
     await appender
 
     assert counts["failed"] == 1
@@ -298,14 +298,14 @@ async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session
     session.created_at = utc_now() - timedelta(hours=session.maximum_lifetime_hours + 1)
     session.messages.append(_message("expired", age=timedelta(hours=30)))
 
-    async def terminate_during_the_sweep() -> None:
-        await store.sweep_saving.wait()
-        await manager.terminate_session(session.key, "manual_admin_termination")
-        store.appended.set()
-
     store.fail_next_save = True
-    terminator = asyncio.create_task(terminate_during_the_sweep())
-    await manager.sweep_expired_content(utc_now())
+    sweeping = asyncio.create_task(manager.sweep_expired_content(utc_now()))
+    await store.sweep_saving.wait()
+    terminator = asyncio.create_task(
+        manager.terminate_session(session.key, "manual_admin_termination")
+    )
+    store.release_save.set()
+    await sweeping
     await terminator
 
     assert session.status.value == "terminated"
@@ -399,7 +399,8 @@ async def test_a_change_waiting_behind_a_termination_is_refused(
     changing = asyncio.create_task(apply(manager, session.key))
     for _ in range(10):
         await asyncio.sleep(0)
-    entry = store._write_locks._entries[session.key]
+    # Mutations wait before reading or changing state at the lifecycle boundary.
+    entry = manager._lifecycle_locks._entries[session.key]
     assert entry.holders == 2, "the change must be waiting behind the termination"
     redis.release_termination.set()
 
@@ -431,7 +432,7 @@ async def test_a_guest_socket_that_connects_behind_a_termination_is_closed(
     )
     for _ in range(10):
         await asyncio.sleep(0)
-    assert store._write_locks._entries[session.key].holders == 2
+    assert manager._lifecycle_locks._entries[session.key].holders == 2
     redis.release_termination.set()
 
     with pytest.raises(RuntimeError):

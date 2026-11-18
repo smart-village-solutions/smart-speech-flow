@@ -97,6 +97,8 @@ services:
     volumes:
     # Encrypted archive objects waiting for upload (#615): ciphertext only.
     - archive-spool:/data/archive-spool
+    # Content-free usage metadata; keep this volume across container recreates.
+    - conversation-usage:/var/lib/ssf-usage
     # Starlette spools an upload over 1 MiB into /tmp: RAM only (spec §5.5).
     - type: tmpfs
       target: /tmp
@@ -115,6 +117,7 @@ services:
     environment:
     - REDIS_URL=redis://redis:6379/0
     - REDIS_NAMESPACE=ssf
+    - SSF_USAGE_DATABASE_PATH=/var/lib/ssf-usage/usage.sqlite3
     - CLIENT_BASE_URL=https://dialog.kassel.de
     - SSF_AUDIO_BASE_DIR=/tmp/audio
     - ENABLE_PIPELINE_METADATA=true
@@ -615,6 +618,7 @@ volumes:
   ollama-data: null
   vllm-models: null
   archive-spool: null
+  conversation-usage: null
   clickhouse-data: null
   keycloak-postgres-data: null
   ssf-postgres-data: null

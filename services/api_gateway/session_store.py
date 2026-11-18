@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -87,6 +88,9 @@ class SessionStoreConsistencyError(RuntimeError):
 
 
 class TenantSessionStore(Protocol):
+    async def list_retained(self) -> list[Session]:
+        raise NotImplementedError
+
     async def create(self, session: Session) -> bool:
         raise NotImplementedError
 
@@ -186,17 +190,24 @@ class MemoryTenantSessionStore:
         self._joins.clear()
         self._expiries.clear()
 
+    async def list_retained(self) -> list[Session]:
+        return [
+            session
+            for key in tuple(self._sessions)
+            if (session := await self.load(key)) is not None
+        ]
+
     async def create(self, session: Session) -> bool:
         if session.id in self._joins:
             return False
-        self._sessions[session.key] = session
+        self._sessions[session.key] = deepcopy(session)
         self._joins[session.id] = (session.key, True)
         return True
 
     async def save(self, session: Session) -> None:
         if session.key not in self._sessions:
             raise SessionStoreConsistencyError("session does not exist")
-        self._sessions[session.key] = session
+        self._sessions[session.key] = deepcopy(session)
 
     def expire_now(self, key: TenantSessionKey) -> None:
         """Bring a pending expiry forward, for tests that cannot wait it out."""
@@ -218,7 +229,7 @@ class MemoryTenantSessionStore:
         expected_active = session.status.value != "terminated"
         if not _same_key(join_key_value, key) or active is not expected_active:
             return None
-        return session
+        return deepcopy(session)
 
     async def resolve_join(self, session_id: str) -> TenantSessionKey | None:
         join = self._joins.get(session_id)
@@ -283,14 +294,14 @@ class MemoryTenantSessionStore:
             persisted = self._sessions.get(session.key)
             if persisted is None or persisted.status.value != "terminated":
                 raise SessionStoreConsistencyError("terminal join index does not match session")
-            return persisted
-        self._sessions[session.key] = session
+            return deepcopy(persisted)
+        self._sessions[session.key] = deepcopy(session)
         self._joins[session.id] = (session.key, False)
         # Mirrors the Redis EXPIRE: the record goes, the tombstone stays.
         self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(
             seconds=_terminal_record_seconds()
         )
-        return session
+        return deepcopy(session)
 
 
 class RedisTenantSessionStore:
@@ -441,6 +452,24 @@ class RedisTenantSessionStore:
                     else raw_session_id
                 )
                 sessions.append(await self._load_active_session(active_key, session_id))
+        return sessions
+
+    async def list_retained(self) -> list[Session]:
+        """Startup-only replay of retained metadata, including terminal records."""
+        from .session_models import Session
+
+        sessions: list[Session] = []
+        async for name in self.redis.scan_iter(match=f"{self.namespace}:v2:tenant:*:session:*"):
+            raw = await self.redis.get(name)
+            if raw is None:
+                continue
+            try:
+                session = Session.from_dict(json.loads(raw))
+            except (KeyError, TypeError, ValueError):
+                continue
+            verified = await self.load(session.key)
+            if verified is not None:
+                sessions.append(verified)
         return sessions
 
     async def _load_active_session(self, active_key: str, session_id: str) -> Session:

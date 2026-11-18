@@ -168,6 +168,7 @@ def build_gateway_dependencies(
     from .auth import OidcKeyCache
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
+    from .conversation_usage import ConversationUsage
     from .feedback.service import configured_grace_window
     from .pipeline_logic import SpeechPipeline
     from .realtime_ticket import (
@@ -216,6 +217,7 @@ def build_gateway_dependencies(
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
         pseudonymizer=pseudonymizer,
+        usage=ConversationUsage.from_environment(),
     )
     websocket_manager = WebSocketManager(session_manager, polling_store, monitor=websocket_monitor)
     if studio_content is None:

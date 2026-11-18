@@ -193,6 +193,8 @@ class Session:
     # The creating admin (tenant_context.admin_ref). None for sessions stored
     # before owners existed; such a session is never another admin's.
     owner_ref: Optional[str] = None
+    # Internal timing metadata for usage accounting, never conversation content.
+    usage_language_changes: List[Dict[str, str]] = field(default_factory=list)
     # SHA-256 of the guest token the first activation issued; None until then,
     # and for sessions activated before guest tokens existed.
     guest_token_hash: Optional[str] = None
@@ -271,6 +273,7 @@ class Session:
             "customer_connected": self.customer_connected,
             "termination_reason": self.termination_reason,
             "owner_ref": self.owner_ref,
+            "usage_language_changes": [dict(change) for change in self.usage_language_changes],
             "guest_token_hash": self.guest_token_hash,
             "last_activity": self.last_activity.isoformat(),
             "timeout_warning_sent": self.timeout_warning_sent,
@@ -304,6 +307,7 @@ class Session:
         data.pop("runtime_configuration", None)
         data.pop("ended_message_count", None)
         data.pop("owner_ref", None)
+        data.pop("usage_language_changes", None)
         data.pop("guest_token_hash", None)
         return data
 
@@ -355,6 +359,9 @@ class Session:
             customer_connected=data.get("customer_connected", False),
             termination_reason=data.get("termination_reason"),
             owner_ref=data.get("owner_ref"),
+            usage_language_changes=[
+                dict(change) for change in data.get("usage_language_changes", [])
+            ],
             guest_token_hash=data.get("guest_token_hash"),
             ended_message_count=_stored_count(data.get("ended_message_count")),
             last_activity=_ensure_utc(datetime.fromisoformat(last_activity_raw)),

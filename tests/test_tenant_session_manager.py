@@ -240,7 +240,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
         await manager.terminate_session(session.key, "manual_admin_termination")
 
     assert session.status is SessionStatus.PENDING
-    assert await store.load(session.key) is session
+    assert await store.load(session.key) == session
     assert (await store.load(session.key)).status is SessionStatus.PENDING
     assert manager.active_admin_sessions == {"tenant-a": {session.id}}
     assert polling_client.terminated is False
@@ -365,14 +365,13 @@ async def test_an_ended_session_without_a_termination_time_fails_closed(
 ) -> None:
     """A record that cannot be dated cannot be shown to be inside the window.
 
-    The store's record, not the manager's cache: terminate_session mutates the
-    cached object in place while the store keeps the `replace()` copy it
-    committed, so the two are distinct objects afterwards, and the store's is
-    the one the window is judged against.
+    Corrupt the persisted record directly: store reads return independent
+    snapshots, and the window must be judged against persistence.
     """
     session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.terminate_session(session.key, "manual_admin_termination")
-    (await manager.store.load(session.key)).terminated_at = None
+    assert isinstance(manager.store, MemoryTenantSessionStore)
+    manager.store._sessions[session.key].terminated_at = None
 
     assert await manager.resolve_ended_session(session.id, within=GRACE) is None
 
