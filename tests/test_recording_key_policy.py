@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.dependencies import get_studio_runtime_flow
+from services.api_gateway.studio_runtime_token import StudioTokenError
 from services.api_gateway.studio_v1 import StudioV1ClientError
 from services.api_gateway.studio_v2 import StudioContractError
 from services.api_gateway.tenant_context import require_studio_tenant_context
@@ -58,6 +59,8 @@ def test_staff_reads_effective_policy(call, value):
     [
         StudioV1ClientError("studio_runtime_network_error", retryable=True),
         StudioContractError("invalid"),
+        StudioTokenError("studio_token_network_error", retryable=True),
+        StudioTokenError("studio_token_authentication_failed", retryable=False),
     ],
 )
 def test_unavailable_policy_disables_file_workflow(call, value):

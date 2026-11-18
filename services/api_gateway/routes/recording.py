@@ -27,6 +27,7 @@ from ..recording.permissions import (
 from ..recording.reenrolment import KeyReenrolment, ReenrolmentError
 from ..recording.repository import KeyAlreadyEnrolledError, RecordingStorageUnavailable
 from ..studio_runtime_flow import StudioRuntimeFlow
+from ..studio_runtime_token import StudioTokenError
 from ..studio_v1 import StudioV1ClientError
 from ..studio_v2 import StudioContractError
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
@@ -192,7 +193,7 @@ async def key_policy(
         return {"passphrase_file_enabled": False}
     try:
         runtime = await flow.client.fetch(context.tenant_id, f"key-policy-{uuid.uuid4().hex}")
-    except (StudioV1ClientError, StudioContractError):
+    except (StudioV1ClientError, StudioContractError, StudioTokenError):
         return {"passphrase_file_enabled": False}
     policy = runtime.policy.recording
     return {
