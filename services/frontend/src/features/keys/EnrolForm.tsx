@@ -11,7 +11,10 @@ const ERROR_KEYS: Record<Exclude<EnrolmentError, 'stepUp'>, string> = {
   failed: 'admin.keys.enrolFailed',
 };
 
-export function EnrolForm({ owner }: Readonly<{ owner: KeyOwner }>) {
+export function EnrolForm({
+  owner,
+  onPassphraseEntered,
+}: Readonly<{ owner: KeyOwner; onPassphraseEntered?: (passphrase: string) => void }>) {
   const { t } = useTranslation();
   const { submit, error, pending } = useEnrolment(owner);
 
@@ -24,7 +27,8 @@ export function EnrolForm({ owner }: Readonly<{ owner: KeyOwner }>) {
       action={t('admin.keys.enrolAction')}
       pending={pending}
       error={error === null ? null : t(ERROR_KEYS[error])}
-      onSubmit={(passphrase, confirmation) => void submit(passphrase, confirmation)}
+      onSubmit={submit}
+      onPassphraseEntered={onPassphraseEntered}
     />
   );
 }

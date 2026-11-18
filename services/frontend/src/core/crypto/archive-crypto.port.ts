@@ -108,6 +108,11 @@ export interface ArchiveCrypto {
 export interface KeyVault {
   current(): UnlockedKeys | null;
   hold(keys: UnlockedKeys): void;
+  /** Invalidated by every lock, even while the vault is already empty. */
+  generation(): number;
+  /** Invalidate when the gateway serves a different enrolled key, including its version. */
+  observeKey(key: { fingerprint: Bytes; keyVersion: number } | null): void;
+  holdIfCurrent(keys: UnlockedKeys, generation: number): boolean;
   lock(): void;
   subscribe(listener: () => void): () => void;
 }

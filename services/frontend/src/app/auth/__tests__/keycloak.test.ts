@@ -11,6 +11,9 @@ const { construct, clients } = vi.hoisted(() => ({
     realmAccess?: { roles?: string[] };
     tokenParsed?: Record<string, unknown>;
     onAuthRefreshSuccess?: () => void;
+    onAuthRefreshError?: () => void;
+    onAuthLogout?: () => void;
+    onTokenExpired?: () => void;
     loginRequired: boolean;
     init: ReturnType<typeof vi.fn>;
     updateToken: ReturnType<typeof vi.fn>;
@@ -96,15 +99,30 @@ describe('tenant Keycloak session', () => {
   it.each([
     ['unresolved claims', undefined],
     ['missing permissions', { studio_tenant_id: kassel.id }],
-    ['read permission only', { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.read'] }],
+    [
+      'read permission only',
+      { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.read'] },
+    ],
     ['a role only', { studio_tenant_id: kassel.id, ssf_roles: ['tenant_admin'] }],
-    ['another tenant', { studio_tenant_id: fulda.id, ssf_permissions: ['ssf.configuration.tenant.manage'] }],
+    [
+      'another tenant',
+      { studio_tenant_id: fulda.id, ssf_permissions: ['ssf.configuration.tenant.manage'] },
+    ],
     ['no tenant', { ssf_permissions: ['ssf.configuration.tenant.manage'] }],
-    ['a scalar permission', { studio_tenant_id: kassel.id, ssf_permissions: 'ssf.configuration.tenant.manage' }],
-    ['a malformed permission list', { studio_tenant_id: kassel.id, ssf_permissions: [null, 'ssf.configuration.tenant.manage'] }],
+    [
+      'a scalar permission',
+      { studio_tenant_id: kassel.id, ssf_permissions: 'ssf.configuration.tenant.manage' },
+    ],
+    [
+      'a malformed permission list',
+      { studio_tenant_id: kassel.id, ssf_permissions: [null, 'ssf.configuration.tenant.manage'] },
+    ],
   ])('hides administration for %s', async (_reason, claims) => {
     const auth = await import('../keycloak');
-    await auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
+    await auth.requireKeycloakLogin(config, {
+      ...kassel,
+      studioUrl: 'https://smartcity.dialog.kassel.de/',
+    });
     clients[0].tokenParsed = claims;
     expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
   });
@@ -112,8 +130,14 @@ describe('tenant Keycloak session', () => {
   it('hides administration until authentication resolves and after logout', async () => {
     const auth = await import('../keycloak');
     expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
-    const pending = auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
-    clients[0].tokenParsed = { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    const pending = auth.requireKeycloakLogin(config, {
+      ...kassel,
+      studioUrl: 'https://smartcity.dialog.kassel.de/',
+    });
+    clients[0].tokenParsed = {
+      studio_tenant_id: kassel.id,
+      ssf_permissions: ['ssf.configuration.tenant.manage'],
+    };
     expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
     await pending;
     expect(auth.getStudioAdministrationUrl(kassel.id)).toBe('https://smartcity.dialog.kassel.de/');
@@ -126,21 +150,39 @@ describe('tenant Keycloak session', () => {
 
   it('uses only the current tenant destination and never guesses a missing URL', async () => {
     const auth = await import('../keycloak');
-    await auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
-    clients[0].tokenParsed = { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    await auth.requireKeycloakLogin(config, {
+      ...kassel,
+      studioUrl: 'https://smartcity.dialog.kassel.de/',
+    });
+    clients[0].tokenParsed = {
+      studio_tenant_id: kassel.id,
+      ssf_permissions: ['ssf.configuration.tenant.manage'],
+    };
     expect(auth.getStudioAdministrationUrl(fulda.id)).toBeNull();
     await auth.requireKeycloakLogin(config, fulda);
     expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
-    clients[1].tokenParsed = { studio_tenant_id: fulda.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    clients[1].tokenParsed = {
+      studio_tenant_id: fulda.id,
+      ssf_permissions: ['ssf.configuration.tenant.manage'],
+    };
     expect(auth.getStudioAdministrationUrl(fulda.id)).toBeNull();
-    await auth.requireKeycloakLogin(config, { ...fulda, studioUrl: 'https://fulda.dialog.kassel.de/' });
+    await auth.requireKeycloakLogin(config, {
+      ...fulda,
+      studioUrl: 'https://fulda.dialog.kassel.de/',
+    });
     expect(auth.getStudioAdministrationUrl(fulda.id)).toBe('https://fulda.dialog.kassel.de/');
   });
 
   it('notifies navigation after refreshed permissions and removes it on refresh failure', async () => {
     const auth = await import('../keycloak');
-    await auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
-    clients[0].tokenParsed = { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    await auth.requireKeycloakLogin(config, {
+      ...kassel,
+      studioUrl: 'https://smartcity.dialog.kassel.de/',
+    });
+    clients[0].tokenParsed = {
+      studio_tenant_id: kassel.id,
+      ssf_permissions: ['ssf.configuration.tenant.manage'],
+    };
     const destinations: Array<string | null> = [];
     const unsubscribe = auth.subscribeToKeycloakAuthorization(() => {
       destinations.push(auth.getStudioAdministrationUrl(kassel.id));
@@ -300,5 +342,77 @@ describe('tenant Keycloak session', () => {
       redirectUri: `${globalThis.location.origin}/login`,
     });
     expect(await auth.getAdminAccessToken()).toBeNull();
+  });
+});
+
+describe('Keycloak termination events', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    clients.length = 0;
+  });
+
+  it.each(['onAuthRefreshError', 'onAuthLogout'] as const)(
+    'publishes detected termination from Keycloak %s',
+    async (event) => {
+      const auth = await import('../keycloak');
+      await auth.requireKeycloakLogin(config, kassel);
+      const expired = vi.fn();
+      const stop = auth.subscribeToKeycloakExpiration(expired);
+      expect(clients.at(-1)?.[event]).toBeTypeOf('function');
+      clients.at(-1)?.[event]?.();
+      expect(auth.getAdminIdentity()).toBeNull();
+      expect(expired).toHaveBeenCalledOnce();
+      stop();
+    }
+  );
+
+  it('refreshes an expired access token without ending a valid session', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, kassel);
+    const expired = vi.fn();
+    const stop = auth.subscribeToKeycloakExpiration(expired);
+    const client = clients.at(-1)!;
+    client.updateToken.mockClear();
+    expect(client.onTokenExpired).toBeTypeOf('function');
+    client.onTokenExpired?.();
+    await vi.waitFor(() => expect(client.updateToken).toHaveBeenCalledWith(30));
+    expect(expired).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('publishes initial login before same-identity refresh so the tab stays unlocked', async () => {
+    const auth = await import('../keycloak');
+    const { followKeycloakIdentity } = await import('../key-vault-session');
+    const { createKeyVault } = await import('@/core/crypto/key-vault');
+    const vault = createKeyVault();
+    const stop = followKeycloakIdentity(vault);
+    const login = auth.requireKeycloakLogin(config, kassel);
+    clients[0].tokenParsed = { sub: 'alice' };
+    await login;
+    const keys = {
+      fingerprint: new Uint8Array([1]),
+    } as import('@/core/crypto/archive-crypto.port').UnlockedKeys;
+    vault.hold(keys);
+    const generation = vault.generation();
+    clients[0].onAuthRefreshSuccess?.();
+    expect(vault.current()).toBe(keys);
+    expect(vault.generation()).toBe(generation);
+    stop();
+  });
+
+  it('does not report an expired session when deliberately switching tenants', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, kassel);
+    const expired = vi.fn();
+    const stop = auth.subscribeToKeycloakExpiration(expired);
+    const previous = clients[0];
+    previous.clearToken.mockImplementation(() => {
+      previous.authenticated = false;
+      previous.token = '';
+      previous.onAuthLogout?.();
+    });
+    expect(await auth.requireKeycloakLogin(config, fulda)).toBe(true);
+    expect(expired).not.toHaveBeenCalled();
+    stop();
   });
 });

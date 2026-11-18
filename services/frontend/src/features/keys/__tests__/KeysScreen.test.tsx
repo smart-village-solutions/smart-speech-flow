@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAdminIdentity, hasFreshStepUp, requestStepUp } from '@/app/auth/keycloak';
@@ -9,6 +9,8 @@ import type { RecordingKeysRepository } from '@/domain/recording/recording.repos
 import type { OwnKey } from '@/domain/recording/recording.types';
 import { KeysScreen } from '@/features/keys/KeysScreen';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { passphraseFileText } from '../passphrase-file';
+import * as passphraseFiles from '../passphrase-file';
 
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
@@ -35,6 +37,7 @@ const ownKey: OwnKey = {
 
 function render(
   overrides: {
+    fileEnabled?: boolean;
     enrolled?: OwnKey | null;
     enrol?: RecordingKeysRepository['enrol'];
     unlock?: ArchiveCrypto['unlock'];
@@ -44,11 +47,20 @@ function render(
   const keyVault = createKeyVault();
   if (overrides.unlocked) keyVault.hold(overrides.unlocked);
   const remember = vi.fn();
+  let enrolled = overrides.enrolled ?? null;
   const recordingKeys: RecordingKeysRepository = {
-    ownKey: vi.fn().mockResolvedValue(overrides.enrolled ?? null),
-    enrol: overrides.enrol ?? vi.fn().mockResolvedValue({ fingerprint: keys.fingerprint, fingerprintDisplay: 'x' }),
+    passphraseFileEnabled: vi.fn().mockResolvedValue(overrides.fileEnabled ?? false),
+    ownKey: vi.fn(async () => enrolled),
+    enrol:
+      overrides.enrol ??
+      vi.fn(async () => {
+        enrolled = ownKey;
+        return { fingerprint: keys.fingerprint, fingerprintDisplay: 'x' };
+      }),
     reenrol: vi.fn(),
-    reenrolmentImpact: vi.fn().mockResolvedValue({ custodian: false, k: null, usableAfter: null, pending: null }),
+    reenrolmentImpact: vi
+      .fn()
+      .mockResolvedValue({ custodian: false, k: null, usableAfter: null, pending: null }),
   };
   const archiveCrypto: ArchiveCrypto = {
     createKeys: vi.fn().mockResolvedValue({ blob: '{"v":1}', unlocked: keys }),
@@ -96,7 +108,9 @@ describe('KeysScreen', () => {
     await userEvent.clear(screen.getByLabelText('Passphrase wiederholen'));
     await typePassphrase('Passphrase wiederholen', 'something else entirely');
     await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
-    expect(await screen.findByText('Die beiden Eingaben stimmen nicht überein.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Die beiden Eingaben stimmen nicht überein.')
+    ).toBeInTheDocument();
     expect(archiveCrypto.createKeys).not.toHaveBeenCalled();
   });
 
@@ -105,13 +119,21 @@ describe('KeysScreen', () => {
     await typePassphrase('Passphrase', STRONG);
     await typePassphrase('Passphrase wiederholen', STRONG);
     await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
-    expect(await screen.findByText('abab abab abab abab abab abab abab abab abab abab')).toBeInTheDocument();
+    expect(
+      await screen.findByText('abab abab abab abab abab abab abab abab abab abab')
+    ).toBeInTheDocument();
     expect(recordingKeys.enrol).toHaveBeenCalledWith(keys, '{"v":1}');
     expect(keyVault.current()).toBe(keys);
   });
 
   it('falls back to the step-up prompt when the gateway asks for it', async () => {
-    render({ enrol: vi.fn().mockRejectedValue(new AppError('validation', { status: 403, serverCode: 'STEP_UP_REQUIRED' })) });
+    render({
+      enrol: vi
+        .fn()
+        .mockRejectedValue(
+          new AppError('validation', { status: 403, serverCode: 'STEP_UP_REQUIRED' })
+        ),
+    });
     await typePassphrase('Passphrase', STRONG);
     await typePassphrase('Passphrase wiederholen', STRONG);
     await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
@@ -123,7 +145,9 @@ describe('KeysScreen', () => {
     const { keyVault } = render({ enrolled: ownKey, unlock });
     await typePassphrase('Passphrase', 'wrong one');
     await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
-    expect(await screen.findByText('Diese Passphrase öffnet die Schlüssel nicht.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Diese Passphrase öffnet die Schlüssel nicht.')
+    ).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText('Passphrase'));
     await typePassphrase('Passphrase', STRONG);
     await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
@@ -134,7 +158,13 @@ describe('KeysScreen', () => {
   });
 
   it('asks for a verified email address when the gateway refuses enrolment without one', async () => {
-    render({ enrol: vi.fn().mockRejectedValue(new AppError('validation', { status: 409, serverCode: 'EMAIL_NOT_VERIFIED' })) });
+    render({
+      enrol: vi
+        .fn()
+        .mockRejectedValue(
+          new AppError('validation', { status: 409, serverCode: 'EMAIL_NOT_VERIFIED' })
+        ),
+    });
     await typePassphrase('Passphrase', STRONG);
     await typePassphrase('Passphrase wiederholen', STRONG);
     await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
@@ -152,5 +182,108 @@ describe('KeysScreen', () => {
     const { keyVault } = render({ enrolled: ownKey, unlocked: keys });
     expect(await screen.findByRole('button', { name: 'Sperren' })).toBeInTheDocument();
     expect(keyVault.current()).toBe(keys);
+  });
+  it('offers no file workflow when disabled', async () => {
+    render({ enrolled: ownKey });
+    await screen.findByRole('button', { name: 'Entsperren' });
+    expect(screen.queryByLabelText('Passphrase aus TXT-Datei laden')).not.toBeInTheDocument();
+    await typePassphrase('Passphrase', STRONG);
+    await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
+    await screen.findByRole('button', { name: 'Sperren' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('offers an explicit local backup after successful unlocking', async () => {
+    const download = vi.spyOn(passphraseFiles, 'downloadPassphrase').mockImplementation(() => {});
+    render({ enrolled: ownKey, fileEnabled: true });
+    await typePassphrase('Passphrase', STRONG);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
+    expect(await screen.findByRole('dialog', { name: 'Passphrase sichern' })).toBeInTheDocument();
+    expect(download).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'TXT-Datei herunterladen' }));
+    expect(download).toHaveBeenCalledWith(STRONG);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    download.mockRestore();
+  });
+
+  it('offers backup after creating personal keys', async () => {
+    render({ fileEnabled: true });
+    await typePassphrase('Passphrase', STRONG);
+    await typePassphrase('Passphrase wiederholen', STRONG);
+    await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
+    expect(await screen.findByRole('dialog', { name: 'Passphrase sichern' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Jetzt nicht' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not offer backup after an incorrect passphrase', async () => {
+    render({
+      enrolled: ownKey,
+      fileEnabled: true,
+      unlock: vi.fn().mockRejectedValue(new Error('wrong')),
+    });
+    await typePassphrase('Passphrase', 'wrong');
+    await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
+    await screen.findByText('Diese Passphrase öffnet die Schlüssel nicht.');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('loads a TXT passphrase locally and unlocks only after confirmation', async () => {
+    const { archiveCrypto } = render({ enrolled: ownKey, fileEnabled: true });
+    const fileInput = await screen.findByLabelText('Passphrase aus TXT-Datei laden');
+    await userEvent.upload(
+      fileInput,
+      new File([passphraseFileText(STRONG)], 'backup.txt', { type: 'text/plain' })
+    );
+    await waitFor(() => expect(screen.getByLabelText('Passphrase')).toHaveValue(STRONG));
+    expect(archiveCrypto.unlock).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
+    expect(archiveCrypto.unlock).toHaveBeenCalledWith(
+      ownKey.blob,
+      STRONG,
+      expect.anything(),
+      ownKey
+    );
+  });
+
+  it('rejects malformed imported files without unlocking', async () => {
+    const { archiveCrypto } = render({ enrolled: ownKey, fileEnabled: true });
+    await userEvent.upload(
+      await screen.findByLabelText('Passphrase aus TXT-Datei laden'),
+      new File(['wrong format'], 'backup.txt', { type: 'text/plain' })
+    );
+    expect(
+      await screen.findByText(
+        'Diese Datei ist keine gültige Passphrase-Sicherung oder ist zu groß.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Passphrase')).toHaveValue('');
+    expect(archiveCrypto.unlock).not.toHaveBeenCalled();
+  });
+
+  it('discards an open backup offer when the vault is locked', async () => {
+    const { keyVault } = render({ enrolled: ownKey, fileEnabled: true });
+    await typePassphrase('Passphrase', STRONG);
+    await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
+    await screen.findByRole('dialog', { name: 'Passphrase sichern' });
+    act(() => keyVault.lock());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Passphrase')).toHaveValue('');
+  });
+
+  it('allows dismissing backup with Escape without creating a file', async () => {
+    const download = vi.spyOn(passphraseFiles, 'downloadPassphrase').mockImplementation(() => {});
+    try {
+      render({ enrolled: ownKey, fileEnabled: true });
+      await typePassphrase('Passphrase', STRONG);
+      await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
+      await screen.findByRole('dialog', { name: 'Passphrase sichern' });
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(download).not.toHaveBeenCalled();
+    } finally {
+      download.mockRestore();
+    }
   });
 });

@@ -266,6 +266,7 @@ class RecordingPolicy(_StudioModel):
     """The tenant's `recording` block (spec §14), as Studio sends it (contract #612)."""
 
     enabled: bool
+    passphrase_file_enabled: bool = Field(default=False, alias="passphraseFileEnabled", strict=True)
     legal_basis: Literal["consent", "statutory"] = Field(alias="legalBasis")
     signature: Literal["off", "optional", "required"]
     id_check: Literal["off", "optional", "required"] = Field(alias="idCheck")

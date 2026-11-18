@@ -64,6 +64,7 @@ function render({
     lock();
   };
   const recordingKeys = {
+    passphraseFileEnabled: vi.fn().mockResolvedValue(false),
     ownKey: vi
       .fn()
       .mockResolvedValueOnce(ownKey)
@@ -199,11 +200,21 @@ describe('re-enrolment', () => {
 
   it('says to open the email link while confirmation is pending, and keeps the old key', async () => {
     const pending = sent;
-    const { keyVault } = render({ reenrol: vi.fn().mockResolvedValue(pending) });
+    const { recordingKeys, keyVault } = render({ reenrol: vi.fn().mockResolvedValue(pending) });
     await throughTheWarning();
+    // Keep the status read pending so the temporary post-submit message is observable.
+    let finishRead!: (value: ReturnType<typeof impact>) => void;
+    recordingKeys.reenrolmentImpact.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        })
+    );
     await submitNewPassphrase();
     expect(await screen.findByText(r.pending)).toBeInTheDocument();
     expect(keyVault.current()).toBe(old);
+    act(() => finishRead(impact(waiting)));
+    expect(await screen.findByText(until)).toBeInTheDocument();
   });
 
   it.each([
