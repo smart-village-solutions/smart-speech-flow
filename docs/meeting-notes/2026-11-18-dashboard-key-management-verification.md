@@ -14,6 +14,9 @@ reporting. Account navigation preserves a running conversation. Personal
 Zugangsschlüssel remain passphrases used locally to unlock encrypted personal
 key blobs, including usable historical versions. Ordinary replacement retains
 historical access; explicit revocation and leaving remain separate operations.
+An additional grant for a replacement version preserves selection of an older
+usable grant; the server resolves the selected envelopes and full key coverage.
+Review assignments retain their exact signing version.
 
 Studio generates and uses organisation private keys locally. Activation and
 exact-scope access transfers use the shared Gateway contracts, canonical
@@ -57,6 +60,35 @@ Studio custody/exchange/UI and cross-repository integration. Regression tests
 cover the review findings, including retained-session metadata during storage
 reconnection, historical-only leavers, mixed-generation retention, partial
 transfer coverage and responses arriving after a preparation deadline.
+
+The final Gateway recording suites passed 1,225 unit tests and 393 isolated
+PostgreSQL tests. Six external SMTP cases were skipped because Mailpit was not
+configured. The coordinator's dashboard/reset checks additionally passed 20
+unit/route tests and ten isolated PostgreSQL cases. Studio passed 308 plugin
+tests, 2,734 auth-runtime tests and 353 SDK tests, with types, lint and the
+server-runtime gate passing. Studio's separate PostgreSQL suite passed 15 cases.
+Its independent follow-up review reran 30 focused auth, page and schema tests.
+The final SSF frontend passed all 1,823 Vitest cases and 20 Chromium scenarios,
+plus lint and the production build. The browser scenarios cover desktop and
+mobile widths. The build retains the existing large-chunk advisory.
+
+The main reusable commands are:
+
+```sh
+.venv/bin/python -m pytest -q -o log_cli=false tests/test_recording_*.py
+# Only against an explicitly configured disposable recording database:
+.venv/bin/python -m pytest -q -o log_cli=false --run-integration tests/integration/test_recording_*.py
+# In services/frontend:
+npm test -- --maxWorkers=4
+npm run lint
+npm run build
+npx playwright test
+# In Studio:
+pnpm nx run plugin-ssf:test:unit --skipNxCache
+pnpm nx run auth-runtime:test:unit --skipNxCache
+pnpm nx run-many -p auth-runtime,plugin-ssf,plugin-sdk -t test:types lint
+pnpm check:server-runtime
+```
 
 ## Operational handoff
 

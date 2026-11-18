@@ -104,8 +104,9 @@ or an owner-checked metadata lookup and handle expiry while navigating.
 Opening a locked recording/review records a return target containing only the
 view and opaque recording/assignment identifier. After account unlock, return
 to that target, re-check current access and keep filters. Cancelling returns to
-the originating table. Existing step-up returns preserve this intent without
-putting passphrases or plaintext into URLs/storage.
+the originating table. Ordinary login after actual session expiry preserves
+this intent without putting passphrases or plaintext into URLs/storage.
+Authenticated actions do not trigger a second password/MFA challenge.
 
 Add `GET /api/admin/recording/verifications/{verification_id}/result` for an
 authenticated reviewer with current review permission reading their own

@@ -13,6 +13,12 @@ signing public keys SHALL remain available to verify existing decisions.
 - **THEN** version 1 remains retrievable as an encrypted blob and opens that recording after local passphrase unlock
 - **AND** new recording windows and new assignments use version 2
 
+#### Scenario: Additional transfer to a replacement version
+- **WHEN** a recording has a usable version-1 grant and receives an additional grant for the same user's version 2
+- **THEN** either authorized version remains selectable for the content keys it covers
+- **AND** the new grant does not hide access through the older passphrase
+- **AND** review decisions still require the assignment's exact usable version
+
 #### Scenario: Existing reviewer completes after replacement
 - **WHEN** a reviewer activates version 2 while a version-1 assignment is open
 - **THEN** the assignment remains available and its signed decision is verified against the still-usable assigned version 1
@@ -46,7 +52,7 @@ versions. Studio SHALL generate the P-256 organisation private key locally and
 provide an explicitly labelled unencrypted export/import in the versioned format
 specified in the design. Private organisation keys SHALL never be uploaded.
 Preparation SHALL not activate a key; activation SHALL require a saved-key
-confirmation, fresh MFA, manager permission, cryptographic possession proof and
+confirmation, a valid authenticated session, manager permission, cryptographic possession proof and
 an expected-active-key comparison. Replacement SHALL affect new recording
 windows while retaining older public metadata and associations.
 
@@ -82,7 +88,7 @@ including for admitted users who also hold reviewer permissions.
 
 ### Requirement: Individually authorized exact-scope access transfer
 Gateway SHALL require the explicit `ssf.recording.access.transfer` permission,
-fresh MFA and current tenant membership for transfer preparation and commit.
+a valid authenticated session and current tenant membership for transfer preparation and commit.
 Studio SHALL load the matching organisation key locally, verify signed source
 wraps and rewrap only selected content keys for a server-resolved active target
 key. Gateway SHALL bind commit to the exact prepared actor, tenant, source
@@ -131,14 +137,17 @@ proof of rewrapped content keys.
 Studio SHALL obtain a Gateway-audience tenant-realm user bearer through its scoped
 server session capability and configured RFC 8693 token exchange. Gateway SHALL
 validate signature, issuer, configured audience, subject, tenant and permission
-claims using existing user authentication and SHALL retain original MFA age.
+claims using existing user authentication. Where present, original MFA context
+SHALL be preserved truthfully; its absence or age SHALL NOT introduce an
+action-specific authentication challenge.
 Neither raw actor headers nor a client-credentials token SHALL substitute for the
 user authority. Token exchange configuration and cross-application tests SHALL
 be delivered before enabling this flow.
 
-#### Scenario: Exchange does not refresh MFA
-- **WHEN** a Studio user exchanges a token whose original MFA is too old
-- **THEN** Gateway requires a new step-up rather than treating exchange time as authentication time
+#### Scenario: Exchange preserves the admitted session
+- **WHEN** a Studio user exchanges a valid session token with older MFA or missing optional authentication-context claims
+- **THEN** the exchange preserves the original identity and any supplied context without inventing new assurance
+- **AND** authorized actions proceed without a new password or MFA challenge
 
 #### Scenario: Service credential without user
 - **WHEN** a service credential or unverified actor header calls organisation or transfer APIs

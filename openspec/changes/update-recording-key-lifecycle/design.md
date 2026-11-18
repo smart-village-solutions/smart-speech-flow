@@ -29,8 +29,8 @@ owner, organisation transfer and review assignment. Closing an assignment
 removes its grant and any wrap no remaining grant needs; it does not remove an
 independent owner/transfer grant for that version.
 
-Normal re-enrolment keeps fresh MFA and E-Mail confirmation. Confirmation
-atomically supersedes the active version and activates the pending version;
+Normal re-enrolment keeps verified user authentication and E-Mail confirmation.
+Confirmation atomically supersedes the active version and activates the pending version;
 it does not delete existing wraps/blobs or withdraw reviews. An ordinary
 replacement is not a lost-key revocation. Actual revocation and leaving remain
 explicit destructive access operations with separate authorization and audit.
@@ -56,8 +56,20 @@ proposal. Its passphrase-file policy and other invalidation conditions remain
 applicable; actual revocation still invalidates the affected version.
 
 Archive access returns `requiredKeyVersions` and a versioned wrap for each
-accessible content key. Review records return `reviewerKeyVersion` and the
-corresponding fingerprint. A decision is verified against that still-usable
+accessible content key. Ordinary archive open additionally returns
+`availableKeyVersions`, the union of versions backed by current usable grants.
+Its optional positive-integer `preferred_key_version` query can be repeated
+as an ordered list of at most 100 values. For each content key the server selects the first listed
+version with a current usable grant, falling back to the highest usable version
+where necessary. A single query value retains the same behavior.
+`requiredKeyVersions` describes the selected wraps,
+including any fallback; selecting a version does not confer access. SSF can use
+all already unlocked versions or let the user select an available older version
+first. Independent older versions can therefore cover different recording windows
+even after a new version is granted access to those windows.
+Without a preference the highest usable version remains the default. Review
+opens do not accept this substitution. Review records return
+`reviewerKeyVersion` and the corresponding fingerprint. A decision is verified against that still-usable
 assigned version rather than whichever version is active today. New review
 assignments and new recording windows select the current active version.
 A recording window pins its initial employee/organisation recipients. Later
@@ -75,9 +87,11 @@ configured `KEYCLOAK_AUDIENCE`, effective `ssf_permissions`, validated tenant
 context and user `sub`. Organisation-key lifecycle mutations require
 `ssf.configuration.tenant.manage`; transfers require the distinct individual
 `ssf.recording.access.transfer`. Organisation administration alone never grants
-recording content access. Preparation and commit both require existing fresh
-MFA (`acr` and original `auth_time`) and recheck effective permission/tenant
-membership. Current target identity and key bindings are rechecked at commit.
+recording content access. Preparation and commit require a valid authenticated
+session and recheck effective permission/tenant membership. The tenant login
+policy determines MFA at login; actions do not impose a new challenge or a
+maximum age for optional authentication-context claims. Current target identity
+and key bindings are rechecked at commit.
 Studio exposes transfer as an individually assigned permission, excluded from
 automatic `system_admin` inheritance. Candidate reads require transfer permission;
 organisation public-key metadata requires management or transfer permission.
@@ -98,7 +112,9 @@ implementation deliverables. Exchanged tokens preserve original `sub`, tenant,
 `acr` and `auth_time`; exchange cannot renew MFA. The scoped capability sends
 the bearer only to the configured Gateway; neither plugins nor browsers receive
 it. No client-credentials or raw actor-header fallback is allowed. Unsupported
-exchange or missing claims returns a safe unavailable/step-up result. Tests
+exchange or missing required identity/audience claims returns a safe unavailable
+result. Missing optional `acr`/`auth_time` claims do not block actions; genuinely
+expired or ended sessions use ordinary login. Tests
 must prove the configured issuer supports this flow before release.
 
 Keycloak standard token exchange V2 is same-realm: Studio's session, confidential
@@ -118,7 +134,8 @@ fields use unpadded base64url. Generated protocol entity IDs are canonical
 lowercase UUID strings; tenant IDs and user subjects retain their existing
 opaque identifiers. Versions are positive integers; timestamps are UTC RFC 3339.
 Personal enrolment/replacement retains existing personal recording-key
-permissions, fresh MFA and verified E-Mail; it does not require tenant management.
+permissions, valid user authentication and verified E-Mail; it does not require
+tenant management.
 
 An `OrganisationKey` is
 `{keyId,version,publicKey,fingerprint,state,createdAt,activatedAt}` where state
