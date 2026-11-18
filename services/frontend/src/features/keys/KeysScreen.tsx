@@ -167,6 +167,7 @@ function KeyActions({
 }
 
 interface KeysScreenProps {
+  children?: React.ReactNode;
   onBack: () => void;
   onSignOut: () => void;
   requestedVersion?: number;
@@ -177,6 +178,7 @@ interface KeysScreenProps {
 
 /** Personal access passphrase, historical key versions and external account settings. */
 export function KeysScreen({
+  children,
   onBack,
   onSignOut,
   requestedVersion,
@@ -216,6 +218,7 @@ export function KeysScreen({
             {t('admin.menu.accountSettings')}
           </a>
         )}
+        {children}
         <KeysPanel requestedVersion={requestedVersion} onUnlocked={onUnlocked} />
       </div>
     </ScreenShell>

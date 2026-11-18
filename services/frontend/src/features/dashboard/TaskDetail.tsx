@@ -1,3 +1,4 @@
+import { PreferredKeyVersions } from '@/features/archive/preferredKeyVersions';
 import { UnlockSigningVersion } from './unlockSigningVersion';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -121,10 +122,37 @@ export function ProtectedDetail({
   const owner = getAdminIdentity();
   const inventory = useKeyInventory(owner);
   useVaultRevision();
+  const [preferredVersion, setPreferredVersion] = useState<number>();
+  const [advertised, setAdvertised] = useState<number[]>([]);
   const [signingVersion, setSigningVersion] = useState<number>();
-  const [check, setCheck] = useState(0);
+  const usableKeys = (inventory.data?.versions ?? []).filter(
+    (k) => k.state === 'active' || k.state === 'superseded'
+  );
+  const usableVersions = new Set(usableKeys.map((k) => k.version));
+  // A successful unlock must revalidate the chosen envelopes before mounting the viewer.
+  const heldVersions = owner
+    ? usableKeys.filter((k) => keyVault.version(owner, k.version)).map((k) => k.version)
+    : [];
+  const heldChoices = heldVersions.filter((v) => advertised.includes(v)).sort((a, b) => b - a);
+  const ordered =
+    preferredVersion !== undefined &&
+    usableVersions.has(preferredVersion) &&
+    advertised.includes(preferredVersion)
+      ? [preferredVersion, ...heldChoices.filter((v) => v !== preferredVersion)]
+      : heldChoices;
+  // Gateway accepts up to 100 ranked personal versions per ordinary archive read.
+  const preferences = ordered.length ? ordered.slice(0, 100) : undefined;
   const access = useQuery({
-    queryKey: ['dashboard', 'access', target.kind, target.id, check],
+    queryKey: [
+      'dashboard',
+      'access',
+      target.kind,
+      target.id,
+      preferences,
+      heldVersions,
+      keyVault.generation(),
+    ],
+    enabled: !!owner && !!inventory.data,
     gcTime: 0,
     staleTime: 0,
     queryFn: async () => {
@@ -138,15 +166,19 @@ export function ProtectedDetail({
           throw new Error('Unavailable');
         return {
           versions: [record.reviewerKeyVersion],
+          alternatives: [],
+          preferences: undefined,
           fingerprint: record.reviewerFingerprint,
           employeeSub: opened.conversation.employeeSub,
         };
       }
-      const opened = await archive.open(target.id);
+      const opened = await archive.open(target.id, preferences);
       if (opened.conversation.conversationId !== target.id || !opened.requiredKeyVersions?.length)
         throw new Error('Unavailable');
       return {
         versions: opened.requiredKeyVersions,
+        alternatives: opened.availableKeyVersions ?? [],
+        preferences,
         employeeSub: opened.conversation.employeeSub,
         fingerprint: null,
       };
@@ -165,32 +197,66 @@ export function ProtectedDetail({
         <p role="status">{t('admin.tasks.loading')}</p>
       </StaffViewShell>
     );
+  if (
+    advertised.length !== needs.alternatives.length ||
+    advertised.some((v, i) => v !== needs.alternatives[i])
+  ) {
+    setAdvertised(needs.alternatives);
+  }
+  const alternatives = needs.alternatives.filter((v) => usableVersions.has(v));
+  const locked = needs.versions.filter((v) => !keyVault.version(owner, v));
+  const lockedVersion =
+    preferredVersion !== undefined && locked.includes(preferredVersion)
+      ? preferredVersion
+      : locked[0];
+  if (lockedVersion !== undefined && preferredVersion === undefined) {
+    const held = [...alternatives].reverse().find((v) => keyVault.version(owner, v));
+    if (held !== undefined) setPreferredVersion(held);
+  }
+  const choice = alternatives.length > 1 && !signingVersion && (
+    <label className="flex flex-wrap items-center gap-2">
+      {t('admin.tasks.preferredKeyVersion')}
+      <select
+        value={
+          preferredVersion && alternatives.includes(preferredVersion)
+            ? preferredVersion
+            : Math.max(...needs.versions)
+        }
+        onChange={(event) => setPreferredVersion(Number(event.target.value))}
+      >
+        {alternatives.map((v) => (
+          <option key={v} value={v}>
+            {v}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
   const unavailable = needs.versions.some(
     (version) =>
-      !inventory.data.versions.some(
+      !usableKeys.some(
         (k) =>
           k.version === version &&
-          (k.state === 'active' || k.state === 'superseded') &&
           (!needs.fingerprint || equalBytes(k.fingerprint, needs.fingerprint))
       )
   );
   if (unavailable)
     return (
       <StaffViewShell {...nav}>
+        {choice}
         <p role="alert">{t('admin.tasks.contact')}</p>
       </StaffViewShell>
     );
-  const missing = signingVersion ?? needs.versions.find((v) => !keyVault.version(owner, v));
+  const missing = signingVersion ?? lockedVersion;
   if (missing)
     return (
       <KeysScreen
         {...nav}
         requestedVersion={missing}
-        onUnlocked={() => {
-          setSigningVersion(undefined);
-          setCheck((c) => c + 1);
-        }}
-      />
+        onUnlocked={() => setSigningVersion(undefined)}
+      >
+        {choice}
+      </KeysScreen>
     );
   const unlocked = keyVault.version(owner, needs.versions[0]);
   if (!unlocked) return null;
@@ -199,13 +265,16 @@ export function ProtectedDetail({
       {target.kind === 'review' ? (
         <ReviewScreen verificationId={target.id} unlocked={unlocked} onDone={onDone} />
       ) : (
-        <UnlockSigningVersion.Provider value={setSigningVersion}>
-          <ConversationViewer
-            conversationId={target.id}
-            employeeSub={needs.employeeSub}
-            unlocked={unlocked}
-          />
-        </UnlockSigningVersion.Provider>
+        <PreferredKeyVersions.Provider value={needs.preferences}>
+          {choice}
+          <UnlockSigningVersion.Provider value={setSigningVersion}>
+            <ConversationViewer
+              conversationId={target.id}
+              employeeSub={needs.employeeSub}
+              unlocked={unlocked}
+            />
+          </UnlockSigningVersion.Provider>
+        </PreferredKeyVersions.Provider>
       )}
     </StaffViewShell>
   );

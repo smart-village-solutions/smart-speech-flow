@@ -106,7 +106,7 @@ describe('ArchiveScreen', () => {
     expect(screen.getByText(de.admin.archive.verification.status.not_verified)).toBeInTheDocument();
     expect(screen.queryByText('Amira Haddad')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /29\.10\.2026/ }));
-    expect(archive.open).toHaveBeenCalledWith(row().conversationId);
+    expect(archive.open).toHaveBeenCalledWith(row().conversationId, undefined);
     expect(await screen.findByText(de.admin.archive.checking)).toBeInTheDocument();
   });
 
@@ -142,7 +142,7 @@ describe('ArchiveScreen', () => {
     served.conversation.employeeSub = 'bob';
     vi.mocked(archive.open).mockResolvedValue(served);
     await userEvent.click(await screen.findByText('Wiederhergestellt: Bob Employee'));
-    await waitFor(() => expect(archive.open).toHaveBeenCalledWith(recovered.conversationId));
+    await waitFor(() => expect(archive.open).toHaveBeenCalledWith(recovered.conversationId, undefined));
     // Checks start only for the employee the list named; bob's would be refused as alice's.
     await waitFor(() => expect(verifyConversation).toHaveBeenCalled());
   });

@@ -861,6 +861,7 @@
     "tasks": {
       "account": "Mein Konto",
       "keyIntro": "Ihr persönlicher Zugangsschlüssel ist die Passphrase für Ihre Aufzeichnungen und Prüfungen. Sie wird nur in diesem Tab verwendet.",
+      "preferredKeyVersion": "Bevorzugte Schlüsselversion",
       "keyVersion": "Schlüsselversion",
       "active": "Aktuelle Version",
       "superseded": "Frühere Version",

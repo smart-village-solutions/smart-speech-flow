@@ -203,10 +203,10 @@ describe('openConversation', () => {
       }
       return served(...args);
     });
-    const result = await openConversation(d, IDS.conversation, {} as UnlockedKeys);
+    const result = await openConversation({ ...d, preferredKeyVersions: [1, 2] }, IDS.conversation, {} as UnlockedKeys);
     if (result.status !== 'ready') throw new Error(result.status);
     expect(result.view.entries[0].state).toBe('ok');
-    expect(d.archive.open).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(d.archive.open).mock.calls).toEqual([[IDS.conversation, [1,2]], [IDS.conversation, [1,2]]]);
   });
 
   it('fails the open on a transient fetch error instead of calling an entry damaged', async () => {

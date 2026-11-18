@@ -29,6 +29,7 @@ const own = z.object({
 });
 
 const opened = z.object({
+  availableKeyVersions: z.array(z.number().int().positive()).optional(),
   requiredKeyVersions: z.array(z.number().int().positive()).optional(),
   verifications: z.array(record).default([]),
   conversation: z.object({
@@ -120,6 +121,10 @@ export function toOpened(body: unknown): OpenedConversation {
   const parsed = opened.parse(body);
   if (parsed.requiredKeyVersions) {
     const required = new Set(parsed.requiredKeyVersions);
+    const available = parsed.availableKeyVersions;
+    if (available && [...required].some((version) => !available.includes(version))) {
+      throw new Error('Required key version is unavailable');
+    }
     const seen = new Set<number>();
     for (const { wrap } of parsed.keys) {
       if (wrap === null) continue;
@@ -135,6 +140,7 @@ export function toOpened(body: unknown): OpenedConversation {
   }
   const c = parsed.conversation;
   return {
+    availableKeyVersions: parsed.availableKeyVersions,
     requiredKeyVersions: parsed.requiredKeyVersions,
     conversation: {
       conversationId: c.conversation_id,

@@ -861,6 +861,7 @@
     "tasks": {
       "account": "My account",
       "keyIntro": "Your personal access passphrase unlocks recordings and reviews in this tab.",
+      "preferredKeyVersion": "Preferred key version",
       "keyVersion": "Key version",
       "active": "Current version",
       "superseded": "Previous version",

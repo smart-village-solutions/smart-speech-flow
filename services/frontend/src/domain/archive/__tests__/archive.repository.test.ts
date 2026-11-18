@@ -49,6 +49,42 @@ describe('archive repository', () => {
     expect(params.get('started_before')).toBe('2026-10-29T10:00:00+00:00');
   });
 
+  it('sends the chosen personal version only on an archive open with a preference', async () => {
+    const preferences: string[][] = [];
+    server.use(
+      http.get(`${URL}/${ID}`, ({ request }) => {
+        const params = new globalThis.URL(request.url).searchParams;
+        expect([...params.keys()].every((key) => key === 'preferred_key_version')).toBe(true);
+        preferences.push(params.getAll('preferred_key_version'));
+        return HttpResponse.json({
+          conversation: {
+            conversation_id: ID,
+            employee_sub: 'alice',
+            legal_basis: 'consent',
+            started_at: 's',
+            ended_at: 'e',
+            retention_until: 'r',
+            legal_hold: false,
+            incomplete: false,
+            verification: { status: 'not_verified', approved: 0, not_approved: 0 },
+          },
+          entries: [],
+          windows: [],
+          stamps: [],
+          keys: [],
+          requiredKeyVersions: [],
+          availableKeyVersions: [1, 2],
+        });
+      })
+    );
+    const archive = repository();
+    await archive.open(ID);
+    await archive.open(ID, [1]);
+    const response = await archive.open(ID, [2, 1]);
+    expect(preferences).toEqual([[], ['1'], ['2', '1']]);
+    expect(response.availableKeyVersions).toEqual([1, 2]);
+  });
+
   it('fetches ciphertext as bytes, and says when an object is not stored yet', async () => {
     server.use(
       http.get(`${URL}/${ID}/objects/${ENTRY}/record.json`, () =>

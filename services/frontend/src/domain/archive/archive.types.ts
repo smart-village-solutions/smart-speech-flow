@@ -138,6 +138,7 @@ export interface KeyFacts {
 
 export interface OpenedConversation {
   requiredKeyVersions?: number[];
+  availableKeyVersions?: number[];
   conversation: ConversationFacts;
   windows: WindowFacts[];
   entries: ArchivedEntry[];

@@ -32,6 +32,7 @@ export type Opened =
     };
 
 export interface OpenDeps {
+  preferredKeyVersions?: readonly number[];
   assertCurrent?: () => void;
   keyForVersion?: (version: number) => UnlockedKeys | null;
   archive: ArchiveRepository;
@@ -55,7 +56,7 @@ async function fetchObject(
     return await deps.archive.object(conversationId, entryId, objectType);
   } catch (error) {
     if (!(error instanceof ConversationNotOpenError)) throw error;
-    await deps.archive.open(conversationId);
+    await deps.archive.open(conversationId, deps.preferredKeyVersions);
     return deps.archive.object(conversationId, entryId, objectType);
   }
 }
@@ -151,7 +152,7 @@ export async function openConversation(
   unlocked: UnlockedKeys,
   employeeSub: string = deps.identity.userSub
 ): Promise<Opened> {
-  const opened = await deps.archive.open(conversationId);
+  const opened = await deps.archive.open(conversationId, deps.preferredKeyVersions);
   const trust = opened.requiredKeyVersions
     ? await deps.archive.gatewaySigners()
     : await deps.archive.trust(deps.identity.tenantId);

@@ -55,7 +55,7 @@ export interface AmendmentPost {
 
 export interface ArchiveRepository {
   list(cursor?: ArchiveCursor): Promise<OwnConversation[]>;
-  open(conversationId: string): Promise<OpenedConversation>;
+  open(conversationId: string, preferredKeyVersions?: readonly number[]): Promise<OpenedConversation>;
   gatewaySigners(): Promise<Map<string, Bytes>>;
   trust(tenantId: string): Promise<ArchiveTrust>;
   object(conversationId: string, entryId: string, objectType: string): Promise<Bytes>;
@@ -83,8 +83,12 @@ export function createArchiveRepository(http: AxiosInstance): ArchiveRepository 
       return toOwnConversations((await http.get<unknown>(BASE, { params })).data);
     },
 
-    async open(conversationId) {
-      return toOpened((await http.get<unknown>(`${BASE}/${conversationId}`)).data);
+    async open(conversationId, preferredKeyVersions) {
+      const params = new URLSearchParams();
+      for (const version of preferredKeyVersions ?? []) {
+        params.append('preferred_key_version', String(version));
+      }
+      return toOpened((await http.get<unknown>(`${BASE}/${conversationId}`, { params })).data);
     },
 
     async gatewaySigners() {
