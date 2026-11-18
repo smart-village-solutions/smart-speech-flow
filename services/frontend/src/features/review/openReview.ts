@@ -105,16 +105,23 @@ export async function openReview(
   unlocked: UnlockedKeys
 ): Promise<ReviewState> {
   const { tenantId, userSub } = deps.identity;
-  const [review, trust] = await Promise.all([
-    deps.reviews.open(verificationId),
-    deps.archive.trust(tenantId),
-  ]);
+  const review = await deps.reviews.open(verificationId);
+  const trust = review.opened.requiredKeyVersions
+    ? await deps.archive.gatewaySigners()
+    : await deps.archive.trust(tenantId);
+  if (
+    review.opened.requiredKeyVersions &&
+    (deps.keyForVersion?.(review.record.reviewerKeyVersion) !== unlocked ||
+      !equalBytes(review.record.reviewerFingerprint, unlocked.fingerprint))
+  )
+    return { status: 'unavailable' };
   const conversationId = review.opened.conversation.conversationId;
   if (review.record.verificationId !== verificationId || review.record.reviewerSub !== userSub) {
     return refused(deps, conversationId, 'chain');
   }
   const requester = await trustedRequester(tenantId, review.record, review.requester);
   if (requester === null) return refused(deps, conversationId, 'wrap');
+  deps.assertCurrent?.();
   const verified = await verifyConversation({
     ...deps,
     ...deps.identity,
@@ -123,6 +130,7 @@ export async function openReview(
     unlocked,
     wrapSigners: new Map([[requester.sub, requester.sigPub]]),
   });
+  deps.assertCurrent?.();
   if (!verified.ok) return refused(deps, conversationId, verified.stage);
   const ready = await finishOpening(deps, review.opened, verified);
   if (ready.status !== 'ready') return { status: 'unavailable' };

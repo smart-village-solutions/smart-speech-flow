@@ -1,3 +1,4 @@
+import {holdTestKeys} from '@/test/personalKeys';
 import { vi } from 'vitest';
 import type { ArchiveCrypto, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { CeremonyCrypto, PaperDevice } from '@/core/crypto/ceremony-crypto.port';
@@ -131,7 +132,7 @@ export function render(
     ...overrides.crypto,
   };
   const keyVault = createKeyVault();
-  if (overrides.unlocked) keyVault.hold(keys);
+  if (overrides.unlocked) holdTestKeys(keyVault,keys);
   const paperDevice = createPaperDeviceHolder();
   if (overrides.device) paperDevice.hold(device);
   const remember = vi.fn();

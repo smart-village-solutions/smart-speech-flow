@@ -1,3 +1,4 @@
+import {holdTestKeys} from '@/test/personalKeys';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,7 +48,7 @@ interface RenderOptions {
 
 function render(options: RenderOptions) {
   const keyVault = createKeyVault();
-  if (options.unlocked !== null) keyVault.hold(options.unlocked);
+  if (options.unlocked !== null) holdTestKeys(keyVault,options.unlocked);
   const pages = [...(options.pages ?? [[row()]])];
   const archive = {
     list: vi.fn(() => Promise.resolve(pages.shift() ?? [])),

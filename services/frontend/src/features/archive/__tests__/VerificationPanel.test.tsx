@@ -114,7 +114,7 @@ function render(
       ),
   } as unknown as ArchiveCrypto;
   const recordingKeys = {
-    ownKey: vi.fn().mockResolvedValue({ keyVersion: 2 }),
+    versions: vi.fn().mockResolvedValue({ activeVersion: 2, versions: [{version:2,state:"active",fingerprint:new Uint8Array(32)}] }),
   } as unknown as RecordingKeysRepository;
   renderWithProviders(
     <VerificationPanel state={state} unlocked={{} as UnlockedKeys} onChanged={onChanged} />,

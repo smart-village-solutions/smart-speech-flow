@@ -1,6 +1,8 @@
 /** Type tags (spec A.2). Each is also the HKDF `info` of its payload. */
 export const TAGS = {
   object: 'ssf-rec/object/v1',
+  ckWrapV2: 'SSF-CK-WRAP-V2',
+  wrapSigV2: 'SSF-CK-WRAP-SIG-V2',
   ckWrap: 'ssf-rec/ck-wrap/v1',
   privateKey: 'ssf-rec/private-key/v1',
   share: 'ssf-rec/share/v1',
@@ -22,12 +24,13 @@ export const TAGS = {
 } as const;
 
 export type SealedType =
+  | typeof TAGS.ckWrapV2
   | typeof TAGS.ckWrap
   | typeof TAGS.share
   | typeof TAGS.subshare
   | typeof TAGS.partial;
 
-const SEALED_TYPES: readonly string[] = [TAGS.ckWrap, TAGS.share, TAGS.subshare, TAGS.partial];
+const SEALED_TYPES: readonly string[] = [TAGS.ckWrapV2, TAGS.ckWrap, TAGS.share, TAGS.subshare, TAGS.partial];
 
 export function isSealedType(value: string): value is SealedType {
   return SEALED_TYPES.includes(value);

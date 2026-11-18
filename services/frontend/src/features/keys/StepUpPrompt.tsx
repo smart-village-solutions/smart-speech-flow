@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { TaskStepUpReturn } from '@/features/dashboard/stepUpReturn';
+import { useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { requestStepUp } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
@@ -25,9 +26,13 @@ export function StepUpPrompt({ returnTo = KEYS_VIEW }: Readonly<StepUpPromptProp
   const { resume } = useServices();
   const [failed, setFailed] = useState(false);
 
+  const taskReturn = useContext(TaskStepUpReturn);
   const start = () => {
-    resume.remember(returnTo);
-    requestStepUp().catch(() => setFailed(true));
+    resume.remember(taskReturn ?? returnTo);
+    requestStepUp().catch(() => {
+      resume.take();
+      setFailed(true);
+    });
   };
 
   return (

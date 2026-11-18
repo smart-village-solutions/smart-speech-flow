@@ -1,3 +1,4 @@
+import { createKeyVault } from '@/core/crypto/key-vault';
 import { act, cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +26,7 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
+  hasPermission: (p: string) => p === 'ssf.recording.review',
 }));
 
 const r = de.admin.review;
@@ -97,7 +99,8 @@ async function state(
 function render(
   s: Extract<ReviewState, { status: 'ready' }>,
   unlocked: UnlockedKeys,
-  reviews: Partial<ReviewRepository>
+  reviews: Partial<ReviewRepository>,
+  keyVault = createKeyVault()
 ) {
   const onStarted = vi.fn();
   const onDone = vi.fn();
@@ -105,7 +108,7 @@ function render(
     <ReadyReview state={s} unlocked={unlocked} onStarted={onStarted} onDone={onDone} />,
     {
       locale: 'de',
-      services: { reviews: reviews as ReviewRepository, archiveCrypto },
+      services: { reviews: reviews as ReviewRepository, archiveCrypto, keyVault },
     }
   );
   return { onStarted, onDone };
@@ -207,6 +210,57 @@ describe('ReadyReview (spec §10.7)', { timeout: 30_000 }, () => {
       true
     );
   });
+
+  it.each([false, true])(
+    'signs with the assigned superseded key and refuses a lock during signing (%s)',
+    async (lockDuringSign) => {
+      const assigned = await unlockedKeys();
+      const active = await unlockedKeys();
+      active.fingerprint = new Uint8Array(32).fill(9);
+      const owner = { tenantId: TENANT, userSub: 'rita' };
+      const vault = createKeyVault();
+      const first = { version: 1, fingerprint: assigned.fingerprint, state: 'superseded' as const };
+      const second = { version: 2, fingerprint: active.fingerprint, state: 'active' as const };
+      vault.reconcile(owner, [first, second]);
+      vault.holdVersion(owner, first, assigned, vault.generation());
+      vault.holdVersion(owner, second, active, vault.generation());
+      const s = await state('in_review');
+      s.ready.opened.requiredKeyVersions = [1];
+      const decide = vi.fn().mockResolvedValue(s.review.record);
+      if (lockDuringSign)
+        vi.spyOn(archiveCrypto, 'signVerification').mockImplementationOnce(async (keys, fields) => {
+          const sig = await createWebArchiveCrypto().signVerification(keys, fields);
+          vault.lock();
+          return sig;
+        });
+      render(s, assigned, { decide }, vault);
+      await userEvent.click(screen.getByRole('button', { name: r.decide }));
+      await userEvent.click(screen.getByLabelText(r.decision.approved));
+      await userEvent.click(screen.getByRole('button', { name: r.decision.submit }));
+      if (lockDuringSign) {
+        expect(await screen.findByText(r.error.FAILED)).toBeInTheDocument();
+        expect(decide).not.toHaveBeenCalled();
+      } else {
+        await waitFor(() => expect(decide).toHaveBeenCalledOnce());
+        const [, post] = decide.mock.calls[0];
+        const fields = {
+          tenantId: TENANT,
+          verificationId: VID,
+          conversationId: IDS.conversation,
+          reviewedHead: s.review.record.reviewedHead!,
+          outcome: post.outcome,
+          notesDigest: await notesDigest(post.overall, post.notes),
+          snapshot: ['ssf.recording.review'],
+        };
+        expect(
+          await archiveCrypto.verifyVerification(assigned.sigPub, post.signature, fields)
+        ).toBe(true);
+        expect(await archiveCrypto.verifyVerification(active.sigPub, post.signature, fields)).toBe(
+          false
+        );
+      }
+    }
+  );
 
   it('re-takes a changed permission snapshot once and signs anew', async () => {
     const unlocked = await unlockedKeys();

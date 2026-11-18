@@ -13,6 +13,7 @@ import {
 } from '@/app/auth/keycloak';
 
 vi.mock('@/app/auth/keycloak', () => ({
+  getAdminIdentity: () => ({ tenantId: 'tenant-kassel', userSub: 'alice' }),
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
   getStudioAdministrationUrl: vi.fn(),

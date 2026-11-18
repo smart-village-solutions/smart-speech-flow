@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { trustChain } from '@/domain/recovery/chain.mapper';
-import { base64Url, chainKey, generation, sized, toServedChain } from '@/domain/recovery/recovery.mapper';
+import {
+  base64Url,
+  chainKey,
+  generation,
+  sized,
+  toServedChain,
+} from '@/domain/recovery/recovery.mapper';
 import type { ArchiveTrust, OpenedConversation, OwnConversation } from './archive.types';
 import { record, summary, toRecord } from './verification.mapper';
 
@@ -23,6 +29,7 @@ const own = z.object({
 });
 
 const opened = z.object({
+  requiredKeyVersions: z.array(z.number().int().positive()).optional(),
   verifications: z.array(record).default([]),
   conversation: z.object({
     conversation_id: uuid,
@@ -71,7 +78,13 @@ const opened = z.object({
       epoch: z.number().int().min(1),
       recovery_wrapped: z.boolean(),
       wrap: z
-        .object({ blob: z.string().min(1), creator_ref: z.string(), creator_signature: sized(64) })
+        .object({
+          recipient_version: z.number().int().positive().optional(),
+          recipient_fingerprint: sized(32).optional(),
+          blob: z.string().min(1),
+          creator_ref: z.string(),
+          creator_signature: sized(64),
+        })
         .nullable(),
     })
   ),
@@ -105,8 +118,24 @@ export function toOwnConversations(body: unknown): OwnConversation[] {
 
 export function toOpened(body: unknown): OpenedConversation {
   const parsed = opened.parse(body);
+  if (parsed.requiredKeyVersions) {
+    const required = new Set(parsed.requiredKeyVersions);
+    const seen = new Set<number>();
+    for (const { wrap } of parsed.keys) {
+      if (wrap === null) continue;
+      if (
+        !wrap.recipient_version ||
+        !required.has(wrap.recipient_version) ||
+        !wrap.recipient_fingerprint
+      )
+        throw new Error('Invalid versioned wrap');
+      seen.add(wrap.recipient_version);
+    }
+    if (seen.size !== required.size) throw new Error('Incomplete recipient versions');
+  }
   const c = parsed.conversation;
   return {
+    requiredKeyVersions: parsed.requiredKeyVersions,
     conversation: {
       conversationId: c.conversation_id,
       employeeSub: c.employee_sub,
@@ -152,6 +181,8 @@ export function toOpened(body: unknown): OpenedConversation {
         k.wrap === null
           ? null
           : {
+              recipientFingerprint: k.wrap.recipient_fingerprint,
+              recipientVersion: k.wrap.recipient_version,
               blob: k.wrap.blob,
               creatorRef: k.wrap.creator_ref,
               creatorSignature: k.wrap.creator_signature,

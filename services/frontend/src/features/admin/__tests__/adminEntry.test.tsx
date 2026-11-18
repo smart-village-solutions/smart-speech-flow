@@ -6,6 +6,7 @@ import { AppRoutes } from '@/app/router/AppRoutes';
 import { readConfig } from '@/app/config/env';
 
 vi.mock('@/app/auth/keycloak', () => ({
+  getAdminIdentity: () => ({ tenantId:'tenant-kassel', userSub:'alice' }),
   requireKeycloakLogin: vi.fn().mockResolvedValue(true),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   getStudioAdministrationUrl: vi.fn().mockReturnValue(null),

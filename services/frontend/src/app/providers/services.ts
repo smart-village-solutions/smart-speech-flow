@@ -14,6 +14,7 @@ import { createMessageRepository } from '@/domain/message/message.repository';
 import type { MessageRepository } from '@/domain/message/message.repository';
 import { createFeedbackRepository } from '@/domain/feedback/feedback.repository';
 import type { FeedbackSink } from '@/domain/feedback/feedback.port';
+import { createDashboardRepository } from '@/domain/dashboard/dashboard.repository';
 import { createAdminRepository } from '@/domain/admin/admin.repository';
 import type { AdminRepository } from '@/domain/admin/admin.repository';
 import { createHealthRepository } from '@/domain/health/health.repository';
@@ -56,6 +57,7 @@ export interface Services {
   language: LanguageRepository;
   message: MessageRepository;
   health: HealthRepository;
+  dashboard: ReturnType<typeof createDashboardRepository>;
   admin: AdminRepository;
   loginTenant: LoginTenantRepository;
   content: ContentSource;
@@ -100,6 +102,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     feedback: createFeedbackRepository(http),
     health: createHealthRepository(http),
     admin,
+    dashboard: createDashboardRepository(http),
     loginTenant: createLoginTenantRepository(http),
     content: createContentRepository(http),
     brand: createStaticBrandSource(config.brand),

@@ -13,9 +13,7 @@ import {
   requireKeycloakLogin,
   logoutFromKeycloak,
 } from '@/app/auth/keycloak';
-import type { AdminSession } from '@/domain/admin/admin.types';
-import { toBase64Url } from '@/core/crypto/bytes';
-import { publicPoint } from '@/core/crypto/curve';
+import { conversationRow } from '@/test/dashboardFixtures';
 import { KASSEL_REVISION } from '@/test/contentFixtures';
 import { feedbackHandler } from '@/test/handlers';
 import { recordRequests } from '@/test/recordRequests';
@@ -124,10 +122,9 @@ describe('tenant login routes', () => {
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).toHaveAttribute(
-      'href',
-      'https://smartcity.dialog.kassel.de/'
-    );
+    expect(
+      screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).toHaveAttribute('href', 'https://smartcity.dialog.kassel.de/');
   });
 
   it('removes the Studio link when refreshed permissions no longer allow it', async () => {
@@ -135,10 +132,16 @@ describe('tenant login routes', () => {
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).toBeInTheDocument();
     vi.mocked(getStudioAdministrationUrl).mockReturnValue(null);
-    act(() => { for (const listener of authorizationListeners) listener(); });
-    expect(screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).not.toBeInTheDocument();
+    act(() => {
+      for (const listener of authorizationListeners) listener();
+    });
+    expect(
+      screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).not.toBeInTheDocument();
     expect(getStudioAdministrationUrl).toHaveBeenCalledWith('tenant-kassel');
   });
 
@@ -148,7 +151,9 @@ describe('tenant login routes', () => {
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
     await waitFor(() => expect(requireKeycloakLogin).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: 'Benutzerkonto' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).not.toBeInTheDocument();
   });
 
   it('links the signed-in tenant user to their Keycloak account console', async () => {
@@ -159,7 +164,8 @@ describe('tenant login routes', () => {
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })).toHaveAttribute(
+    await userEvent.click(screen.getByRole('button', { name: 'Mein Konto' }));
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveAttribute(
       'href',
       accountUrl
     );
@@ -176,129 +182,32 @@ describe('tenant login routes', () => {
     );
     expect(await screen.findByRole('status')).toHaveTextContent('AR000001');
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })).toHaveAttribute(
+    await userEvent.click(screen.getByRole('button', { name: 'Mein Konto' }));
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveAttribute(
       'href',
       accountUrl
     );
   });
 
-  it('brings a custodian back to the ceremony after they open their archive keys from it', async () => {
-    vi.mocked(hasPermission).mockReturnValue(true);
-    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'anna' });
-    const point = toBase64Url(publicPoint(2n));
-    server.use(
-      http.get('*/api/admin/recording/ceremony', () =>
-        HttpResponse.json({
-          recovery_key: null,
-          ceremony: {
-            ceremony_id: '0d6c2b1a-9e8f-4d7c-b6a5-4f3e2d1c0b9a',
-            k: 1,
-            status: 'dealing',
-            started_by: 'olga',
-            started_at: '2026-10-26T09:00:00+00:00',
-            expires_at: '2026-10-27T09:00:00+00:00',
-            gateway_keys: [],
-            participants: [
-              { holder_index: 1, holder_ref: 'anna', kind: 'custodian', display_name: 'Anna', enc_pub: point, sig_pub: point, fingerprint: toBase64Url(new Uint8Array(32)) },
-            ],
-            dealings: [],
-            confirmed: [],
-            paper_confirmed: false,
-            transcript_hash: null,
-            kind: 'generation',
-            recovery_key_id: null,
-            previous_transcript_hash: null,
-            dealers: [{ dealer_index: 1, holder_ref: 'anna', kind: 'custodian' }],
-          },
-          holders: [],
-          previous_had_paper: false,
-          chain: [],
-        })
-      ),
-      http.get('*/api/admin/recording/keys/me', () =>
-        HttpResponse.json({ detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } }, { status: 404 })
-      )
-    );
+  it('offers ordinary conversations alone to admitted users, and adds reviews only while permitted', async () => {
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
-
-    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
-    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsschlüssel' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Archivschlüssel öffnen' }));
-    expect(await screen.findByRole('heading', { name: 'Archivschlüssel' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
-    expect(await screen.findByRole('heading', { name: 'Wiederherstellungsschlüssel' })).toBeInTheDocument();
-  });
-
-  it('opens the recording archive for a recording permission, and its unlock comes back to it', async () => {
-    vi.mocked(hasPermission).mockImplementation(
-      (permission) => permission === 'ssf.recording.request'
-    );
-    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
-    server.use(
-      http.get('*/api/admin/recording/keys/me', () =>
-        HttpResponse.json(
-          { detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } },
-          { status: 404 }
-        )
-      )
-    );
-    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
-
-    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
-    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Meine Aufzeichnungen' }));
-    expect(
-      await screen.findByRole('heading', { name: 'Meine Aufzeichnungen' })
-    ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Schlüssel entsperren' }));
-    expect(await screen.findByRole('heading', { name: 'Archivschlüssel' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
-    expect(
-      await screen.findByRole('heading', { name: 'Meine Aufzeichnungen' })
-    ).toBeInTheDocument();
-  });
-
-  it('opens recovery approvals for a custodian only, and its back returns to the dashboard', async () => {
-    vi.mocked(hasPermission).mockImplementation(
-      (permission) => permission === 'ssf.recording.recovery.custodian'
-    );
-    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
-    server.use(
-      http.get('*/api/admin/recording/recovery/approvals', () =>
-        HttpResponse.json({ requests: [], share_stale: false })
-      )
-    );
-    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
-
-    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
-    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.queryByRole('button', { name: 'Ausnahmezugriffe' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
-    expect(
-      await screen.findByRole('heading', { name: 'Wiederherstellungsfreigaben' })
-    ).toBeInTheDocument();
-    expect(await screen.findByText('Es warten keine Anträge auf Sie.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
-    expect(await screen.findByRole('button', { name: 'Neues Gespräch starten' })).toBeInTheDocument();
-  });
-
-  it('opens key recovery for a recording permission from the menu', async () => {
-    vi.mocked(hasPermission).mockImplementation((permission) => permission === 'ssf.recording.request');
-    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
-    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
-
-    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
-    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Meine Schlüsselwiederherstellung' }));
-    expect(await screen.findByRole('heading', { name: 'Meine Schlüsselwiederherstellung' })).toBeInTheDocument();
-  });
-
-  it('offers no recording archive without a recording permission', async () => {
-    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
-    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
-    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.queryByRole('button', { name: 'Meine Aufzeichnungen' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Meine Gespräche' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Aufgabenansicht' })).not.toBeInTheDocument();
+    vi.mocked(hasPermission).mockImplementation((p) => p === 'ssf.recording.review');
+    act(() => {
+      for (const listener of authorizationListeners) listener();
+    });
+    expect(screen.getByRole('button', { name: 'Neues Gespräch starten' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Meine Prüfungen' }));
+    expect(screen.getByRole('heading', { name: 'Meine Prüfungen' })).toBeInTheDocument();
+    vi.mocked(hasPermission).mockReturnValue(false);
+    act(() => {
+      for (const listener of authorizationListeners) listener();
+    });
+    expect(screen.queryByRole('heading', { name: 'Meine Prüfungen' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Meine Gespräche' })).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' });
+    await waitFor(() => expect(screen.queryByText('Wird geladen …')).not.toBeInTheDocument());
   });
 
   it('does not render the dashboard while Keycloak redirects', async () => {
@@ -410,27 +319,22 @@ describe('tenant login routes', () => {
   });
 
   it.each(['cached', 'pending'])('isolates %s tenant A history from tenant B', async (state) => {
-    const row = (id: string): AdminSession => ({
-      id,
-      status: 'open',
-      customerLanguage: null,
-      createdAt: '2026-09-10T10:00:00Z',
-      terminatedAt: null,
-    });
-    let finishA!: (rows: AdminSession[]) => void;
-    let finishB!: (rows: AdminSession[]) => void;
+    const page = (id: string) => ({ items: [conversationRow(id)], next_cursor: null });
+    type Page = ReturnType<typeof page>;
+    let finishA!: (page: Page) => void;
+    let finishB!: (page: Page) => void;
     const listSessions = vi
       .fn()
       .mockImplementationOnce(() =>
         state === 'cached'
-          ? Promise.resolve([row('TENANTA1')])
-          : new Promise<AdminSession[]>((resolve) => {
+          ? Promise.resolve(page('TENANTA1'))
+          : new Promise<Page>((resolve) => {
               finishA = resolve;
             })
       )
       .mockImplementationOnce(
         () =>
-          new Promise<AdminSession[]>((resolve) => {
+          new Promise<Page>((resolve) => {
             finishB = resolve;
           })
       );
@@ -442,11 +346,7 @@ describe('tenant login routes', () => {
       {
         route: '/login/tenant-kassel',
         services: {
-          admin: {
-            listSessions,
-            createSession: vi.fn(),
-            terminateSession: vi.fn(),
-          },
+          dashboard: { conversations: listSessions, result: vi.fn() },
         },
       }
     );
@@ -462,12 +362,12 @@ describe('tenant login routes', () => {
         studioUrl: 'https://fulda.dialog.kassel.de/',
       })
     );
-    if (state === 'pending') await act(async () => finishA([row('TENANTA1')]));
+    if (state === 'pending') await act(async () => finishA(page('TENANTA1')));
     expect(
       screen.queryByRole('button', { name: 'Gespräch TENANTA1 fortsetzen' })
     ).not.toBeInTheDocument();
     await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(2));
-    await act(async () => finishB([row('TENANTB1')]));
+    await act(async () => finishB(page('TENANTB1')));
     expect(
       await screen.findByRole('button', { name: 'Gespräch TENANTB1 fortsetzen' })
     ).toBeInTheDocument();

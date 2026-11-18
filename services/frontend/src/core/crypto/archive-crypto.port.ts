@@ -31,6 +31,8 @@ export interface WrapToOpen {
   tenantId: string;
   conversationId: string;
   keyId: string;
+  recipientVersion?: number;
+  recipientFingerprint?: Bytes;
   recipientRef: string;
   blob: string;
   /** A gateway key ID, or the caller's own sub for a wrap they made (#617). */
@@ -40,6 +42,7 @@ export interface WrapToOpen {
 
 /** Who a conversation key is re-wrapped for: a reviewer (spec §10.7). */
 export interface WrapRecipient {
+  version?: number;
   sub: string;
   encPub: Bytes;
   fingerprint: Bytes;
@@ -87,7 +90,8 @@ export interface ArchiveCrypto {
     wrap: Readonly<WrapToOpen>,
     keys: Readonly<UnlockedKeys>,
     signers: ReadonlyMap<string, Bytes>,
-    recipient: Readonly<WrapRecipient>
+    recipient: Readonly<WrapRecipient>,
+    signingKey?: CryptoKey
   ): Promise<MadeWrap>;
   /** A.3a under the entry's conversation key. */
   sealNote(key: CryptoKey, address: Readonly<NoteAddress>, plaintext: Bytes): Promise<Bytes>;
@@ -105,14 +109,26 @@ export interface ArchiveCrypto {
 }
 
 /** Holds the unlocked keys for the life of the tab; never persisted. */
+export interface KeyBinding {
+  version: number;
+  fingerprint: Bytes;
+}
+export interface ListedKey extends KeyBinding {
+  state: 'active' | 'superseded' | 'revoked' | 'left';
+}
 export interface KeyVault {
+  reconcile(owner: Readonly<KeyOwner>, versions: readonly ListedKey[]): void;
+  version(owner: Readonly<KeyOwner>, version: number): UnlockedKeys | null;
+  holdVersion(
+    owner: Readonly<KeyOwner>,
+    binding: KeyBinding,
+    keys: UnlockedKeys,
+    generation: number
+  ): boolean;
+  revision(): number;
   current(): UnlockedKeys | null;
-  hold(keys: UnlockedKeys): void;
   /** Invalidated by every lock, even while the vault is already empty. */
   generation(): number;
-  /** Invalidate when the gateway serves a different enrolled key, including its version. */
-  observeKey(key: { fingerprint: Bytes; keyVersion: number } | null): void;
-  holdIfCurrent(keys: UnlockedKeys, generation: number): boolean;
   lock(): void;
   subscribe(listener: () => void): () => void;
 }

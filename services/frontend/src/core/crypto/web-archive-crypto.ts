@@ -1,9 +1,18 @@
 import { aesKey, objectAad, openEnvelope, sealEnvelope } from './aead';
-import type { ArchiveCrypto, KeyOwner, NewKeys, PublicKeys, UnlockedKeys, WrapToOpen } from './archive-crypto.port';
+import type {
+  ArchiveCrypto,
+  KeyOwner,
+  NewKeys,
+  PublicKeys,
+  UnlockedKeys,
+  WrapToOpen,
+} from './archive-crypto.port';
 import { type Bytes, concat, equalBytes, fromBase64Url, fromBuffer } from './bytes';
 import { contexts, openWithPrivateKey, parseSealed, seal, sealedToJson } from './ecies';
 import { ENROLMENT_KDF, openPrivateKeys, sealPrivateKeys } from './private-key-blob';
 import { signFields, verifyFields, wrapFields } from './signatures';
+import { enc } from './encoding';
+import type { Sealed } from './ecies';
 import { TAGS } from './tags';
 import { fingerprint } from './transcript';
 import { noteAad, verificationFields } from './verification';
@@ -20,17 +29,29 @@ async function exportPkcs8(key: CryptoKey): Promise<Bytes> {
 }
 
 /** The public point inside a PKCS#8 key, read through a short-lived extractable import. */
-async function publicOf(pkcs8: Bytes, algorithm: typeof ECDH | typeof ECDSA, usage: KeyUsage): Promise<Bytes> {
+async function publicOf(
+  pkcs8: Bytes,
+  algorithm: typeof ECDH | typeof ECDSA,
+  usage: KeyUsage
+): Promise<Bytes> {
   const key = await crypto.subtle.importKey('pkcs8', pkcs8, algorithm, true, [usage]);
   const jwk = await crypto.subtle.exportKey('jwk', key);
   return concat([0x04], fromBase64Url(jwk.x ?? ''), fromBase64Url(jwk.y ?? ''));
 }
 
-function importPrivate(pkcs8: Bytes, algorithm: typeof ECDH | typeof ECDSA, usage: KeyUsage): Promise<CryptoKey> {
+function importPrivate(
+  pkcs8: Bytes,
+  algorithm: typeof ECDH | typeof ECDSA,
+  usage: KeyUsage
+): Promise<CryptoKey> {
   return crypto.subtle.importKey('pkcs8', pkcs8, algorithm, false, [usage]);
 }
 
-async function unlocked(owner: Readonly<KeyOwner>, keys: { enc: Bytes; sig: Bytes }, pub: PublicKeys): Promise<UnlockedKeys> {
+async function unlocked(
+  owner: Readonly<KeyOwner>,
+  keys: { enc: Bytes; sig: Bytes },
+  pub: PublicKeys
+): Promise<UnlockedKeys> {
   return {
     ...pub,
     encPrivate: await importPrivate(keys.enc, ECDH, 'deriveBits'),
@@ -67,15 +88,45 @@ function wrapSigned(
   return verifyFields(signer, wrap.creatorSignature, TAGS.wrapSig, signed);
 }
 
+function canonicalEnvelope(sealed: Readonly<Sealed>) {
+  return enc(1, sealed.type, sealed.ephemeral, sealed.nonce, sealed.ciphertext);
+}
+
 /** The raw conversation key, only after the wrap's signature checked out (A.6). */
 async function openRaw(
   wrap: Readonly<WrapToOpen>,
   keys: Readonly<UnlockedKeys>,
   signers: ReadonlyMap<string, Bytes>
 ): Promise<Bytes> {
+  if (wrap.recipientVersion !== undefined) {
+    if (wrap.recipientFingerprint && !equalBytes(wrap.recipientFingerprint, keys.fingerprint))
+      throw new WrapRefusedError();
+    const sealed = parseSealed(wrap.blob, TAGS.ckWrapV2);
+    const context = [
+      ...contexts.ckWrap(wrap.tenantId, wrap.conversationId, wrap.keyId, 'user', wrap.recipientRef),
+      wrap.recipientVersion,
+      keys.fingerprint,
+    ];
+    const signer = signers.get(wrap.creatorRef);
+    if (
+      !signer ||
+      !(await verifyFields(signer, wrap.creatorSignature, TAGS.wrapSigV2, [
+        enc(...context),
+        canonicalEnvelope(sealed),
+      ]))
+    )
+      throw new WrapRefusedError();
+    return openWithPrivateKey(sealed, keys.encPrivate, keys.encPub, context);
+  }
   const sealed = parseSealed(wrap.blob, TAGS.ckWrap);
   if (!(await wrapSigned(wrap, keys, sealed.ephemeral, signers))) throw new WrapRefusedError();
-  const context = contexts.ckWrap(wrap.tenantId, wrap.conversationId, wrap.keyId, 'user', wrap.recipientRef);
+  const context = contexts.ckWrap(
+    wrap.tenantId,
+    wrap.conversationId,
+    wrap.keyId,
+    'user',
+    wrap.recipientRef
+  );
   return openWithPrivateKey(sealed, keys.encPrivate, keys.encPub, context);
 }
 
@@ -84,8 +135,14 @@ export function createWebArchiveCrypto(): ArchiveCrypto {
     async createKeys(passphrase, owner): Promise<NewKeys> {
       const enc = await crypto.subtle.generateKey(ECDH, true, ['deriveBits']);
       const sig = await crypto.subtle.generateKey(ECDSA, true, ['sign', 'verify']);
-      const keys = { enc: await exportPkcs8(enc.privateKey), sig: await exportPkcs8(sig.privateKey) };
-      const pub = { encPub: await exportPublic(enc.publicKey), sigPub: await exportPublic(sig.publicKey) };
+      const keys = {
+        enc: await exportPkcs8(enc.privateKey),
+        sig: await exportPkcs8(sig.privateKey),
+      };
+      const pub = {
+        encPub: await exportPublic(enc.publicKey),
+        sigPub: await exportPublic(sig.publicKey),
+      };
       const blob = await sealPrivateKeys(passphrase, owner, keys, ENROLMENT_KDF);
       return { blob, unlocked: await unlocked(owner, keys, pub) };
     },
@@ -108,10 +165,26 @@ export function createWebArchiveCrypto(): ArchiveCrypto {
       }
     },
 
-    async rewrapFor(wrap, keys, signers, recipient) {
+    async rewrapFor(wrap, keys, signers, recipient, signingKey = keys.sigPrivate) {
       const raw = await openRaw(wrap, keys, signers);
       try {
-        const context = contexts.ckWrap(wrap.tenantId, wrap.conversationId, wrap.keyId, 'user', recipient.sub);
+        const context = contexts.ckWrap(
+          wrap.tenantId,
+          wrap.conversationId,
+          wrap.keyId,
+          'user',
+          recipient.sub
+        );
+        if (wrap.recipientVersion !== undefined) {
+          if (!recipient.version) throw new WrapRefusedError();
+          context.push(recipient.version, recipient.fingerprint);
+          const sealed = await seal(TAGS.ckWrapV2, recipient.encPub, raw, context);
+          const signature = await signFields(signingKey, TAGS.wrapSigV2, [
+            enc(...context),
+            canonicalEnvelope(sealed),
+          ]);
+          return { keyId: wrap.keyId, blob: sealedToJson(sealed), signature };
+        }
         const sealed = await seal(TAGS.ckWrap, recipient.encPub, raw, context);
         const signed = wrapFields({
           tenantId: wrap.tenantId,

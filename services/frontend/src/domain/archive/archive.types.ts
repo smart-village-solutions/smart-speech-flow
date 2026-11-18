@@ -133,10 +133,11 @@ export interface KeyFacts {
   epoch: number;
   recoveryWrapped: boolean;
   /** The caller's wrap of this key, if any. */
-  wrap: { blob: string; creatorRef: string; creatorSignature: Bytes } | null;
+  wrap: { recipientVersion?: number; recipientFingerprint?: Bytes; blob: string; creatorRef: string; creatorSignature: Bytes } | null;
 }
 
 export interface OpenedConversation {
+  requiredKeyVersions?: number[];
   conversation: ConversationFacts;
   windows: WindowFacts[];
   entries: ArchivedEntry[];

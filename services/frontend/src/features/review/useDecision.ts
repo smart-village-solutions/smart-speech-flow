@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
-import { getAdminIdentity } from '@/app/auth/keycloak';
+import { equalBytes } from '@/core/crypto/bytes';
+import { getAdminIdentity, hasPermission } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { notesDigest } from '@/core/crypto/verification';
@@ -39,12 +40,31 @@ export function useDecision(
   unlocked: UnlockedKeys,
   seal: () => Promise<ReviewDraft>
 ) {
-  const { reviews, archiveCrypto } = useServices();
+  const { keyVault, reviews, archiveCrypto } = useServices();
   const verificationId = state.review.record.verificationId;
 
-  const post = async (record: VerificationRecord, outcome: Outcome, draft: ReviewDraft) => {
+  const post = async (
+    record: VerificationRecord,
+    outcome: Outcome,
+    draft: ReviewDraft,
+    generation: number
+  ) => {
     const identity = getAdminIdentity();
     if (identity === null || record.reviewedHead === null) throw new Error('not started');
+    const checkVersion = () => {
+      if (
+        generation !== keyVault.generation() ||
+        (state.ready.opened.requiredKeyVersions &&
+          (!hasPermission('ssf.recording.review') ||
+            record.verificationId !== verificationId ||
+            record.reviewerSub !== identity.userSub ||
+            !equalBytes(record.reviewerFingerprint, unlocked.fingerprint) ||
+            record.reviewerKeyVersion !== state.review.record.reviewerKeyVersion ||
+            keyVault.version(identity, record.reviewerKeyVersion) !== unlocked))
+      )
+        throw new Error('Assigned key changed');
+    };
+    checkVersion();
     const signature = await archiveCrypto.signVerification(unlocked, {
       tenantId: identity.tenantId,
       verificationId,
@@ -54,17 +74,24 @@ export function useDecision(
       notesDigest: await notesDigest(draft.overall, draft.notes),
       snapshot: record.permissionSnapshot ?? [],
     });
+    checkVersion();
     return reviews.decide(verificationId, { ...draft, outcome, signature });
   };
 
   return useMutation({
     mutationFn: async (outcome: Outcome) => {
+      const generation = keyVault.generation();
       const draft = await seal();
       try {
-        return await post(state.review.record, outcome, draft);
+        return await post(state.review.record, outcome, draft, generation);
       } catch (error) {
         if (errorKey(error) !== 'PERMISSIONS_CHANGED') throw error;
-        return post(await reviews.start(verificationId, headSeq(state)), outcome, draft);
+        return post(
+          await reviews.start(verificationId, headSeq(state)),
+          outcome,
+          draft,
+          generation
+        );
       }
     },
   });

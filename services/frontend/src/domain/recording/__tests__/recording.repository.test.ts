@@ -45,35 +45,54 @@ describe('recording keys repository', () => {
     await expect(repository().passphraseFileEnabled()).rejects.toThrow();
   });
 
-  it('reads the own key', async () => {
+  it('reads the active and superseded versions from the authenticated V2 resource', async () => {
+    const meta = {
+      encPub: toBase64Url(publicPoint(5n)),
+      sigPub: toBase64Url(publicPoint(6n)),
+      fingerprint,
+      createdAt: '2026-10-26T09:00:00Z',
+    };
     server.use(
-      http.get(`${BASE}/api/admin/recording/keys/me`, () =>
+      http.get(`${BASE}/api/admin/recording/v2/keys/me`, () =>
         HttpResponse.json({
-          enc_pub: toBase64Url(publicPoint(5n)),
-          sig_pub: toBase64Url(publicPoint(6n)),
-          blob: '{"v":1}',
-          created_at: '2026-10-26T09:00:00+00:00',
-          key_version: 3,
+          activeVersion: 3,
+          versions: [
+            { ...meta, version: 2, state: 'superseded' },
+            { ...meta, version: 3, state: 'active' },
+          ],
+        })
+      ),
+      http.get(`${BASE}/api/admin/recording/v2/keys/me/:version`, ({ params, request }) => {
+        expect(request.headers.get('Authorization')).toBe('Bearer staff-token');
+        const version = Number(params.version);
+        return HttpResponse.json({
+          ...meta,
+          version,
+          state: version === 3 ? 'active' : 'superseded',
+          blob: 'sealed',
+        });
+      })
+    );
+    expect((await repository().ownKey())?.fingerprintDisplay).toBe(display);
+    expect((await repository().version(2)).keyVersion).toBe(2);
+  });
+  it('rejects an unusable or mismatched version', async () => {
+    server.use(
+      http.get(`${BASE}/api/admin/recording/v2/keys/me/2`, () =>
+        HttpResponse.json({
+          version: 2,
+          state: 'revoked',
+          encPub: toBase64Url(publicPoint(5n)),
+          sigPub: toBase64Url(publicPoint(6n)),
           fingerprint,
-          fingerprint_display: display,
+          createdAt: 'today',
+          blob: 'sealed',
         })
       )
     );
-    const key = await repository().ownKey();
-    expect(key?.fingerprintDisplay).toBe(display);
-    expect(key?.keyVersion).toBe(3);
-    expect(Array.from(key?.encPub ?? [])).toEqual(Array.from(publicPoint(5n)));
+    await expect(repository().version(2)).rejects.toThrow();
   });
-
   it('answers null when nothing is enrolled', async () => {
-    server.use(
-      http.get(`${BASE}/api/admin/recording/keys/me`, () =>
-        HttpResponse.json(
-          { detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } },
-          { status: 404 }
-        )
-      )
-    );
     expect(await repository().ownKey()).toBeNull();
   });
 

@@ -158,14 +158,7 @@
       "accountSettings": "Account settings",
       "openStudio": "Manage organization",
       "opensInNewTab": "(opens in a new tab)",
-      "signOut": "Sign out",
-      "keys": "Archive keys",
-      "ceremony": "Recovery key",
-      "archive": "My recordings",
-      "recoveryRequests": "Exceptional access",
-      "recoveryApprovals": "Recovery approvals",
-      "keyRecovery": "My key recovery",
-      "reviews": "Reviews"
+      "signOut": "Sign out"
     },
     "dashboard": {
       "welcome": {
@@ -261,8 +254,6 @@
         "import": "Load passphrase from TXT file",
         "importFailed": "This file is not a valid passphrase backup or is too large."
       },
-      "title": "Archive keys",
-      "intro": "Your personal keys open recorded conversations. They are protected by a passphrase that only you know; SSF never sees it and cannot reset it. Recording works without them.",
       "stepUpTitle": "Confirm your identity",
       "stepUpBody": "Setting up keys needs a fresh sign-in with your second factor.",
       "stepUpAction": "Sign in again",
@@ -281,21 +272,17 @@
       "unlockAction": "Unlock",
       "unlockPending": "Unlocking…",
       "unlockedTitle": "Your keys are unlocked",
-      "fingerprintHint": "Compare this fingerprint by phone or in person when someone asks you to confirm your key.",
+      "fingerprintHint": "Technical fingerprint of this key version",
       "lockAction": "Lock",
       "unavailable": "Archive keys are not available right now.",
       "reenrol": {
         "start": "Forgot your passphrase? Set up a new key",
         "warningTitle": "Before you set up a new key",
-        "warningLocked": "Your conversations stay locked until key recovery completes.",
-        "warningRecovered": "Access you recovered as a supervisor, and grants, need new requests.",
-        "warningRequests": "Your open requests are cancelled.",
-        "warningCustodian": "Your share as a recovery approver cannot be used until an administrator changes the recovery approvers (Change recovery approvers). Afterwards: approvers able to approve {{usable}}, approvals needed {{k}}.",
         "continue": "Continue",
         "cancel": "Cancel",
         "submit": "Set up a new key",
         "pending": "Please open the confirmation link we emailed you. Your previous key stays in use until then.",
-        "done": "Your new key is active.",
+        "done": "Your new access passphrase is active. Previous key versions remain available.",
         "changed": "Your key has been replaced in the meantime. Please reload the page.",
         "ceremony": "Not possible while a key ceremony you take part in is running.",
         "failed": "The new key could not be set up.",
@@ -312,7 +299,7 @@
         "confirm": "Confirm key",
         "decline": "This wasn't me",
         "confirmed": "Your new key is active.",
-        "confirmedNext": "Unlock it on the Archive keys screen with your new passphrase. It opens your earlier conversations only after key recovery, which you request there.",
+        "confirmedNext": "Unlock the new version in My account with your new passphrase. Use the corresponding historical version for earlier recordings and open reviews.",
         "declined": "The new key was discarded; your previous key stays in use. Please tell your administrator, because someone else requested it.",
         "invalid": "This link is not valid or has already been used. If you already confirmed it, your new key is active.",
         "expired": "This link has expired. Please set up the new key again.",
@@ -475,7 +462,10 @@
         "ARCHIVE_WRITE_FAILED": "The guest's consent could not be saved. The guest can try again.",
         "generic": "The recording could not be changed.",
         "ID_CHECK_REQUIRED": "Please check the guest's ID document first.",
-        "STAFF_RELEASE_TEXT_MISMATCH": "The release text has changed. Withdraw any open request, then review the text and request recording again."
+        "STAFF_RELEASE_TEXT_MISMATCH": "The release text has changed. Withdraw any open request, then review the text and request recording again.",
+        "PERSONAL_KEY_MISSING": "Set up your personal access passphrase in My account to request a recording.",
+        "ORGANISATION_KEY_MISSING": "Your organisation key is missing. Contact your organisation administrator.",
+        "RECORDING_PROTOCOL_UPGRADE_REQUIRED": "Recordings are unavailable until the protocol upgrade is complete."
       },
       "ask": {
         "title": "Request recording",
@@ -874,6 +864,81 @@
       "done": {
         "decided": "Your decision has been recorded.",
         "declined": "You declined the assignment."
+      }
+    },
+    "tasks": {
+      "account": "My account",
+      "keyIntro": "Your personal access passphrase unlocks recordings and reviews in this tab.",
+      "keyVersion": "Key version",
+      "active": "Current version",
+      "superseded": "Previous version",
+      "conversations": "My conversations",
+      "reviews": "My reviews",
+      "views": "Task view",
+      "all": "All",
+      "language": "Language",
+      "status": "Status",
+      "sort": "Sort",
+      "unknown": "Unknown / locked",
+      "newest": "Newest first",
+      "oldest": "Oldest first",
+      "reset": "Reset filters",
+      "refresh": "Refresh",
+      "scope": "Filters and sorting apply to loaded entries",
+      "counts": "{{matches}} of {{loaded}} loaded entries",
+      "excluded": "Entries with an unknown or locked language are excluded from this language filter.",
+      "unavailable": "This entry or list is currently unavailable.",
+      "loading": "Loading…",
+      "noMatches": "No matching entries among those loaded.",
+      "more": "Load more",
+      "time": "Started",
+      "recording": "Recording",
+      "verification": "Review summary",
+      "actions": "Actions",
+      "requested": "Requested",
+      "requester": "Requested by",
+      "openResult": "View result",
+      "openReview": "Open review",
+      "resume": "Resume conversation",
+      "open_recording": "Open recording",
+      "open_details": "View details",
+      "transferred": "Transferred access",
+      "ended": "Ended",
+      "duration": "Duration",
+      "minutes": "{{n}} min",
+      "noRecording": "There is no recording for this conversation.",
+      "assignment": "Review assignment",
+      "decided": "Decided",
+      "contact": "If you have lost your passphrase, contact your organisation administrator about access to previous recordings.",
+      "states": {
+        "pending": "Pending",
+        "active": "Active",
+        "ended": "Ended",
+        "awaiting": "Awaiting review",
+        "in_review": "In review",
+        "approved": "Approved",
+        "not_approved": "Not approved",
+        "declined": "Returned",
+        "withdrawn": "Withdrawn",
+        "not_verified": "Unverified",
+        "decided": "Decided"
+      },
+      "recordings": {
+        "none": "No recording",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "incomplete": "Incomplete"
+      },
+      "access": {
+        "unlock_required": "Unlock required",
+        "available": "Access granted",
+        "transfer_required": "Transfer required"
+      },
+      "replacement": {
+        "both": "New recordings and review assignments use the new passphrase. Existing recordings and open reviews retain their previous key version.",
+        "recording": "New recordings use the new passphrase. Previous recordings remain accessible with their historical key version.",
+        "review": "New review assignments use the new passphrase. Open reviews retain their assigned key version.",
+        "personal": "Previous key versions remain accessible with their respective passphrases."
       }
     }
   }

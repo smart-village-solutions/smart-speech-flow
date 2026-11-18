@@ -32,7 +32,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(account).toHaveCSS('outline-color', 'rgb(29, 83, 139)');
     await account.click();
     await page.keyboard.press('Tab');
-    const accountLink = page.getByRole('link', { name: /Account settings/ });
+    const accountLink = page.getByRole('button', { name: 'My account', exact: true });
     await expect(accountLink).toBeFocused();
     await expect(accountLink).toHaveCSS(
       'outline-color',

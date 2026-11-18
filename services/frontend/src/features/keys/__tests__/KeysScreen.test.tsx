@@ -1,3 +1,4 @@
+import { personalInventory } from '@/test/personalKeys';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,11 +46,18 @@ function render(
   } = {}
 ) {
   const keyVault = createKeyVault();
-  if (overrides.unlocked) keyVault.hold(overrides.unlocked);
+  const owner = { tenantId: 'tenant-kassel', userSub: 'alice' };
+  if (overrides.unlocked) {
+    const initial = personalInventory(ownKey);
+    keyVault.reconcile(owner, initial.versions);
+    keyVault.holdVersion(owner, initial.versions[0], overrides.unlocked, keyVault.generation());
+  }
   const remember = vi.fn();
   let enrolled = overrides.enrolled ?? null;
   const recordingKeys: RecordingKeysRepository = {
     passphraseFileEnabled: vi.fn().mockResolvedValue(overrides.fileEnabled ?? false),
+    versions: vi.fn(async () => personalInventory(enrolled)),
+    version: vi.fn(async () => enrolled!),
     ownKey: vi.fn(async () => enrolled),
     enrol:
       overrides.enrol ??

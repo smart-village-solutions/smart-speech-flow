@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getAdminIdentity } from '@/app/auth/keycloak';
+import { getAdminIdentity, hasPermission } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import { type EditableFinding, editable } from './editable';
 import type { ReviewState } from './openReview';
@@ -38,7 +38,11 @@ export function useReviewDraft(state: Ready) {
   const revision = useRef(0);
   const save = useCallback(async () => {
     const saving = revision.current;
-    await reviews.saveDraft(state.review.record.verificationId, await seal());
+    const draft = await seal();
+    state.ready.assertCurrent?.();
+    if (state.ready.opened.requiredKeyVersions && !hasPermission('ssf.recording.review'))
+      throw new Error('Review permission changed');
+    await reviews.saveDraft(state.review.record.verificationId, draft);
     if (revision.current === saving) setDirty(false);
   }, [reviews, seal, state]);
 

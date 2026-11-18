@@ -8,6 +8,8 @@ import { STUDIO_STAFF, staffContentBodyWith } from '@/test/contentFixtures';
 import { staffContentHandler, staffContentUnavailable } from '@/test/handlers';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { server } from '@/test/setup';
+import { ConversationTable } from '@/features/dashboard/TaskLists';
+import {initialFilters} from '@/features/dashboard/filterRows';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import type { SystemLoadLevel } from '@/domain/health/health.types';
 
@@ -17,7 +19,7 @@ const noop = () => undefined;
 async function renderDashboard(options: Parameters<typeof renderWithProviders>[1] = {}) {
   const result = renderWithProviders(
     <>
-      <AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />
+      <AdminDashboardScreen onEnterSession={noop} onSignOut={noop}><ConversationTable filters={initialFilters} onChange={noop} open={noop}/></AdminDashboardScreen>
       <StaffContentSettled />
     </>,
     options
@@ -70,7 +72,7 @@ describe('AdminDashboardScreen', () => {
       locale: 'de',
     });
 
-    expect(await screen.findByText('Vergangene Gespräche')).toBeInTheDocument();
+    expect(await screen.findByText('Meine Gespräche')).toBeInTheDocument();
     expect(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
     ).toBeInTheDocument();

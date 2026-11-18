@@ -20,7 +20,12 @@ describe('web archive crypto', { timeout: 30_000 }, () => {
 
     const unlocked = await archive.unlock(created.blob, PASSPHRASE, owner, created.unlocked);
     expect(unlocked.encPrivate.extractable).toBe(false);
-    const expected = await fingerprint(owner.tenantId, owner.userSub, created.unlocked.encPub, created.unlocked.sigPub);
+    const expected = await fingerprint(
+      owner.tenantId,
+      owner.userSub,
+      created.unlocked.encPub,
+      created.unlocked.sigPub
+    );
     expect(Array.from(unlocked.fingerprint)).toEqual(Array.from(expected));
   });
 
@@ -28,7 +33,9 @@ describe('web archive crypto', { timeout: 30_000 }, () => {
     const archive = createWebArchiveCrypto();
     const created = await archive.createKeys(PASSPHRASE, owner);
     const other = await archive.createKeys(PASSPHRASE, owner);
-    await expect(archive.unlock(created.blob, 'wrong passphrase', owner, created.unlocked)).rejects.toThrow();
+    await expect(
+      archive.unlock(created.blob, 'wrong passphrase', owner, created.unlocked)
+    ).rejects.toThrow();
     await expect(
       archive.unlock(created.blob, PASSPHRASE, { ...owner, userSub: 'bob' }, created.unlocked)
     ).rejects.toThrow();
@@ -119,4 +126,86 @@ describe('wraps and objects', { timeout: 30_000 }, () => {
     const forged = await wrapFor(unlocked, stranger.privateKey, 'alice');
     await expect(archive.openWrap(forged, unlocked, new Map())).rejects.toThrow();
   });
+});
+
+it('opens a V2 wrap and rejects recipient-version substitution or a missing version', async () => {
+  const archive = createWebArchiveCrypto();
+  const { unlocked } = await archive.createKeys(PASSPHRASE, owner);
+  const { enc } = await import('@/core/crypto/encoding');
+  const fields = [owner.tenantId, C, K, 'user', owner.userSub, 3, unlocked.fingerprint];
+  const sealed = await seal('SSF-CK-WRAP-V2', unlocked.encPub, randomBytes(32), fields);
+  const signature = await signFields(unlocked.sigPrivate, 'SSF-CK-WRAP-SIG-V2', [
+    enc(...fields),
+    enc(1, sealed.type, sealed.ephemeral, sealed.nonce, sealed.ciphertext),
+  ]);
+  const wrap = {
+    tenantId: owner.tenantId,
+    conversationId: C,
+    keyId: K,
+    recipientRef: owner.userSub,
+    recipientVersion: 3,
+    blob: sealedToJson(sealed),
+    creatorRef: 'gateway',
+    creatorSignature: signature,
+  };
+  const signers = new Map([['gateway', unlocked.sigPub]]);
+  expect((await archive.openWrap(wrap, unlocked, signers)).extractable).toBe(false);
+  await expect(
+    archive.openWrap({ ...wrap, recipientVersion: 2 }, unlocked, signers)
+  ).rejects.toThrow();
+  await expect(
+    archive.openWrap({ ...wrap, recipientVersion: undefined }, unlocked, signers)
+  ).rejects.toThrow();
+});
+
+it('verifies and opens the shared Gateway transfer vector with the recipient private key', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { fromBase64Url } = await import('@/core/crypto/bytes');
+  const vector = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, '../../../../../../tests/fixtures/recording/lifecycle_v2.json'),
+      'utf8'
+    )
+  );
+  const keys = {
+    encPrivate: await crypto.subtle.importKey(
+      'pkcs8',
+      fromBase64Url(vector.targetPrivateKeyPkcs8),
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false,
+      ['deriveBits']
+    ),
+    encPub: fromBase64Url(vector.targetEncPub),
+    fingerprint: fromBase64Url(vector.targetFingerprint),
+  } as UnlockedKeys;
+  const archive = createWebArchiveCrypto();
+  const opened = await archive.openWrap(
+    {
+      tenantId: vector.tenantId,
+      conversationId: vector.conversationId,
+      keyId: vector.keyId,
+      recipientVersion: vector.targetVersion,
+      recipientRef: vector.targetUserSub,
+      creatorRef: 'gateway',
+      creatorSignature: fromBase64Url(vector.targetSignature),
+      blob: JSON.stringify(vector.targetEnvelope),
+    },
+    keys,
+    new Map([['gateway', fromBase64Url(vector.gatewayPublicKey)]])
+  );
+  const iv = new Uint8Array(12);
+  const plaintext = utf8('Known-answer test');
+  const expected = await crypto.subtle.importKey(
+    'raw',
+    fromBase64Url(vector.contentKey),
+    'AES-GCM',
+    false,
+    ['encrypt']
+  );
+  expect(
+    new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, opened, plaintext))
+  ).toEqual(
+    new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, expected, plaintext))
+  );
 });

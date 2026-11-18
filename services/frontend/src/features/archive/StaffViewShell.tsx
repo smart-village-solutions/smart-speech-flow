@@ -7,6 +7,7 @@ interface StaffViewShellProps {
   onBack: () => void;
   /** Set while one item is open: back closes it before leaving the view. */
   onClose?: () => void;
+  onOpenKeys?: () => void;
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
@@ -17,7 +18,7 @@ interface StaffViewShellProps {
 export function StaffViewShell({
   onBack,
   onClose,
-  onSignOut,
+  onOpenKeys, onSignOut,
   accountUrl,
   studioUrl,
   children,
@@ -29,7 +30,7 @@ export function StaffViewShell({
         onBack={onClose ?? onBack}
         onHome={onBack}
         onFeedback={() => openFeedback({ kind: 'staff', sessionId: null })}
-        onSignOut={onSignOut}
+        onOpenKeys={onOpenKeys} onSignOut={onSignOut}
         accountUrl={accountUrl}
         studioUrl={studioUrl}
       />

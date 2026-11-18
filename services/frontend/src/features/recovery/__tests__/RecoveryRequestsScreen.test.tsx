@@ -1,3 +1,4 @@
+import {holdTestKeys} from '@/test/personalKeys';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -52,7 +53,7 @@ const decision = (holderIndex: number, rejected = false) => ({
 
 function render(options: { unlocked?: UnlockedKeys | null; progress?: RequestProgress } = {}) {
   const keyVault = createKeyVault();
-  if (options.unlocked !== null) keyVault.hold(options.unlocked ?? keys);
+  if (options.unlocked !== null) holdTestKeys(keyVault,options.unlocked ?? keys);
   const recoveryRequests = {
     requests: vi.fn().mockResolvedValue([summary]),
     progress: vi.fn().mockResolvedValue(options.progress ?? progress()),

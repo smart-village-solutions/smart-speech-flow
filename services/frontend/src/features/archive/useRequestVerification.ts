@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { UnlockSigningVersion } from '@/features/dashboard/stepUpReturn';
+import { useContext, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
@@ -7,7 +8,7 @@ import { equalBytes } from '@/core/crypto/bytes';
 import { displayFingerprint, fingerprint } from '@/core/crypto/transcript';
 import { AppError, knownServerCode } from '@/core/http/AppError';
 import type { ReviewerCandidate } from '@/domain/archive/archive.types';
-import { useOwnKey } from '@/features/keys/useKeys';
+import { useKeyInventory } from '@/features/keys/useKeyInventory';
 import type { Opened } from './openConversation';
 
 type Ready = Extract<Opened, { status: 'ready' }>;
@@ -51,8 +52,9 @@ export function useRequestVerification(
   unlocked: UnlockedKeys,
   onAssigned: () => void
 ) {
-  const { archive, archiveCrypto } = useServices();
-  const ownKey = useOwnKey();
+  const { keyVault, archive, archiveCrypto } = useServices();
+  const inventory = useKeyInventory(getAdminIdentity());
+  const unlockSigner = useContext(UnlockSigningVersion);
   const conversationId = state.opened.conversation.conversationId;
   const [stage, setStage] = useState<RequestStage>(() => (hasFreshStepUp() ? 'pick' : 'stepUp'));
   const [picked, setPicked] = useState<ReviewerCandidate | null>(null);
@@ -69,9 +71,17 @@ export function useRequestVerification(
   const assign = useMutation({
     mutationFn: async (reviewer: ReviewerCandidate) => {
       const identity = getAdminIdentity();
-      const keyVersion = ownKey.data?.keyVersion;
-      if (identity === null || keyVersion === undefined) throw new Error('no key');
+      const keyVersion = inventory.data?.activeVersion;
+      if (identity === null || keyVersion == null) throw new Error('no key');
+      const generation = keyVault.generation();
+      const versioned = state.opened.requiredKeyVersions !== undefined;
+      const signer = versioned ? keyVault.version(identity, keyVersion) : unlocked;
+      if (!signer) {
+        unlockSigner?.(keyVersion);
+        throw new Error('Active signing key is locked');
+      }
       const recipient = {
+        version: reviewer.keyVersion,
         sub: reviewer.sub,
         encPub: reviewer.encPub,
         fingerprint: reviewer.fingerprint,
@@ -86,8 +96,29 @@ export function useRequestVerification(
           recipientRef: identity.userSub,
           ...key.wrap,
         };
-        wraps.push(await archiveCrypto.rewrapFor(wrap, unlocked, state.signers, recipient));
+        const source =
+          wrap.recipientVersion === undefined
+            ? unlocked
+            : keyVault.version(identity, wrap.recipientVersion);
+        if (!source || generation !== keyVault.generation())
+          throw new Error('Source key unavailable');
+        wraps.push(
+          versioned
+            ? await archiveCrypto.rewrapFor(
+                wrap,
+                source,
+                state.signers,
+                recipient,
+                signer.sigPrivate
+              )
+            : await archiveCrypto.rewrapFor(wrap, source, state.signers, recipient)
+        );
       }
+      if (
+        generation !== keyVault.generation() ||
+        (versioned && keyVault.version(identity, keyVersion) !== signer)
+      )
+        throw new Error('Signing key changed');
       return archive.assign(conversationId, {
         keyVersion,
         reviewerSub: reviewer.sub,

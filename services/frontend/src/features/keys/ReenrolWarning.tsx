@@ -1,49 +1,29 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/primitives/Button';
-import { useReenrolmentImpact } from './useKeys';
+import { hasPermission } from '@/app/auth/keycloak';
 
 interface ReenrolWarningProps {
   onContinue: () => void;
   onCancel: () => void;
 }
 
-/** What a new key costs, before anything happens; a custodian sees the shares left (§9.6). */
+/** Explain which work uses the new key before beginning replacement. */
 export function ReenrolWarning({ onContinue, onCancel }: Readonly<ReenrolWarningProps>) {
   const { t } = useTranslation();
-  const impact = useReenrolmentImpact();
-  const custodian = impact.data?.custodian === true;
+  const recording = hasPermission('ssf.recording.request');
+  const review = hasPermission('ssf.recording.review');
+  const notice =
+    recording && review ? 'both' : recording ? 'recording' : review ? 'review' : 'personal';
 
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-border-status bg-surface-card p-5">
       <h2 className="text-body font-semibold text-fg-strong">
         {t('admin.keys.reenrol.warningTitle')}
       </h2>
-      <ul className="flex list-disc flex-col gap-1.5 ps-5 text-note text-fg-body">
-        <li>{t('admin.keys.reenrol.warningLocked')}</li>
-        <li>{t('admin.keys.reenrol.warningRecovered')}</li>
-        <li>{t('admin.keys.reenrol.warningRequests')}</li>
-        {custodian && (
-          <li className="font-semibold">
-            {t('admin.keys.reenrol.warningCustodian', {
-              usable: impact.data?.usableAfter ?? 0,
-              k: impact.data?.k ?? 0,
-            })}
-          </li>
-        )}
-      </ul>
-      {impact.isError && (
-        <p role="alert" className="text-label text-fg-status-alert">
-          {t('admin.keys.unavailable')}
-        </p>
-      )}
+      <p>{t(`admin.tasks.replacement.${notice}`)}</p>
+      <p>{t('admin.tasks.contact')}</p>
       <div className="flex items-center gap-4">
-        <Button
-          variant="compact"
-          className="bg-accent text-accent-on"
-          // A custodian must see what it costs them: no warning, no new key.
-          disabled={!impact.isSuccess}
-          onClick={onContinue}
-        >
+        <Button variant="compact" className="bg-accent text-accent-on" onClick={onContinue}>
           {t('admin.keys.reenrol.continue')}
         </Button>
         <button type="button" className="text-label font-medium text-fg-muted" onClick={onCancel}>

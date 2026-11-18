@@ -11,30 +11,11 @@ import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import NotFoundPage from '@/pages/NotFoundPage';
 import { useServices } from '@/app/providers/services';
-import { ArchiveScreen } from '@/features/archive/ArchiveScreen';
-import { ARCHIVE_PERMISSIONS, ARCHIVE_VIEW } from '@/features/archive/useArchive';
-import { ReviewsScreen } from '@/features/review/ReviewsScreen';
-import { REVIEW_PERMISSION, REVIEWS_VIEW } from '@/features/review/useReviews';
-import { CeremonyScreen } from '@/features/ceremony/CeremonyScreen';
-import { CEREMONY_VIEW, CUSTODIAN, TENANT_MANAGE } from '@/features/ceremony/useCeremony';
-import { KeysScreen } from '@/features/keys/KeysScreen';
-import { KEYS_VIEW } from '@/features/keys/useKeys';
-import { KeyRecoveryScreen } from '@/features/recovery/KeyRecoveryScreen';
-import { RecoveryApprovalsScreen } from '@/features/recovery/RecoveryApprovalsScreen';
-import { RecoveryRequestsScreen } from '@/features/recovery/RecoveryRequestsScreen';
-import { KEY_RECOVERY_VIEW } from '@/features/recovery/useKeyRecovery';
-import {
-  RECOVERY_APPROVALS_VIEW,
-  RECOVERY_REQUESTS_VIEW,
-  SUPERVISE,
-} from '@/features/recovery/useRecovery';
-import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
-import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
+import { TaskWorkspace } from '@/features/dashboard/TaskWorkspace';
 import {
   logoutFromKeycloak,
-  getAccountConsoleUrl,
   getStudioAdministrationUrl,
-  hasPermission,
+  getAdminIdentity,
   requireKeycloakLogin,
   subscribeToKeycloakExpiration,
   subscribeToKeycloakAuthorization,
@@ -90,93 +71,9 @@ function AdminQueryBoundary({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
-interface StaffScreensProps {
-  onSignOut: () => void;
-  studioUrl?: string;
-}
-
-/** Staff screens that share one shape: back to the dashboard, keys on the way. */
-const STAFF_SCREENS = {
-  [CEREMONY_VIEW]: CeremonyScreen,
-  [ARCHIVE_VIEW]: ArchiveScreen,
-  [KEY_RECOVERY_VIEW]: KeyRecoveryScreen,
-  [RECOVERY_REQUESTS_VIEW]: RecoveryRequestsScreen,
-  [RECOVERY_APPROVALS_VIEW]: RecoveryApprovalsScreen,
-  [REVIEWS_VIEW]: ReviewsScreen,
-} as const;
-type StaffView = 'dashboard' | typeof KEYS_VIEW | keyof typeof STAFF_SCREENS;
-const RESUMABLE: ReadonlySet<string> = new Set([KEYS_VIEW, ...Object.keys(STAFF_SCREENS)]);
-
-/** A step-up redirect reloads the app; it asked to come back to the view it left. */
-function resumedView(remembered: string | null): StaffView {
-  return remembered !== null && RESUMABLE.has(remembered)
-    ? (remembered as StaffView)
-    : 'dashboard';
-}
-
-/** Which staff screens the menu offers: a navigation hint, the gateway checks each itself. */
-const OFFERED: Record<keyof typeof STAFF_SCREENS, () => boolean> = {
-  [CEREMONY_VIEW]: () => hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN),
-  [ARCHIVE_VIEW]: () => ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission)),
-  [KEY_RECOVERY_VIEW]: () => ARCHIVE_PERMISSIONS.some((permission) => hasPermission(permission)),
-  [RECOVERY_REQUESTS_VIEW]: () => hasPermission(SUPERVISE),
-  [RECOVERY_APPROVALS_VIEW]: () => hasPermission(CUSTODIAN),
-  [REVIEWS_VIEW]: () => hasPermission(REVIEW_PERMISSION),
-};
-
-function opener(view: keyof typeof STAFF_SCREENS, setView: (view: StaffView) => void) {
-  return OFFERED[view]() ? () => setView(view) : undefined;
-}
-
-/** The signed-in staff screens; switched by state, since Keycloak returns to one URL. */
-function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
-  const { resume } = useServices();
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [view, setView] = useState<StaffView>(() => resumedView(resume.take()));
-  // A custodian sent from the ceremony to unlock their keys goes back to the ceremony.
-  const [keysReturn, setKeysReturn] = useState<StaffView>('dashboard');
-  const accountUrl = getAccountConsoleUrl() ?? undefined;
-  const out = () => {
-    setSessionId(null);
-    onSignOut();
-  };
-  const openKeys = (from: StaffView) => {
-    setKeysReturn(from);
-    setView(KEYS_VIEW);
-  };
-  const shared = {
-    onSignOut: out,
-    accountUrl,
-    studioUrl,
-    onOpenKeyRecovery: opener(KEY_RECOVERY_VIEW, setView),
-  };
-
-  if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView(keysReturn)} {...shared} />;
-  if (view !== 'dashboard') {
-    const Screen = STAFF_SCREENS[view];
-    return <Screen onBack={() => setView('dashboard')} onOpenKeys={() => openKeys(view)} {...shared} />;
-  }
-  if (sessionId === null) {
-    return (
-      <AdminDashboardScreen
-        onEnterSession={setSessionId}
-        onOpenKeys={() => openKeys('dashboard')}
-        onOpenCeremony={opener(CEREMONY_VIEW, setView)}
-        onOpenArchive={opener(ARCHIVE_VIEW, setView)}
-        onOpenRecoveryRequests={opener(RECOVERY_REQUESTS_VIEW, setView)}
-        onOpenRecoveryApprovals={opener(RECOVERY_APPROVALS_VIEW, setView)}
-        onOpenReviews={opener(REVIEWS_VIEW, setView)}
-        {...shared}
-      />
-    );
-  }
-
-  return <AdminSessionScreen sessionId={sessionId} onLeave={() => setSessionId(null)} {...shared} />;
-}
-
 /** Resolve the route ID through the validated directory before using a realm. */
 function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
-  const { config, loginTenant, keyVault } = useServices();
+  const { config, loginTenant, keyVault, resume } = useServices();
   const { t } = useTranslation();
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'missing' | 'error'>(
     'loading'
@@ -186,14 +83,20 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
     () => getStudioAdministrationUrl(tenantId),
     () => null
   );
+  const identity = useSyncExternalStore(
+    subscribeToKeycloakAuthorization,
+    () => JSON.stringify(getAdminIdentity()),
+    () => null
+  );
   const navigate = useNavigate();
 
   useEffect(
     () =>
       subscribeToKeycloakExpiration(() => {
+        resume.take();
         void navigate('/login', { replace: true });
       }),
-    [navigate]
+    [navigate, resume]
   );
 
   useEffect(() => {
@@ -219,6 +122,7 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   }, [config, loginTenant, tenantId]);
 
   const out = () => {
+    resume.take();
     keyVault.lock();
     void logoutFromKeycloak().catch(() => {
       /* The local session is already cleared. */
@@ -237,7 +141,11 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
     );
   if (status !== 'authenticated') return <RouteState />;
 
-  return <StaffScreens onSignOut={out} studioUrl={studioUrl ?? undefined} />;
+  return (
+    <AdminQueryBoundary key={identity}>
+      <TaskWorkspace onSignOut={out} studioUrl={studioUrl ?? undefined} />
+    </AdminQueryBoundary>
+  );
 }
 
 export function AppRoutes() {

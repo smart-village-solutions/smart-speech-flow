@@ -2,8 +2,8 @@ import type { AxiosInstance } from 'axios';
 import { z } from 'zod';
 import type { PublicKeys } from '@/core/crypto/archive-crypto.port';
 import { toBase64Url } from '@/core/crypto/bytes';
-import { AppError } from '@/core/http/AppError';
-import { toEnrolledKey, toOwnKey, toReenrolled, toReenrolmentImpact } from './recording.mapper';
+import { inventory, readVersion, type KeyInventory } from './keyVersions';
+import { toEnrolledKey, toReenrolled, toReenrolmentImpact } from './recording.mapper';
 import type { EnrolledKey, OwnKey, Reenrolled, ReenrolmentImpact } from './recording.types';
 
 const KEYS = '/api/admin/recording/keys';
@@ -14,6 +14,8 @@ export const STEP_UP_REQUIRED = 'STEP_UP_REQUIRED';
 export interface RecordingKeysRepository {
   passphraseFileEnabled(): Promise<boolean>;
   /** Null when the caller has not enrolled yet. */
+  versions(): Promise<KeyInventory>;
+  version(version: number): Promise<OwnKey>;
   ownKey(): Promise<OwnKey | null>;
   enrol(keys: Readonly<PublicKeys>, blob: string): Promise<EnrolledKey>;
   /** A new key for a lost passphrase, replacing the version the caller was shown. */
@@ -28,14 +30,18 @@ export function createRecordingKeysRepository(http: AxiosInstance): RecordingKey
       return z.object({ passphrase_file_enabled: z.boolean() }).parse(response.data)
         .passphrase_file_enabled;
     },
+    async versions() {
+      return inventory.parse((await http.get<unknown>('/api/admin/recording/v2/keys/me')).data);
+    },
+    async version(version) {
+      return readVersion(
+        (await http.get<unknown>(`/api/admin/recording/v2/keys/me/${version}`)).data,
+        version
+      );
+    },
     async ownKey() {
-      try {
-        const response = await http.get<unknown>(`${KEYS}/me`);
-        return toOwnKey(response.data);
-      } catch (error) {
-        if (error instanceof AppError && error.serverCode === 'KEY_NOT_ENROLLED') return null;
-        throw error;
-      }
+      const { activeVersion } = await this.versions();
+      return activeVersion === null ? null : this.version(activeVersion);
     },
 
     async enrol(keys, blob) {

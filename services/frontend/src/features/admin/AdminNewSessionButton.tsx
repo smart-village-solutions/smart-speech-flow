@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/ui/patterns/ConfirmDialog';
 import type { CreatedSession } from '@/domain/admin/admin.types';
 import type { InviteCopy } from '@/features/content/staffCopy';
 import { AdminInviteOverlay } from './AdminInviteOverlay';
+import {OVERVIEW} from '@/features/dashboard/filterRows';
 import { ADMIN_SESSIONS_KEY } from './useAdminSessions';
 
 interface AdminNewSessionButtonProps {
@@ -41,6 +42,7 @@ export function AdminNewSessionButton({
     onSuccess: (created) => {
       setInvite(created);
       // The gateway ended the admin's previous session, so the list is now stale.
+      void queryClient.invalidateQueries({queryKey:OVERVIEW});
       void queryClient.invalidateQueries({ queryKey: ADMIN_SESSIONS_KEY });
     },
   });

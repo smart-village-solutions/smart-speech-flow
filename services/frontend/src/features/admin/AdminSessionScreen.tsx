@@ -17,6 +17,7 @@ import { useStaffLocalisation } from './useStaffLocalisation';
 interface AdminSessionScreenProps {
   sessionId: string;
   onLeave: () => void;
+  onOpenKeys?: () => void;
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
@@ -32,7 +33,7 @@ interface AdminSessionScreenProps {
 export function AdminSessionScreen({
   sessionId,
   onLeave,
-  onSignOut,
+  onOpenKeys, onSignOut,
   accountUrl,
   studioUrl,
 }: Readonly<AdminSessionScreenProps>) {
@@ -96,7 +97,7 @@ export function AdminSessionScreen({
           onBack={onLeave}
           onHome={() => void navigate('/')}
           onFeedback={() => openFeedback({ kind: 'staff', sessionId })}
-          onSignOut={onSignOut}
+          onOpenKeys={onOpenKeys} onSignOut={onSignOut}
           accountUrl={accountUrl}
           studioUrl={studioUrl}
         />

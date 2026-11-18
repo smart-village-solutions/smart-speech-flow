@@ -1,8 +1,9 @@
+import { personalInventory } from '@/test/personalKeys';
 import { act, screen, waitFor } from '@testing-library/react';
 import { focusManager } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity, hasPermission, hasFreshStepUp } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { AppError } from '@/core/http/AppError';
@@ -15,6 +16,7 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
+  hasPermission: vi.fn(),
   hasFreshStepUp: vi.fn(),
   requestStepUp: vi.fn(),
 }));
@@ -56,7 +58,10 @@ function render({
   after,
 }: Options = {}) {
   const keyVault = createKeyVault();
-  keyVault.hold(old);
+  const owner = { tenantId: 'tenant-kassel', userSub: 'alice' };
+  const initial = personalInventory(ownKey);
+  keyVault.reconcile(owner, initial.versions);
+  keyVault.holdVersion(owner, initial.versions[0], old, keyVault.generation());
   const order: string[] = [];
   const lock = keyVault.lock.bind(keyVault);
   keyVault.lock = () => {
@@ -65,6 +70,8 @@ function render({
   };
   const recordingKeys = {
     passphraseFileEnabled: vi.fn().mockResolvedValue(false),
+    versions: vi.fn(async () => personalInventory(after ?? ownKey)),
+    version: vi.fn(async () => after ?? ownKey),
     ownKey: vi
       .fn()
       .mockResolvedValueOnce(ownKey)
@@ -82,21 +89,17 @@ function render({
     }),
     unlock: vi.fn(),
   };
-  const onOpenKeyRecovery = vi.fn();
-  renderWithProviders(
-    <KeysScreen onBack={vi.fn()} onSignOut={vi.fn()} onOpenKeyRecovery={onOpenKeyRecovery} />,
-    {
-      locale: 'de',
-      services: {
-        recordingKeys,
-        archiveCrypto,
-        keyVault,
-        passphraseStrength: { score: async (p: string) => (p === STRONG ? 4 : 2) },
-        resume: { remember: vi.fn(), take: () => null },
-      } as never,
-    }
-  );
-  return { recordingKeys, archiveCrypto, keyVault, order, onOpenKeyRecovery };
+  renderWithProviders(<KeysScreen onBack={vi.fn()} onSignOut={vi.fn()} />, {
+    locale: 'de',
+    services: {
+      recordingKeys,
+      archiveCrypto,
+      keyVault,
+      passphraseStrength: { score: async (p: string) => (p === STRONG ? 4 : 2) },
+      resume: { remember: vi.fn(), take: () => null },
+    } as never,
+  });
+  return { recordingKeys, archiveCrypto, keyVault, order };
 }
 
 const newKey = { fingerprint: fresh.fingerprint, fingerprintDisplay: sent.fingerprintDisplay };
@@ -139,20 +142,24 @@ describe('re-enrolment', () => {
     vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
-  it('warns what is lost before anything else', async () => {
-    render();
-    await userEvent.click(await screen.findByRole('button', { name: r.start }));
-    expect(await screen.findByText(r.warningLocked)).toBeInTheDocument();
-    expect(screen.getByText(r.warningRequests)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Passphrase wiederholen')).not.toBeInTheDocument();
-  });
-
-  it('tells a custodian how many usable shares remain', async () => {
-    render({ custodian: true });
-    await userEvent.click(await screen.findByRole('button', { name: r.start }));
-    const line = r.warningCustodian.replace('{{usable}}', '2').replace('{{k}}', '2');
-    expect(await screen.findByText(line)).toBeInTheDocument();
-  });
+  it.each([
+    [[], 'personal'],
+    [['ssf.recording.review'], 'review'],
+    [['ssf.recording.request'], 'recording'],
+    [['ssf.recording.request', 'ssf.recording.review'], 'both'],
+  ] as const)(
+    'explains version replacement for %j before creating keys',
+    async (permissions, copy) => {
+      vi.mocked(hasPermission).mockImplementation((p) =>
+        (permissions as readonly string[]).includes(p)
+      );
+      render();
+      await userEvent.click(await screen.findByRole('button', { name: r.start }));
+      expect(await screen.findByText(de.admin.tasks.replacement[copy])).toBeInTheDocument();
+      expect(screen.getByText(de.admin.tasks.contact)).toBeInTheDocument();
+      expect(screen.queryByLabelText('Passphrase wiederholen')).not.toBeInTheDocument();
+    }
+  );
 
   it('asks for a fresh second factor after the warning', async () => {
     vi.mocked(hasFreshStepUp).mockReturnValue(false);
@@ -161,9 +168,9 @@ describe('re-enrolment', () => {
     expect(await screen.findByRole('button', { name: 'Erneut anmelden' })).toBeInTheDocument();
   });
 
-  it('activates the key once its link is confirmed elsewhere, and offers key recovery', async () => {
+  it('activates the key once its link is confirmed elsewhere, and preserves the old version', async () => {
     const after = { ...ownKey, ...newKey, keyVersion: 5 };
-    const { recordingKeys, keyVault, order, onOpenKeyRecovery } = render();
+    const { recordingKeys, keyVault, order } = render();
     await throughTheWarning();
     recordingKeys.reenrolmentImpact.mockResolvedValue(impact(waiting));
     await submitNewPassphrase();
@@ -175,13 +182,13 @@ describe('re-enrolment', () => {
 
     // The link is opened on a phone; the tablet comes back into focus.
     recordingKeys.reenrolmentImpact.mockResolvedValue(impact(null));
-    recordingKeys.ownKey.mockResolvedValue(after);
+    recordingKeys.versions.mockResolvedValue(personalInventory(after, [ownKey]));
+    recordingKeys.version.mockResolvedValue(after);
     refocus();
 
-    expect(await screen.findByText(r.done)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('5'));
     expect(keyVault.current()).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: de.admin.keyRecovery.open }));
-    expect(onOpenKeyRecovery).toHaveBeenCalled();
+    expect(keyVault.version({ tenantId: 'tenant-kassel', userSub: 'alice' }, 4)).toBe(old);
   });
 
   it('says the link ended when it was declined or lapsed', async () => {
@@ -230,13 +237,6 @@ describe('re-enrolment', () => {
     await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
     // Review point 3: a refusal costs no unlock.
     expect(keyVault.current()).toBe(old);
-  });
-
-  it('offers no way on when the cost of a new key cannot be read', async () => {
-    render({ impactFails: true });
-    await userEvent.click(await screen.findByRole('button', { name: r.start }));
-    expect(await screen.findByText(de.admin.keys.unavailable)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: r.continue })).toBeDisabled();
   });
 
   it('keeps the waiting key on screen when the step-up ages afterwards', async () => {

@@ -8,20 +8,17 @@ import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { RichText } from '@/ui/patterns/RichText';
 import { SystemLoadCard } from './SystemLoadCard';
 import { AdminNewSessionButton } from './AdminNewSessionButton';
-import { AdminSessionList } from './AdminSessionList';
+import type { ReactNode } from 'react';
 import { ConversationUsageCard } from './ConversationUsageCard';
-import { useAdminSessions, useOwnLiveSessionId } from './useAdminSessions';
+import { useOwnLiveSessionId } from './useAdminSessions';
 
 interface AdminDashboardScreenProps {
   onEnterSession: (sessionId: string) => void;
   onSignOut: () => void;
   onOpenKeys?: () => void;
-  onOpenCeremony?: () => void;
-  onOpenArchive?: () => void;
-  onOpenKeyRecovery?: () => void;
-  onOpenRecoveryRequests?: () => void;
-  onOpenRecoveryApprovals?: () => void;
-  onOpenReviews?: () => void;
+  children?: ReactNode;
+  navigation?: ReactNode;
+  conversationView?: boolean;
   accountUrl?: string;
   studioUrl?: string;
 }
@@ -30,19 +27,16 @@ export function AdminDashboardScreen({
   onEnterSession,
   onSignOut,
   onOpenKeys,
-  onOpenCeremony,
-  onOpenArchive,
-  onOpenKeyRecovery,
-  onOpenRecoveryRequests,
-  onOpenRecoveryApprovals,
-  onOpenReviews,
+  children,
+  navigation,
+  conversationView = true,
   accountUrl,
   studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
   const copy = useStaffCopy();
   const { openFeedback } = useFeedback();
   const navigate = useNavigate();
-  const { data: sessions = [], isError } = useAdminSessions();
+
   const { data: ownLiveSessionId = null } = useOwnLiveSessionId();
   useScreenLocale('de');
 
@@ -56,36 +50,33 @@ export function AdminDashboardScreen({
         accountUrl={accountUrl}
         studioUrl={studioUrl}
         onOpenKeys={onOpenKeys}
-        onOpenCeremony={onOpenCeremony}
-        onOpenArchive={onOpenArchive}
-        onOpenKeyRecovery={onOpenKeyRecovery}
-        onOpenRecoveryRequests={onOpenRecoveryRequests}
-        onOpenRecoveryApprovals={onOpenRecoveryApprovals}
-        onOpenReviews={onOpenReviews}
       />
 
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
-        <div className="flex flex-col gap-4 md:flex-row">
-          <div className="rounded-2xl border border-border-card bg-surface-card p-5 md:basis-2/3">
-            <p className="mb-1.5 text-thanks font-semibold text-fg-strong">{copy.headline}</p>
-            <div className="flex flex-col gap-2 text-note leading-chat text-fg-muted">
-              <RichText html={copy.introHtml} />
+        {navigation}
+        {conversationView && (
+          <>
+            <div className="flex flex-col gap-4 md:flex-row">
+              <div className="rounded-2xl border border-border-card bg-surface-card p-5 md:basis-2/3">
+                <p className="mb-1.5 text-thanks font-semibold text-fg-strong">{copy.headline}</p>
+                <div className="flex flex-col gap-2 text-note leading-chat text-fg-muted">
+                  <RichText html={copy.introHtml} />
+                </div>
+              </div>
+
+              <SystemLoadCard copy={copy.load} />
             </div>
-          </div>
 
-          <SystemLoadCard copy={copy.load} />
-        </div>
-
-        <AdminNewSessionButton
-          liveSessionId={ownLiveSessionId}
-          callToAction={copy.callToAction}
-          invite={copy.invite}
-          onEnter={onEnterSession}
-        />
-
-        <ConversationUsageCard />
-
-        <AdminSessionList sessions={sessions} isError={isError} onEnter={onEnterSession} />
+            <AdminNewSessionButton
+              liveSessionId={ownLiveSessionId}
+              callToAction={copy.callToAction}
+              invite={copy.invite}
+              onEnter={onEnterSession}
+            />
+          </>
+        )}
+        {children}
+        {conversationView && <ConversationUsageCard />}
       </div>
       <SiteLegalLinks className="mt-auto px-5 pt-4 pb-legal-end" />
     </ScreenShell>

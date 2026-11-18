@@ -25,7 +25,8 @@ export interface VerifyInput {
   tenantId: string;
   userSub: string;
   opened: OpenedConversation;
-  trust: ArchiveTrust;
+  trust: ArchiveTrust | ReadonlyMap<string, Bytes>;
+  keyForVersion?: (version: number) => UnlockedKeys | null;
   unlocked: UnlockedKeys;
   archiveCrypto: ArchiveCrypto;
   ceremonyCrypto: CeremonyCrypto;
@@ -35,6 +36,7 @@ export interface VerifyInput {
 
 async function certified(input: Readonly<VerifyInput>): Promise<Map<string, Bytes> | null> {
   try {
+    if ('get' in input.trust) return new Map(input.trust);
     return (await input.ceremonyCrypto.certifyChain(input.trust)).gatewayKeys;
   } catch {
     return null;
@@ -56,7 +58,12 @@ async function openKeys(
       ...key.wrap,
     };
     try {
-      keys.set(key.keyId, await input.archiveCrypto.openWrap(wrap, input.unlocked, signers));
+      const material =
+        wrap.recipientVersion === undefined
+          ? input.unlocked
+          : input.keyForVersion?.(wrap.recipientVersion);
+      if (!material) return null;
+      keys.set(key.keyId, await input.archiveCrypto.openWrap(wrap, material, signers));
     } catch {
       return null;
     }

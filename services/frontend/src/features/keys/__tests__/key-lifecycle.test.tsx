@@ -1,3 +1,4 @@
+import { personalInventory } from '@/test/personalKeys';
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -10,7 +11,10 @@ import type { OwnKey } from '@/domain/recording/recording.types';
 import { useUnlock } from '../useUnlock';
 import { useEnrolment } from '../useEnrolment';
 import { useReenrolment } from '../useReenrolment';
-import { useOwnKey, useVaultFollowsOwnKey } from '../useKeys';
+import { useKeyInventory } from '../useKeyInventory';
+vi.mock('@/app/auth/keycloak', () => ({
+  getAdminIdentity: () => ({ tenantId: 'tenant', userSub: 'alice' }),
+}));
 
 const owner: KeyOwner = { tenantId: 'tenant', userSub: 'alice' };
 const keys = { fingerprint: new Uint8Array([1]) } as UnlockedKeys;
@@ -101,27 +105,6 @@ describe('pending key operations', () => {
     });
     expect(vault.current()).toBeNull();
   });
-
-  it('invalidates pending unlock when the enrolled version changes even while locked', () => {
-    const { vault, wrapper } = setup();
-    const hook = renderHook(({ key }) => useVaultFollowsOwnKey(key), {
-      wrapper,
-      initialProps: { key: ownKey },
-    });
-    const generation = vault.generation();
-    hook.rerender({ key: { ...ownKey, keyVersion: 2 } });
-    expect(vault.holdIfCurrent(keys, generation)).toBe(false);
-  });
-});
-
-it('remembers the enrolled version across navigation away from the keys screen', () => {
-  const { vault, wrapper } = setup();
-  const first = renderHook(() => useVaultFollowsOwnKey(ownKey), { wrapper });
-  vault.hold(keys);
-  first.unmount();
-  expect(vault.current()).toBe(keys);
-  renderHook(() => useVaultFollowsOwnKey({ ...ownKey, keyVersion: 2 }), { wrapper });
-  expect(vault.current()).toBeNull();
 });
 
 it('discards reenrolment results after invalidation while posting', async () => {
@@ -146,61 +129,35 @@ it('discards reenrolment results after invalidation while posting', async () => 
   expect(hook.result.current.result).toBeNull();
 });
 
-it('does not let an initial pre-enrolment read erase newly created keys', () => {
-  const { vault, wrapper } = setup();
-  vault.hold(keys);
-  renderHook(() => useVaultFollowsOwnKey(null), { wrapper });
-  expect(vault.current()).toBe(keys);
-});
-
-it('locks when a previously enrolled key disappears', () => {
-  const { vault, wrapper } = setup();
-  const hook = renderHook(({ key }: { key: OwnKey | null }) => useVaultFollowsOwnKey(key), {
-    wrapper,
-    initialProps: { key: ownKey },
-  });
-  vault.hold(keys);
-  hook.rerender({ key: null });
-  expect(vault.current()).toBeNull();
-});
-
-it('a shared own-key read outside the keys screen invalidates a replaced version', async () => {
-  const { vault, wrapper } = setup({
-    recordingKeys: {
-      ownKey: async () => ({ ...ownKey, keyVersion: 2 }),
-    } as Services['recordingKeys'],
-  });
-  vault.observeKey(ownKey);
-  vault.hold(keys);
-  const hook = renderHook(() => useOwnKey(), { wrapper });
-  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
-  expect(vault.current()).toBeNull();
-});
-
 it('replaces a read begun before enrolment with the newly enrolled server key', async () => {
-  const stale = deferred<OwnKey | null>();
-  const ownKeyRead = vi.fn().mockReturnValueOnce(stale.promise).mockResolvedValue(ownKey);
+  const stale = deferred<ReturnType<typeof personalInventory>>();
+  const updated = personalInventory(ownKey);
+  const versions = vi.fn().mockReturnValueOnce(stale.promise).mockResolvedValue(updated);
   const { vault, wrapper } = setup({
     passphraseStrength: { score: async () => 4 },
     archiveCrypto: {
       createKeys: async () => ({ blob: 'sealed', unlocked: keys }),
     } as Services['archiveCrypto'],
     recordingKeys: {
-      ownKey: ownKeyRead,
+      versions,
       enrol: async () => undefined,
     } as unknown as Services['recordingKeys'],
   });
-  const hook = renderHook(() => ({ query: useOwnKey(), enrolment: useEnrolment(owner) }), {
-    wrapper,
-  });
+  const hook = renderHook(
+    () => ({ query: useKeyInventory(owner), enrolment: useEnrolment(owner) }),
+    {
+      wrapper,
+    }
+  );
+  vault.reconcile(owner, []);
   let submitted!: Promise<boolean>;
   await act(async () => {
     submitted = hook.result.current.enrolment.submit(passphrase, passphrase);
   });
   await act(async () => {
-    stale.resolve(null);
+    stale.resolve(personalInventory(null));
     expect(await submitted).toBe(true);
   });
-  await waitFor(() => expect(hook.result.current.query.data).toBe(ownKey));
+  await waitFor(() => expect(hook.result.current.query.data).toEqual(updated));
   expect(vault.current()).toBe(keys);
 });

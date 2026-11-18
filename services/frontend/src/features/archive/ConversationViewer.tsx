@@ -41,7 +41,7 @@ function ReadyViewer({ state, unlocked, onAdded }: Readonly<ReadyViewerProps>) {
   const amend = useAmend(opened, keys, () => {
     setAmending(null);
     onAdded();
-  });
+  },state.assertCurrent);
   const onAmend = amendable(opened, amend.unconfirmed) ? setAmending : undefined;
 
   return (

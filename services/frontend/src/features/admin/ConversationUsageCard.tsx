@@ -148,7 +148,7 @@ function ConversationUsageSummary({
         aria-expanded={expanded}
         aria-controls={detailsId}
         onClick={onToggle}
-        className="focus-ring hit-target mt-1 inline-flex items-center gap-1 rounded-lg text-caption text-fg-muted"
+        className="relative focus-ring hit-target mt-1 inline-flex items-center gap-1 rounded-lg text-caption text-fg-muted"
       >
         <ChevronDown aria-hidden="true" size={16} className={expanded ? 'rotate-180' : ''} />
         {t(expanded ? 'admin.usage.hideLanguages' : 'admin.usage.showLanguages')}

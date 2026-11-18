@@ -4,7 +4,7 @@ import { useServices } from '@/app/providers/services';
 import type { KeyOwner, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
 import { fromServerCode } from '@/core/http/AppError';
 import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
-import { OWN_KEY_QUERY } from './useKeys';
+import { INVENTORY_QUERY } from './useKeyInventory';
 
 export type EnrolmentError = 'mismatch' | 'weak' | 'stepUp' | 'email' | 'failed';
 
@@ -77,9 +77,14 @@ export function useEnrolment(owner: Readonly<KeyOwner>) {
       if (generation !== keyVault.generation()) return false;
       await recordingKeys.enrol(created.unlocked, created.blob);
       // A read begun before enrolment must not deliver its old key after the new hold.
-      await queryClient.cancelQueries({ queryKey: OWN_KEY_QUERY });
-      if (!keyVault.holdIfCurrent(created.unlocked, generation)) return false;
-      await queryClient.invalidateQueries({ queryKey: OWN_KEY_QUERY });
+      await queryClient.cancelQueries({ queryKey: INVENTORY_QUERY });
+      const inventory = await recordingKeys.versions();
+      if (generation !== keyVault.generation()) return false;
+      keyVault.reconcile(owner, inventory.versions);
+      const active = inventory.versions.find((k) => k.version === inventory.activeVersion);
+      if (!active || !keyVault.holdVersion(owner, active, created.unlocked, keyVault.generation()))
+        return false;
+      queryClient.setQueryData([...INVENTORY_QUERY, owner.tenantId, owner.userSub], inventory);
       return true;
     },
     enrolmentError

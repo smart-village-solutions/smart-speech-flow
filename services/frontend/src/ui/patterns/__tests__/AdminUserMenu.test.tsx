@@ -1,89 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AdminUserMenu } from '@/ui/patterns/AdminUserMenu';
 
-const ACCOUNT_URL =
-  'https://auth.dialog.kassel.de/realms/smartcity/account?referrer=ssf-frontend&referrer_uri=https%3A%2F%2Fdialog.kassel.de%2Flogin%2Ftenant-kassel';
-
 const open = () => userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
 
 describe('AdminUserMenu', () => {
-  it('offers the archive keys only where a screen can open them, and closes on choosing', async () => {
+  it('opens the internal account and closes the menu', async () => {
     const onOpenKeys = vi.fn();
-    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenKeys={onOpenKeys} />, {
+      locale: 'de',
+    });
     await open();
-    expect(screen.queryByRole('button', { name: 'Archivschlüssel' })).not.toBeInTheDocument();
-    unmount();
-
-    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenKeys={onOpenKeys} />, { locale: 'de' });
-    await open();
-    await userEvent.click(screen.getByRole('button', { name: 'Archivschlüssel' }));
+    expect(screen.queryByText('Wiederherstellungsfreigaben')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Mein Konto' }));
     expect(onOpenKeys).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
-  });
-
-  it('offers the recording archive only where a screen can open it', async () => {
-    const onOpenArchive = vi.fn();
-    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, {
-      locale: 'de',
-    });
-    await open();
-    expect(screen.queryByRole('button', { name: 'Meine Aufzeichnungen' })).not.toBeInTheDocument();
-    unmount();
-
-    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenArchive={onOpenArchive} />, {
-      locale: 'de',
-    });
-    await open();
-    await userEvent.click(screen.getByRole('button', { name: 'Meine Aufzeichnungen' }));
-    expect(onOpenArchive).toHaveBeenCalledOnce();
-  });
-
-  it('offers recovery requests and approvals each only where its permission let a screen open it', async () => {
-    const requests = vi.fn();
-    const approvals = vi.fn();
-    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryApprovals={approvals} />, {
-      locale: 'de',
-    });
-    await open();
-    expect(screen.queryByRole('button', { name: 'Ausnahmezugriffe' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Wiederherstellungsfreigaben' }));
-    expect(approvals).toHaveBeenCalledOnce();
-    unmount();
-
-    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenRecoveryRequests={requests} />, { locale: 'de' });
-    await open();
-    expect(screen.queryByRole('button', { name: 'Wiederherstellungsfreigaben' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Ausnahmezugriffe' }));
-    expect(requests).toHaveBeenCalledOnce();
-  });
-
-  it('offers key recovery only where a screen can open it', async () => {
-    const onOpenKeyRecovery = vi.fn();
-    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
-    await open();
-    expect(screen.queryByRole('button', { name: 'Meine Schlüsselwiederherstellung' })).not.toBeInTheDocument();
-    unmount();
-
-    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenKeyRecovery={onOpenKeyRecovery} />, { locale: 'de' });
-    await open();
-    await userEvent.click(screen.getByRole('button', { name: 'Meine Schlüsselwiederherstellung' }));
-    expect(onOpenKeyRecovery).toHaveBeenCalledOnce();
-  });
-
-  it('offers reviews only where a screen can open them (#619)', async () => {
-    const onOpenReviews = vi.fn();
-    const { unmount } = renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
-    await open();
-    expect(screen.queryByRole('button', { name: 'Prüfungen' })).not.toBeInTheDocument();
-    unmount();
-
-    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} onOpenReviews={onOpenReviews} />, { locale: 'de' });
-    await open();
-    await userEvent.click(screen.getByRole('button', { name: 'Prüfungen' }));
-    expect(onOpenReviews).toHaveBeenCalledOnce();
+    expect(screen.queryByText('Abmelden')).not.toBeInTheDocument();
   });
 
   it('opens and closes on the trigger', async () => {
@@ -96,66 +29,6 @@ describe('AdminUserMenu', () => {
     expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
   });
 
-  it('links to the Keycloak account console first, in a new tab', async () => {
-    renderWithProviders(
-      <AdminUserMenu
-        onSignOut={vi.fn()}
-        accountUrl={ACCOUNT_URL}
-        studioUrl="https://smartcity.dialog.kassel.de/"
-      />,
-      { locale: 'de' }
-    );
-    await open();
-
-    const account = screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' });
-    expect(account).toHaveAttribute('href', ACCOUNT_URL);
-    expect(account).toHaveAttribute('target', '_blank');
-    expect(account).toHaveAttribute('rel', 'noreferrer');
-    expect(
-      account.compareDocumentPosition(
-        screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
-      )
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  });
-
-  it.each([
-    'Kontoeinstellungen (öffnet in neuem Tab)',
-    'Organisation verwalten (öffnet in neuem Tab)',
-  ])('closes once %s has opened its tab', async (name) => {
-    renderWithProviders(
-      <AdminUserMenu
-        onSignOut={vi.fn()}
-        accountUrl={ACCOUNT_URL}
-        studioUrl="https://smartcity.dialog.kassel.de/"
-      />,
-      { locale: 'de' }
-    );
-    await open();
-
-    const link = screen.getByRole('link', { name });
-    // jsdom cannot open tabs; the menu only has to react to the click.
-    link.addEventListener('click', (event) => event.preventDefault());
-    await userEvent.click(link);
-    expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
-  });
-
-  it('tells assistive technology that each link opens a new tab', async () => {
-    renderWithProviders(
-      <AdminUserMenu
-        onSignOut={vi.fn()}
-        accountUrl={ACCOUNT_URL}
-        studioUrl="https://smartcity.dialog.kassel.de/"
-      />,
-      { locale: 'de' }
-    );
-    await open();
-
-    for (const name of ['Kontoeinstellungen', 'Organisation verwalten']) {
-      const link = screen.getByRole('link', { name: `${name} (öffnet in neuem Tab)` });
-      expect(within(link).getByText('(öffnet in neuem Tab)')).toHaveClass('sr-only');
-    }
-  });
-
   it('does not show account settings without an account console', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
     await open();
@@ -166,7 +39,7 @@ describe('AdminUserMenu', () => {
 
   it('never collects a password or an email address itself', async () => {
     const { container } = renderWithProviders(
-      <AdminUserMenu onSignOut={vi.fn()} accountUrl={ACCOUNT_URL} />,
+      <AdminUserMenu onSignOut={vi.fn()} onOpenKeys={vi.fn()} />,
       { locale: 'de' }
     );
     await open();
@@ -211,7 +84,9 @@ describe('AdminUserMenu', () => {
     expect(screen.getByRole('button', { name: 'Benutzerkonto' })).toHaveFocus();
     await user.keyboard('{Enter}');
     await user.tab();
-    expect(screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).toHaveFocus();
+    expect(
+      screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).toHaveFocus();
   });
 
   it('does not show the Studio link when it is not supplied', async () => {
@@ -226,16 +101,14 @@ describe('AdminUserMenu', () => {
     renderWithProviders(
       <AdminUserMenu
         onSignOut={vi.fn()}
-        accountUrl={ACCOUNT_URL}
+        onOpenKeys={vi.fn()}
         studioUrl="https://smartcity.dialog.kassel.de/"
       />,
       { locale: 'de' }
     );
     await open();
 
-    expect(
-      screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })
-    ).toHaveClass('text-note');
+    expect(screen.getByRole('button', { name: 'Mein Konto' })).toHaveClass('text-note');
     expect(
       screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
     ).toHaveClass('text-note');
@@ -246,7 +119,7 @@ describe('AdminUserMenu', () => {
     renderWithProviders(
       <AdminUserMenu
         onSignOut={vi.fn()}
-        accountUrl={ACCOUNT_URL}
+        onOpenKeys={vi.fn()}
         studioUrl="https://smartcity.dialog.kassel.de/"
       />,
       { locale: 'de' }
@@ -256,7 +129,7 @@ describe('AdminUserMenu', () => {
     const signOut = screen.getByRole('button', { name: 'Abmelden' });
     expect(signOut.parentElement).toHaveClass('divide-y', 'divide-border-divider');
     for (const row of [
-      screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' }),
+      screen.getByRole('button', { name: 'Mein Konto' }),
       screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' }),
       signOut,
     ]) {

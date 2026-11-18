@@ -7,6 +7,7 @@ import { readConfig } from '@/app/config/env';
 import { AppRoutes } from '@/app/router/AppRoutes';
 
 vi.mock('@/app/auth/keycloak', () => ({
+  getAdminIdentity: () => ({ tenantId:'tenant-kassel', userSub:'alice' }),
   requireKeycloakLogin: vi.fn().mockResolvedValue(true),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   getStudioAdministrationUrl: vi.fn().mockReturnValue(null),
@@ -64,7 +65,7 @@ describe('the admin session flow', () => {
     // Waiting on the rows, not the heading: the heading renders before the
     // query answers, and "no button for TR000001" is only meaningful once the
     // list it would appear in has actually loaded.
-    expect((await screen.findAllByText('abgeschlossen')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Beendet')).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: /TR000001/ })).not.toBeInTheDocument();
   });
 

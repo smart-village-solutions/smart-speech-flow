@@ -21,6 +21,7 @@ export type Opened =
   | { status: 'broken'; stage: string }
   | {
       status: 'ready';
+      assertCurrent?: () => void;
       opened: OpenedConversation;
       keys: Map<string, CryptoKey>;
       stamps: StampView[];
@@ -31,6 +32,8 @@ export type Opened =
     };
 
 export interface OpenDeps {
+  assertCurrent?: () => void;
+  keyForVersion?: (version: number) => UnlockedKeys | null;
   archive: ArchiveRepository;
   archiveCrypto: ArchiveCrypto;
   ceremonyCrypto: CeremonyCrypto;
@@ -72,6 +75,7 @@ export async function openObject(
   if (entry === undefined || key === undefined || listed === undefined)
     throw new Error('not openable');
   const conversationId = opened.conversation.conversationId;
+  deps.assertCurrent?.();
   const envelope = await fetchObject(deps, conversationId, entryId, objectType);
   if (envelope.length !== listed.size || (await sha256Hex(envelope)) !== listed.sha256) {
     throw new Error('ciphertext differs from the signed entry');
@@ -83,7 +87,10 @@ export async function openObject(
     objectType,
     keyId: entry.keyId,
   };
-  return deps.archiveCrypto.openObject(key, address, envelope);
+  deps.assertCurrent?.();
+  const plaintext = await deps.archiveCrypto.openObject(key, address, envelope);
+  deps.assertCurrent?.();
+  return plaintext;
 }
 
 /** A few at a time: each fetch holds one of the gateway's pooled database connections. */
@@ -144,16 +151,18 @@ export async function openConversation(
   unlocked: UnlockedKeys,
   employeeSub: string = deps.identity.userSub
 ): Promise<Opened> {
-  const [opened, trust] = await Promise.all([
-    deps.archive.open(conversationId),
-    deps.archive.trust(deps.identity.tenantId),
-  ]);
+  const opened = await deps.archive.open(conversationId);
+  const trust = opened.requiredKeyVersions
+    ? await deps.archive.gatewaySigners()
+    : await deps.archive.trust(deps.identity.tenantId);
   // The caller's own, or the listed employee's for a recovered one (§9.5); nothing else was asked for.
   const facts = opened.conversation;
   if (facts.conversationId !== conversationId || facts.employeeSub !== employeeSub) {
     return broken(deps, conversationId, 'chain');
   }
+  deps.assertCurrent?.();
   const verified = await verifyConversation({ ...deps, ...deps.identity, opened, trust, unlocked });
+  deps.assertCurrent?.();
   if (!verified.ok) return broken(deps, conversationId, verified.stage);
   return finishOpening(deps, opened, verified);
 }
@@ -177,6 +186,7 @@ export async function finishOpening(
     report(deps, conversationId, 'verification');
   return {
     status: 'ready',
+    assertCurrent: deps.assertCurrent,
     opened,
     keys: verified.keys,
     stamps: verified.stamps,

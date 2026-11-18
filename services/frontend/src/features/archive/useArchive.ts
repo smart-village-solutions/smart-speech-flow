@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { pinVault } from '@/features/keys/pinVault';
 import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
@@ -44,7 +45,7 @@ export function useOpenedConversation(
   version: number,
   employeeSub?: string
 ): Opened {
-  const { archive, archiveCrypto, ceremonyCrypto } = useServices();
+  const { keyVault, archive, archiveCrypto, ceremonyCrypto } = useServices();
   // `version` re-opens the conversation after an amendment; a result for an older request reads as checking.
   const request = `${conversationId}:${version}`;
   const [result, setResult] = useState<{ request: string; opened: Opened } | null>(null);
@@ -56,7 +57,7 @@ export function useOpenedConversation(
       identity === null
         ? Promise.resolve({ status: 'unavailable' })
         : openConversation(
-            { archive, archiveCrypto, ceremonyCrypto, identity },
+            { archive, archiveCrypto, ceremonyCrypto, identity, ...pinVault(keyVault, identity) },
             conversationId,
             unlocked,
             employeeSub ?? identity.userSub
@@ -68,13 +69,22 @@ export function useOpenedConversation(
     return () => {
       live = false;
     };
-  }, [archive, archiveCrypto, ceremonyCrypto, conversationId, unlocked, request, employeeSub]);
+  }, [
+    keyVault,
+    archive,
+    archiveCrypto,
+    ceremonyCrypto,
+    conversationId,
+    unlocked,
+    request,
+    employeeSub,
+  ]);
 
   return result?.request === request ? result.opened : { status: 'checking' };
 }
 
 export function useObjectOpener() {
-  const { archive, archiveCrypto, ceremonyCrypto } = useServices();
+  const { keyVault, archive, archiveCrypto, ceremonyCrypto } = useServices();
   return useCallback(
     (
       opened: OpenedConversation,
@@ -85,13 +95,13 @@ export function useObjectOpener() {
       const identity = getAdminIdentity();
       if (identity === null) return Promise.reject(new Error('signed out'));
       return openObject(
-        { archive, archiveCrypto, ceremonyCrypto, identity },
+        { archive, archiveCrypto, ceremonyCrypto, identity, ...pinVault(keyVault, identity) },
         opened,
         keys,
         entryId,
         objectType
       );
     },
-    [archive, archiveCrypto, ceremonyCrypto]
+    [keyVault, archive, archiveCrypto, ceremonyCrypto]
   );
 }

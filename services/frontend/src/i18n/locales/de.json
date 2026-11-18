@@ -158,14 +158,7 @@
       "accountSettings": "Kontoeinstellungen",
       "openStudio": "Organisation verwalten",
       "opensInNewTab": "(öffnet in neuem Tab)",
-      "signOut": "Abmelden",
-      "keys": "Archivschlüssel",
-      "ceremony": "Wiederherstellungsschlüssel",
-      "archive": "Meine Aufzeichnungen",
-      "recoveryRequests": "Ausnahmezugriffe",
-      "recoveryApprovals": "Wiederherstellungsfreigaben",
-      "keyRecovery": "Meine Schlüsselwiederherstellung",
-      "reviews": "Prüfungen"
+      "signOut": "Abmelden"
     },
     "dashboard": {
       "welcome": {
@@ -261,8 +254,6 @@
         "import": "Passphrase aus TXT-Datei laden",
         "importFailed": "Diese Datei ist keine gültige Passphrase-Sicherung oder ist zu groß."
       },
-      "title": "Archivschlüssel",
-      "intro": "Ihre persönlichen Schlüssel öffnen aufgezeichnete Gespräche. Sie sind durch eine Passphrase geschützt, die nur Sie kennen; SSF sieht sie nie und kann sie nicht zurücksetzen. Aufzeichnen funktioniert auch ohne Schlüssel.",
       "stepUpTitle": "Identität bestätigen",
       "stepUpBody": "Zum Einrichten der Schlüssel melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
       "stepUpAction": "Erneut anmelden",
@@ -281,21 +272,17 @@
       "unlockAction": "Entsperren",
       "unlockPending": "Wird entsperrt …",
       "unlockedTitle": "Ihre Schlüssel sind entsperrt",
-      "fingerprintHint": "Vergleichen Sie diesen Fingerabdruck telefonisch oder persönlich, wenn Sie gebeten werden, Ihren Schlüssel zu bestätigen.",
+      "fingerprintHint": "Technischer Fingerabdruck dieser Schlüsselversion",
       "lockAction": "Sperren",
       "unavailable": "Archivschlüssel sind gerade nicht verfügbar.",
       "reenrol": {
         "start": "Passphrase vergessen? Neuen Schlüssel einrichten",
         "warningTitle": "Bevor Sie einen neuen Schlüssel einrichten",
-        "warningLocked": "Ihre Gespräche bleiben gesperrt, bis die Schlüsselwiederherstellung abgeschlossen ist.",
-        "warningRecovered": "Zugriffe, die Sie als Aufsicht wiederhergestellt haben, und Freigaben brauchen neue Anträge.",
-        "warningRequests": "Ihre offenen Anträge werden abgebrochen.",
-        "warningCustodian": "Ihr Anteil als freigabeberechtigte Person ist nicht nutzbar, bis die Verwaltung die Freigabeberechtigten ändert (Freigabeberechtigte ändern). Danach: freigabebereite Personen {{usable}}, nötige Freigaben {{k}}.",
         "continue": "Weiter",
         "cancel": "Abbrechen",
         "submit": "Neuen Schlüssel einrichten",
         "pending": "Bitte öffnen Sie den Bestätigungslink, den wir Ihnen per E-Mail geschickt haben. Bis dahin gilt Ihr bisheriger Schlüssel.",
-        "done": "Ihr neuer Schlüssel ist aktiv.",
+        "done": "Ihr neuer Zugangsschlüssel ist aktiv. Frühere Schlüsselversionen bleiben erhalten.",
         "changed": "Ihr Schlüssel wurde inzwischen ersetzt. Bitte laden Sie die Seite neu.",
         "ceremony": "Während einer laufenden Schlüsselzeremonie, an der Sie teilnehmen, nicht möglich.",
         "failed": "Der neue Schlüssel konnte nicht eingerichtet werden.",
@@ -312,7 +299,7 @@
         "confirm": "Schlüssel bestätigen",
         "decline": "Das war ich nicht",
         "confirmed": "Ihr neuer Schlüssel ist aktiv.",
-        "confirmedNext": "Entsperren Sie ihn auf der Seite „Archivschlüssel“ mit Ihrer neuen Passphrase. Ihre früheren Gespräche öffnet er erst nach der Schlüsselwiederherstellung, die Sie dort beantragen.",
+        "confirmedNext": "Entsperren Sie die neue Version unter „Mein Konto“ mit Ihrer neuen Passphrase. Für frühere Aufzeichnungen und offene Prüfaufträge verwenden Sie weiterhin die zugehörige frühere Version.",
         "declined": "Der neue Schlüssel wurde verworfen; Ihr bisheriger Schlüssel gilt weiter. Bitte informieren Sie Ihre Administration, denn jemand anderes hat ihn angefordert.",
         "invalid": "Dieser Link ist ungültig oder wurde schon verwendet. Haben Sie ihn bereits bestätigt, ist Ihr neuer Schlüssel aktiv.",
         "expired": "Dieser Link ist abgelaufen. Richten Sie den neuen Schlüssel bitte erneut ein.",
@@ -475,7 +462,10 @@
         "ARCHIVE_WRITE_FAILED": "Die Zustimmung des Gastes konnte nicht gespeichert werden. Der Gast kann es erneut versuchen.",
         "generic": "Die Aufnahme konnte nicht geändert werden.",
         "ID_CHECK_REQUIRED": "Bitte prüfen Sie zuerst das Ausweisdokument des Gastes.",
-        "STAFF_RELEASE_TEXT_MISMATCH": "Der Freigabetext hat sich geändert. Ziehen Sie eine offene Anfrage zurück, lesen Sie den Text erneut und fragen Sie die Aufnahme erneut an."
+        "STAFF_RELEASE_TEXT_MISMATCH": "Der Freigabetext hat sich geändert. Ziehen Sie eine offene Anfrage zurück, lesen Sie den Text erneut und fragen Sie die Aufnahme erneut an.",
+        "PERSONAL_KEY_MISSING": "Richten Sie Ihren persönlichen Zugangsschlüssel unter „Mein Konto“ ein, um eine Aufzeichnung anzufragen.",
+        "ORGANISATION_KEY_MISSING": "Der Organisationsschlüssel fehlt. Wenden Sie sich an Ihre Organisationsverwaltung.",
+        "RECORDING_PROTOCOL_UPGRADE_REQUIRED": "Aufzeichnungen sind bis zur Umstellung nicht verfügbar."
       },
       "ask": {
         "title": "Aufnahme anfragen",
@@ -874,6 +864,81 @@
       "done": {
         "decided": "Ihre Entscheidung wurde festgehalten.",
         "declined": "Sie haben den Auftrag abgelehnt."
+      }
+    },
+    "tasks": {
+      "account": "Mein Konto",
+      "keyIntro": "Ihr persönlicher Zugangsschlüssel ist die Passphrase für Ihre Aufzeichnungen und Prüfungen. Sie wird nur in diesem Tab verwendet.",
+      "keyVersion": "Schlüsselversion",
+      "active": "Aktuelle Version",
+      "superseded": "Frühere Version",
+      "conversations": "Meine Gespräche",
+      "reviews": "Meine Prüfungen",
+      "views": "Aufgabenansicht",
+      "all": "Alle",
+      "language": "Sprache",
+      "status": "Status",
+      "sort": "Sortierung",
+      "unknown": "Unbekannt / gesperrt",
+      "newest": "Neueste zuerst",
+      "oldest": "Älteste zuerst",
+      "reset": "Filter zurücksetzen",
+      "refresh": "Aktualisieren",
+      "scope": "Filter und Sortierung gelten für geladene Einträge",
+      "counts": "{{matches}} von {{loaded}} geladenen Einträgen",
+      "excluded": "Einträge mit unbekannter oder gesperrter Sprache sind von diesem Sprachfilter ausgeschlossen.",
+      "unavailable": "Dieser Eintrag oder die Übersicht ist derzeit nicht verfügbar.",
+      "loading": "Wird geladen …",
+      "noMatches": "Keine passenden Einträge unter den geladenen Einträgen.",
+      "more": "Weitere laden",
+      "time": "Beginn",
+      "recording": "Aufzeichnung",
+      "verification": "Prüfstand",
+      "actions": "Aktionen",
+      "requested": "Angefragt am",
+      "requester": "Angefragt von",
+      "openResult": "Ergebnis ansehen",
+      "openReview": "Prüfung öffnen",
+      "resume": "Gespräch fortsetzen",
+      "open_recording": "Aufzeichnung öffnen",
+      "open_details": "Details ansehen",
+      "transferred": "Übertragener Zugriff",
+      "ended": "Ende",
+      "duration": "Dauer",
+      "minutes": "{{n}} Min.",
+      "noRecording": "Für dieses Gespräch liegt keine Aufzeichnung vor.",
+      "assignment": "Prüfauftrag",
+      "decided": "Entschieden am",
+      "contact": "Zugangsschlüssel verloren? Wenden Sie sich für den Zugriff auf frühere Aufzeichnungen an Ihre Organisationsverwaltung.",
+      "states": {
+        "pending": "Wartend",
+        "active": "Laufend",
+        "ended": "Beendet",
+        "awaiting": "Angefragt",
+        "in_review": "In Prüfung",
+        "approved": "Bestätigt",
+        "not_approved": "Nicht bestätigt",
+        "declined": "Zurückgegeben",
+        "withdrawn": "Zurückgezogen",
+        "not_verified": "Ungeprüft",
+        "decided": "Entschieden"
+      },
+      "recordings": {
+        "none": "Keine Aufzeichnung",
+        "available": "Vorhanden",
+        "unavailable": "Nicht verfügbar",
+        "incomplete": "Unvollständig"
+      },
+      "access": {
+        "unlock_required": "Entsperren erforderlich",
+        "available": "Zugriff berechtigt",
+        "transfer_required": "Übertragung erforderlich"
+      },
+      "replacement": {
+        "both": "Neue Aufzeichnungen und Prüfaufträge verwenden den neuen Zugangsschlüssel. Bestehende Aufzeichnungen und offene Prüfungen behalten ihre bisherige Schlüsselversion.",
+        "recording": "Neue Aufzeichnungen verwenden den neuen Zugangsschlüssel. Frühere Aufzeichnungen bleiben mit ihrer bisherigen Schlüsselversion zugänglich.",
+        "review": "Neue Prüfaufträge verwenden den neuen Zugangsschlüssel. Offene Prüfungen behalten ihre bisherige Schlüsselversion.",
+        "personal": "Ihre bisherigen Schlüsselversionen bleiben mit ihrer jeweiligen Passphrase zugänglich."
       }
     }
   }

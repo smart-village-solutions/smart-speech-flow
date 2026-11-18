@@ -22,14 +22,12 @@ const ERROR_KEYS: Record<Exclude<ReenrolmentError, 'stepUp'>, string> = {
 interface ReenrolPanelProps {
   owner: KeyOwner;
   ownKey: OwnKey;
-  onOpenKeyRecovery?: () => void;
   onPassphraseEntered?: (passphrase: string) => void;
 }
 
 function ReenrolForm({
   owner,
   ownKey,
-  onOpenKeyRecovery,
   onPassphraseEntered,
 }: Readonly<ReenrolPanelProps>) {
   const { t } = useTranslation();
@@ -39,7 +37,6 @@ function ReenrolForm({
       <ReenrolmentStatus
         ownKey={ownKey}
         requested={result.fingerprintDisplay}
-        onOpenKeyRecovery={onOpenKeyRecovery}
       />
     );
   if (error === 'stepUp') return <StepUpPrompt />;
@@ -69,7 +66,7 @@ export function ReenrolPanel(props: Readonly<ReenrolPanelProps>) {
   if (stage === 'form') return <ReenrolForm {...props} />;
   return (
     <>
-      <ReenrolmentStatus ownKey={props.ownKey} onOpenKeyRecovery={props.onOpenKeyRecovery} />
+      <ReenrolmentStatus ownKey={props.ownKey} />
       <button
         type="button"
         className="self-start text-label font-medium text-fg-muted"

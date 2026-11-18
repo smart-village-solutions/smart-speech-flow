@@ -37,7 +37,8 @@ export interface Amend {
 export function useAmend(
   opened: OpenedConversation,
   keys: ReadonlyMap<string, CryptoKey>,
-  onAdded: () => void
+  onAdded: () => void,
+  assertCurrent?: () => void
 ): Amend {
   const { archive, archiveCrypto } = useServices();
   const [unconfirmed, setUnconfirmed] = useState<AmendmentPost | null>(null);
@@ -66,6 +67,7 @@ export function useAmend(
 
   const post = async (amendment: AmendmentPost) => {
     try {
+      assertCurrent?.();
       await archive.amend(opened.conversation.conversationId, amendment);
       setUnconfirmed(null);
       onAdded();

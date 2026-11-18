@@ -1,3 +1,4 @@
+import {holdTestKeys} from '@/test/personalKeys';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,7 +61,7 @@ interface RenderOptions {
 
 function render(options: RenderOptions = {}) {
   const keyVault = createKeyVault();
-  if (!options.locked) keyVault.hold(keys);
+  if (!options.locked) holdTestKeys(keyVault,keys);
   const recoveryRequests = {
     approvals: vi.fn().mockResolvedValue({
       requests: options.shareStale

@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { sized } from '@/domain/recovery/recovery.mapper';
 import type { AxiosInstance } from 'axios';
 import { type Bytes, toBase64Url } from '@/core/crypto/bytes';
 import { AppError } from '@/core/http/AppError';
@@ -54,6 +56,7 @@ export interface AmendmentPost {
 export interface ArchiveRepository {
   list(cursor?: ArchiveCursor): Promise<OwnConversation[]>;
   open(conversationId: string): Promise<OpenedConversation>;
+  gatewaySigners(): Promise<Map<string, Bytes>>;
   trust(tenantId: string): Promise<ArchiveTrust>;
   object(conversationId: string, entryId: string, objectType: string): Promise<Bytes>;
   amend(
@@ -84,6 +87,17 @@ export function createArchiveRepository(http: AxiosInstance): ArchiveRepository 
       return toOpened((await http.get<unknown>(`${BASE}/${conversationId}`)).data);
     },
 
+    async gatewaySigners() {
+      const schema = z.object({
+        keys: z.array(z.object({ keyId: z.string().min(1), publicKey: sized(65) })).min(1),
+      });
+      const { keys } = schema.parse(
+        (await http.get<unknown>('/api/admin/recording/v2/gateway-signers')).data
+      );
+      if (new Set(keys.map((k) => k.keyId)).size !== keys.length)
+        throw new Error('Ambiguous verification key');
+      return new Map(keys.map((k) => [k.keyId, k.publicKey]));
+    },
     async trust(tenantId) {
       return toTrust((await http.get<unknown>(`${BASE}/trust`)).data, tenantId);
     },

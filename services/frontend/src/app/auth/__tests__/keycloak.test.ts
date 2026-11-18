@@ -1,3 +1,4 @@
+import { holdTestKeys } from '@/test/personalKeys';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readConfig } from '@/app/config/env';
 import { http, HttpResponse } from 'msw';
@@ -392,7 +393,7 @@ describe('Keycloak termination events', () => {
     const keys = {
       fingerprint: new Uint8Array([1]),
     } as import('@/core/crypto/archive-crypto.port').UnlockedKeys;
-    vault.hold(keys);
+    holdTestKeys(vault, keys);
     const generation = vault.generation();
     clients[0].onAuthRefreshSuccess?.();
     expect(vault.current()).toBe(keys);

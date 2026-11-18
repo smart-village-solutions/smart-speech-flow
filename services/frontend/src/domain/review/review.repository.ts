@@ -7,7 +7,7 @@ import type { DecisionPost, InboxRow, ReviewDraft, ReviewOpened } from './review
 const BASE = '/api/admin/recording/reviews';
 
 export interface ReviewRepository {
-  inbox(): Promise<InboxRow[]>;
+  inbox(signal?: AbortSignal): Promise<InboxRow[]>;
   open(verificationId: string): Promise<ReviewOpened>;
   /** Also how a reviewer refreshes the permission snapshot after PERMISSIONS_CHANGED. */
   start(verificationId: string, expectedHeadSeq: number): Promise<VerificationRecord>;
@@ -33,8 +33,8 @@ function draftBody(draft: Readonly<ReviewDraft>) {
 
 export function createReviewRepository(http: AxiosInstance): ReviewRepository {
   return {
-    async inbox() {
-      return toInbox((await http.get<unknown>(BASE)).data);
+    async inbox(signal) {
+      return toInbox((await http.get<unknown>(BASE,{signal})).data);
     },
 
     async open(verificationId) {

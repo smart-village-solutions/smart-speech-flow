@@ -14,7 +14,7 @@ export function useUnlock(owner: Readonly<KeyOwner>, ownKey: Readonly<OwnKey>) {
     setPending(true);
     try {
       const unlocked = await archiveCrypto.unlock(ownKey.blob, passphrase, owner, ownKey);
-      return keyVault.holdIfCurrent(unlocked, generation);
+      return keyVault.holdVersion(owner, { version: ownKey.keyVersion, fingerprint: ownKey.fingerprint }, unlocked, generation);
     } catch {
       // A wrong passphrase and a blob that does not match its keys look the same here.
       setFailed(true);

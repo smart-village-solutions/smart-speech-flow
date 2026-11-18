@@ -1,3 +1,4 @@
+import {holdTestKeys} from '@/test/personalKeys';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,7 +55,7 @@ interface Options {
 
 function render({ unlocked = true, own, requests = [] }: Options = {}) {
   const keyVault = createKeyVault();
-  if (unlocked) keyVault.hold(keys);
+  if (unlocked) holdTestKeys(keyVault,keys);
   const recoveryRequests = {
     requests: vi.fn().mockResolvedValue(requests),
     ownCandidates: vi
@@ -170,7 +171,7 @@ describe('KeyRecoveryScreen', () => {
     const { keyVault } = render();
     await userEvent.type(await screen.findByLabelText(k.reason), 'Forgot');
     vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    act(() => keyVault.hold({ ...keys })); // the whole screen renders again
+    act(() => holdTestKeys(keyVault,{ ...keys })); // the whole screen renders again
     expect(screen.getByLabelText(k.reason)).toHaveValue('Forgot');
     expect(screen.queryByText(k.stepUpBody)).not.toBeInTheDocument();
   });

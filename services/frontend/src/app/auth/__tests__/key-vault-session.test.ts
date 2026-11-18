@@ -1,3 +1,4 @@
+import { holdTestKeys, testOwner } from '@/test/personalKeys';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KeyOwner, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
@@ -34,7 +35,7 @@ describe('tab vault authentication lifetime', () => {
   it('preserves keys and pending unlocks through same-identity token refresh', () => {
     const vault = createKeyVault();
     const stop = followKeycloakIdentity(vault);
-    vault.hold(keys);
+    holdTestKeys(vault, keys);
     const generation = vault.generation();
     state.identity = { ...state.identity! };
     notify();
@@ -48,7 +49,7 @@ describe('tab vault authentication lifetime', () => {
     (change) => {
       const vault = createKeyVault();
       const stop = followKeycloakIdentity(vault);
-      vault.hold(keys);
+      holdTestKeys(vault, keys);
       const generation = vault.generation();
       state.identity =
         change === 'logout'
@@ -59,7 +60,14 @@ describe('tab vault authentication lifetime', () => {
             };
       notify();
       expect(vault.current()).toBeNull();
-      expect(vault.holdIfCurrent(keys, generation)).toBe(false);
+      expect(
+        vault.holdVersion(
+          testOwner,
+          { version: 1, fingerprint: keys.fingerprint },
+          keys,
+          generation
+        )
+      ).toBe(false);
       stop();
     }
   );
@@ -67,10 +75,10 @@ describe('tab vault authentication lifetime', () => {
   it('locks on detected expiry and on disposal, with no live subscription after disposal', () => {
     const vault = createKeyVault();
     const stop = followKeycloakIdentity(vault);
-    vault.hold(keys);
+    holdTestKeys(vault, keys);
     for (const listener of state.expiration) listener();
     expect(vault.current()).toBeNull();
-    vault.hold(keys);
+    holdTestKeys(vault, keys);
     stop();
     expect(vault.current()).toBeNull();
     expect(state.authorization.size).toBe(0);

@@ -1,3 +1,4 @@
+import { conversationRow } from './dashboardFixtures';
 import { http, HttpResponse, type JsonBodyType } from 'msw';
 import {
   GUEST_LANGUAGE_CODES,
@@ -99,20 +100,45 @@ export function feedbackFormChanged() {
 }
 
 export const handlers = [
-  http.get('*/api/admin/usage', () => HttpResponse.json({
-    window_start: '2026-10-19T08:00:00Z',
-    window_end: '2026-11-18T08:00:00Z',
-    coverage_start: '2026-10-01T08:00:00Z',
-    complete: true,
-    personal: { total_seconds: 0, by_language: {} },
-    organisation: { total_seconds: 0, by_language: {} },
-    server: { total_seconds: 0, by_language: {} },
-  })),
+  http.get('*/api/admin/recording/reviews', () => HttpResponse.json({ reviews: [] })),
+  http.get('*/api/admin/dashboard/conversations', () =>
+    HttpResponse.json({
+      items: [conversationRow('AR000001'), conversationRow('TR000001', false)],
+      next_cursor: null,
+    })
+  ),
+  http.get('*/api/admin/recording/v2/keys/me', () =>
+    HttpResponse.json({ activeVersion: null, versions: [] })
+  ),
+  http.get('*/api/admin/recording/key-policy', () =>
+    HttpResponse.json({ passphrase_file_enabled: false })
+  ),
+  http.get('*/api/admin/usage', () =>
+    HttpResponse.json({
+      window_start: '2026-10-19T08:00:00Z',
+      window_end: '2026-11-18T08:00:00Z',
+      coverage_start: '2026-10-01T08:00:00Z',
+      complete: true,
+      personal: { total_seconds: 0, by_language: {} },
+      organisation: { total_seconds: 0, by_language: {} },
+      server: { total_seconds: 0, by_language: {} },
+    })
+  ),
   http.get('*/api/login/tenants', () =>
     HttpResponse.json({
       tenants: [
-        { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025', studioUrl: 'https://fulda.dialog.kassel.de/' },
-        { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025', studioUrl: 'https://smartcity.dialog.kassel.de/' },
+        {
+          id: 'tenant-fulda',
+          displayName: 'Amt Fulda',
+          realm: 'fulda-ssf-2025',
+          studioUrl: 'https://fulda.dialog.kassel.de/',
+        },
+        {
+          id: 'tenant-kassel',
+          displayName: 'Stadt Kassel',
+          realm: 'kassel-ssf-2025',
+          studioUrl: 'https://smartcity.dialog.kassel.de/',
+        },
       ],
     })
   ),

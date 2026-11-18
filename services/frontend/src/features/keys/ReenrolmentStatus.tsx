@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { OwnKey } from '@/domain/recording/recording.types';
 import { clockTime } from '@/lib/sessionTimes';
-import { Button } from '@/ui/primitives/Button';
 import { usePendingReenrolment } from './useKeys';
 
 function Card({ children }: Readonly<{ children: ReactNode }>) {
@@ -13,28 +12,6 @@ function Card({ children }: Readonly<{ children: ReactNode }>) {
     >
       {children}
     </section>
-  );
-}
-
-function ActiveKey({
-  fingerprint,
-  onOpenKeyRecovery,
-}: Readonly<{ fingerprint: string; onOpenKeyRecovery?: () => void }>) {
-  const { t } = useTranslation();
-  return (
-    <Card>
-      <p className="text-note text-fg-body">{t('admin.keys.reenrol.done')}</p>
-      <code className="text-body font-semibold text-fg-strong">{fingerprint}</code>
-      {onOpenKeyRecovery && (
-        <Button
-          variant="compact"
-          className="self-start bg-accent text-accent-on"
-          onClick={onOpenKeyRecovery}
-        >
-          {t('admin.keyRecovery.open')}
-        </Button>
-      )}
-    </Card>
   );
 }
 
@@ -51,7 +28,6 @@ interface ReenrolmentStatusProps {
   ownKey: OwnKey;
   /** The key this screen just sent, before the gateway has named it as waiting. */
   requested?: string;
-  onOpenKeyRecovery?: () => void;
 }
 
 /**
@@ -59,16 +35,12 @@ interface ReenrolmentStatusProps {
  * served key is the one that waited, or ended without it. Read from the gateway, so
  * it survives a reload and follows a link opened on another device.
  */
-export function ReenrolmentStatus({
-  ownKey,
-  requested,
-  onOpenKeyRecovery,
-}: Readonly<ReenrolmentStatusProps>) {
+export function ReenrolmentStatus({ ownKey, requested }: Readonly<ReenrolmentStatusProps>) {
   const { t, i18n } = useTranslation();
   const { pending, read, waitedFor } = usePendingReenrolment();
   const awaited = waitedFor ?? requested;
   if (pending === null && awaited !== undefined && ownKey.fingerprintDisplay === awaited) {
-    return <ActiveKey fingerprint={awaited} onOpenKeyRecovery={onOpenKeyRecovery} />;
+    return <Message text={t('admin.keys.reenrol.done')} fingerprint={awaited} />;
   }
   if (pending !== null) {
     const time = clockTime(new Date(pending.expiresAt).getTime(), i18n.language);
