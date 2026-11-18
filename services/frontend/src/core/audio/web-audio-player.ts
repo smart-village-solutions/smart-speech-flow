@@ -106,7 +106,10 @@ export function createWebAudioPlayer(
       throw superseded();
     }
     if (!running) {
-      throw new Error('Audio output is locked until the next user gesture');
+      throw new DOMException(
+        'Audio output is locked until the next user gesture',
+        'NotAllowedError'
+      );
     }
     sound(buffer, offset);
   };

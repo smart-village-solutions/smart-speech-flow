@@ -20,6 +20,8 @@ export interface PlaybackQueue {
   subscribe: (listener: () => void) => () => void;
   enqueue: (id: string, url: string) => void;
   playNow: (id: string, url: string) => void;
+  /** Retry browser-blocked audio after the output was unlocked by a gesture. */
+  retryBlocked: () => void;
   /** Silence now and drop anything waiting. */
   stop: () => void;
   /**
@@ -90,6 +92,7 @@ export function createPlaybackQueue(
   // the rejection handles it, and the event must not advance the queue a second
   // time and skip whatever was waiting behind it.
   let audible = false;
+  let blocked = false;
 
   // Carried alongside every emit rather than passed in, so no caller has to
   // remember it: the set changes only when a clip finishes or is played again.
@@ -123,11 +126,16 @@ export function createPlaybackQueue(
           audible = true;
         }
       },
-      () => {
-        // A rejected play is the browser refusing autoplay, or a bad source.
-        // Either way this clip is done; carry on with the queue.
+      (error: unknown) => {
         if (era === generation) {
-          advance();
+          if (error instanceof DOMException && error.name === 'NotAllowedError') {
+            // Nothing was heard. Keep this clip and everything behind it until
+            // a gesture unlocks the output, with Play showing instead of Pause.
+            blocked = true;
+            emit(IDLE);
+          } else {
+            advance();
+          }
         }
       }
     );
@@ -142,6 +150,7 @@ export function createPlaybackQueue(
     setCompleted(clip.id, false);
     playing = clip;
     audible = false;
+    blocked = false;
     pendingLoad = load;
     preparedUrl = null;
     emit({ playingId: clip.id, progress: 0, paused: false });
@@ -174,6 +183,7 @@ export function createPlaybackQueue(
       generation += 1;
       playing = null;
       audible = false;
+      blocked = false;
       pendingLoad = null;
       preparedUrl = null;
       emit(IDLE);
@@ -187,6 +197,7 @@ export function createPlaybackQueue(
     queue.length = 0;
     playing = null;
     audible = false;
+    blocked = false;
     pendingLoad = null;
     preparedUrl = null;
     held = false;
@@ -253,6 +264,7 @@ export function createPlaybackQueue(
     generation += 1;
     playing = null;
     audible = false;
+    blocked = false;
     pendingLoad = null;
     preparedUrl = null;
     player.stop();
@@ -322,7 +334,7 @@ export function createPlaybackQueue(
         return;
       }
 
-      if (held) {
+      if (held || blocked) {
         queue.push({ id, url });
         return;
       }
@@ -355,6 +367,15 @@ export function createPlaybackQueue(
 
       player.stop();
       start({ id, url });
+    },
+
+    retryBlocked() {
+      if (!blocked || playing === null || preparedUrl === null || held) {
+        return;
+      }
+      blocked = false;
+      emit({ playingId: playing.id, progress: 0, paused: false });
+      playPrepared(preparedUrl);
     },
 
     stop,
