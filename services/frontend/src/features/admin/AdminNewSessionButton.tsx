@@ -92,7 +92,7 @@ export function AdminNewSessionButton({
         type="button"
         onClick={press}
         disabled={create.isPending}
-        className="w-full rounded-2xl bg-accent py-4 text-item font-semibold text-accent-on shadow-lg active:scale-[0.98] disabled:opacity-40"
+        className="focus-ring w-full rounded-2xl bg-accent py-4 text-item font-semibold text-accent-on shadow-lg active:scale-[0.98] disabled:opacity-40"
       >
         {callToAction}
       </button>

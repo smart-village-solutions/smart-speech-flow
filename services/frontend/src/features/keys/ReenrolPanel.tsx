@@ -64,7 +64,7 @@ export function ReenrolPanel(props: Readonly<ReenrolPanelProps>) {
       <ReenrolmentStatus ownKey={props.ownKey} />
       <button
         type="button"
-        className="self-start text-label font-medium text-fg-muted"
+        className="focus-ring min-h-11 self-start rounded-pill border border-border-card bg-surface-card px-4 py-2 text-label font-medium text-fg-strong hover:bg-surface-row-hover"
         onClick={() => setStage('warning')}
       >
         {t('admin.keys.reenrol.start')}

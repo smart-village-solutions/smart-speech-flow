@@ -1,9 +1,68 @@
+import { useEffect, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { describeStart } from '@/lib/sessionTimes';
+import { useStaffContent } from '@/features/content/useStaffContent';
 import { useServices } from '@/app/providers/services';
+import { Button } from '@/ui/primitives/Button';
+import { StatusChip } from '@/ui/primitives/StatusChip';
+import type { StatusTone } from '@/ui/primitives/statusTones';
 import { useInbox } from '@/features/review/useReviews';
 import { OVERVIEW, languageName, type TableFilters } from './filterRows';
 import { TaskTable, actionStyle } from './TaskTable';
+
+const tones: Partial<Record<string, StatusTone>> = {
+  active: 'success',
+  approved: 'success',
+  pending: 'warning',
+  awaiting: 'warning',
+  in_review: 'warning',
+  not_approved: 'danger',
+};
+
+function TaskStatus({ status }: Readonly<{ status: string }>) {
+  const { t } = useTranslation();
+  return (
+    <StatusChip
+      tone={tones[status]}
+      className="h-auto px-2.5 py-0.5 text-label"
+      showIndicator={false}
+    >
+      {t(`admin.tasks.states.${status}`)}
+    </StatusChip>
+  );
+}
+
+const primaryAction =
+  'min-h-11 md:w-full bg-accent px-4 text-label text-accent-on hover:opacity-90';
+
+function useTaskTimestamp() {
+  const { t, i18n } = useTranslation();
+  const { content } = useStaffContent();
+  const timeZone = content?.timeZone ?? undefined;
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const fullDate = new Intl.DateTimeFormat(i18n.language, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone,
+  });
+
+  return (iso: string) => {
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return '—';
+    const absolute = fullDate.format(date);
+    const start = describeStart(iso, now, i18n.language, timeZone ?? null);
+    return (
+      <time dateTime={iso} title={absolute} className="whitespace-nowrap tabular-nums">
+        {start.day === 'other' ? absolute : t(`admin.sessions.${start.day}`, { time: start.time })}
+      </time>
+    );
+  };
+}
 
 export type TaskTarget = {
   kind: 'recording' | 'review' | 'result' | 'details' | 'session';
@@ -17,6 +76,7 @@ interface Props {
 }
 export function ConversationTable({ filters, onChange, open }: Readonly<Props>) {
   const { t, i18n } = useTranslation();
+  const timestamp = useTaskTimestamp();
   const { dashboard } = useServices();
   const client = useQueryClient();
   const query = useInfiniteQuery({
@@ -38,19 +98,16 @@ export function ConversationTable({ filters, onChange, open }: Readonly<Props>) 
       rows={rows}
       filters={filters}
       onChange={onChange}
-      columns={['time', 'language', 'status', 'recording', 'verification', 'actions']}
+      columns={['language', 'time', 'status', 'recording', 'verification', 'actions']}
       label={t('admin.tasks.conversations')}
       error={query.isError}
       busy={query.isFetching}
       onMore={query.hasNextPage ? () => void query.fetchNextPage() : undefined}
       onRefresh={() => void client.resetQueries({ queryKey: OVERVIEW, exact: true })}
       cells={({ row, language }) => [
-        new Date(row.started_at).toLocaleString(i18n.language, {
-          dateStyle: 'short',
-          timeStyle: 'short',
-        }),
         language ? languageName(language, i18n.language) : t('admin.tasks.unknown'),
-        t(`admin.tasks.states.${row.conversation_status}`),
+        timestamp(row.started_at),
+        <TaskStatus status={row.conversation_status} />,
         <>
           {t(`admin.tasks.recordings.${row.recording_status}`)}
           {row.recording_access !== 'none' && (
@@ -60,8 +117,8 @@ export function ConversationTable({ filters, onChange, open }: Readonly<Props>) 
           )}
           {row.origin === 'transferred' && <div>{t('admin.tasks.transferred')}</div>}
         </>,
-        row.verification ? t(`admin.tasks.states.${row.verification.status}`) : '—',
-        <div className="flex flex-wrap gap-1">
+        row.verification ? <TaskStatus status={row.verification.status} /> : '—',
+        <div className="flex flex-wrap gap-1.5">
           {row.actions.map((action) => {
             const kind =
               action === 'resume'
@@ -75,16 +132,18 @@ export function ConversationTable({ filters, onChange, open }: Readonly<Props>) 
                 : kind === 'recording'
                   ? row.recording_id
                   : row.id;
+            const primary = action !== 'open_details' || row.actions.length === 1;
             return (
               id && (
-                <button
+                <Button
+                  variant="compact"
                   key={action}
                   aria-label={kind === 'session' ? t('admin.sessions.reenter', { id }) : undefined}
-                  className={actionStyle}
+                  className={primary ? primaryAction : actionStyle}
                   onClick={() => open({ kind, id })}
                 >
                   {t(`admin.tasks.${action}`)}
-                </button>
+                </Button>
               )
             );
           })}
@@ -94,7 +153,8 @@ export function ConversationTable({ filters, onChange, open }: Readonly<Props>) 
   );
 }
 export function ReviewTable({ filters, onChange, open }: Readonly<Props>) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const timestamp = useTaskTimestamp();
   const inbox = useInbox();
   const rows = (inbox.data ?? []).map((row) => ({
     id: row.verificationId,
@@ -108,29 +168,34 @@ export function ReviewTable({ filters, onChange, open }: Readonly<Props>) {
       rows={rows}
       filters={filters}
       onChange={onChange}
-      columns={['requested', 'requester', 'language', 'status', 'actions']}
+      columns={['requester', 'language', 'requested', 'status', 'actions']}
       label={t('admin.tasks.reviews')}
       error={inbox.isError}
       busy={inbox.isFetching}
       onRefresh={() => void inbox.refetch()}
       cells={({ id, row, status }) => [
-        new Date(row.requestedAt).toLocaleString(i18n.language, {
-          dateStyle: 'short',
-          timeStyle: 'short',
-        }),
         row.requestedByName ?? '—',
         t('admin.tasks.unknown'),
-        t(`admin.tasks.states.${status}`),
+        timestamp(row.requestedAt),
+        <TaskStatus status={status} />,
         status === 'approved' || status === 'not_approved' ? (
-          <button className={actionStyle} onClick={() => open({ kind: 'result', id })}>
+          <Button
+            variant="compact"
+            className={primaryAction}
+            onClick={() => open({ kind: 'result', id })}
+          >
             {t('admin.tasks.openResult')}
-          </button>
+          </Button>
         ) : (
           row.openable &&
           (status === 'awaiting' || status === 'in_review') && (
-            <button className={actionStyle} onClick={() => open({ kind: 'review', id })}>
+            <Button
+              variant="compact"
+              className={primaryAction}
+              onClick={() => open({ kind: 'review', id })}
+            >
               {t('admin.tasks.openReview')}
-            </button>
+            </Button>
           )
         ),
       ]}

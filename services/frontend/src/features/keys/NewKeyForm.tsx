@@ -45,8 +45,10 @@ export function NewKeyForm({
       onSubmit={submit}
       className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5"
     >
-      <h2 className="text-body font-semibold text-fg-strong">{title}</h2>
-      <p className="text-note leading-chat text-fg-muted">{body}</p>
+      <div className="space-y-1">
+        <h2 className="text-thanks font-semibold text-fg-strong">{title}</h2>
+        <p className="max-w-lg text-note leading-chat text-fg-muted">{body}</p>
+      </div>
       <TextField
         type="password"
         disabled={pending}

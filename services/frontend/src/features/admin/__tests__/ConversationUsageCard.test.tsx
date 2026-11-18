@@ -41,23 +41,23 @@ describe('ConversationUsageCard', () => {
     } finally {
       release();
     }
-    expect(await screen.findByRole('table')).toBeInTheDocument();
+    expect(await screen.findByText('120 Min.')).toBeInTheDocument();
   });
 
   it('shows all three totals and reveals language-only rows with one disclosure', async () => {
     respond();
     renderWithProviders(<ConversationUsageCard />, { locale: 'de' });
-    const table = await screen.findByRole('table', { name: /Gesprächsminuten/ });
-    expect(within(table).getByText('120')).toBeInTheDocument();
-    expect(within(table).getByText('840')).toBeInTheDocument();
-    expect(within(table).getByText('4.250')).toBeInTheDocument();
+    expect(await screen.findByText('120 Min.')).toBeInTheDocument();
+    expect(screen.getByText('840 Min.')).toBeInTheDocument();
+    expect(screen.getByText('4.250 Min.')).toBeInTheDocument();
     const toggle = screen.getByRole('button', { name: 'Nach Sprache anzeigen' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Arabisch')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Arabisch')).toBeInTheDocument();
-    expect(screen.getByText('Ukrainisch')).toBeInTheDocument();
+    const table = screen.getByRole('table', { name: /Gesprächsminuten/ });
+    expect(within(table).getByText('Arabisch')).toBeInTheDocument();
+    expect(within(table).getByText('Ukrainisch')).toBeInTheDocument();
     expect(table).not.toHaveTextContent('Deutsch');
     expect(within(table).getByText('70')).toBeInTheDocument();
     expect(screen.getByText(/Vollständige Erfassung seit/)).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('ConversationUsageCard', () => {
   it('does not show incomplete coverage for a complete window', async () => {
     respond({ ...report, complete: true, coverage_start: '2026-09-01T08:00:00Z' });
     renderWithProviders(<ConversationUsageCard />, { locale: 'de' });
-    await screen.findByRole('table');
+    await screen.findByText('120 Min.');
     expect(screen.queryByText(/Vollständige Erfassung seit/)).not.toBeInTheDocument();
   });
 

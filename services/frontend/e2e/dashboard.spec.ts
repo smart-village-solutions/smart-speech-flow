@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { installationBody, staffContentBody } from '../src/test/contentFixtures';
+import { passphraseFileText } from '../src/features/keys/passphrase-file';
 import { conversationRow } from '../src/test/dashboardFixtures';
 
 const auth = `
@@ -19,6 +20,7 @@ for (const width of [390, 1200]) {
     page,
   }) => {
     const accessed: string[] = [];
+    let hasKey = false;
     let connections = 0;
     let disconnections = 0;
     await page.routeWebSocket('**/ws/admin/AR000001*', (socket) => {
@@ -29,6 +31,16 @@ for (const width of [390, 1200]) {
     });
     const when = '2026-11-18T09:00:00Z';
     const assignment = '91960b41-2766-4033-840b-31940a312493';
+    const yesterday = '2026-11-17T14:00:00Z';
+    const key = {
+      version: 1,
+      state: 'active',
+      createdAt: when,
+      fingerprint: Buffer.alloc(32, 0xab).toString('base64url'),
+      encPub: Buffer.alloc(65, 0x04).toString('base64url'),
+      sigPub: Buffer.alloc(65, 0x04).toString('base64url'),
+    };
+    await page.clock.setFixedTime(new Date('2026-11-18T12:00:00Z'));
     await page.setViewportSize({ width, height: 850 });
     await page.route('**/src/app/auth/keycloak.ts*', (route) =>
       route.fulfill({ contentType: 'application/javascript', body: auth })
@@ -65,9 +77,11 @@ for (const width of [390, 1200]) {
           items: url.searchParams.has('cursor')
             ? [conversationRow('NEW', false)]
             : [
-                conversationRow('AR000001'),
+                { ...conversationRow('AR000001'), started_at: when },
                 {
                   ...conversationRow('PRIVATE', false),
+                  started_at: yesterday,
+                  ended_at: '2026-11-17T14:09:00Z',
                   recording_status: 'available',
                   recording_access: 'available',
                   language_visibility: 'encrypted',
@@ -113,14 +127,19 @@ for (const width of [390, 1200]) {
         },
         '/api/admin/session/AR000001/realtime-ticket': { ticket: 'local-fixture' },
         '/api/admin/session/AR000001/messages': { session_id: 'AR000001', messages: [] },
-        '/api/admin/recording/key-policy': { passphrase_file_enabled: false },
-        '/api/admin/recording/v2/keys/me': { activeVersion: null, versions: [] },
+        '/api/admin/recording/key-policy': { passphrase_file_enabled: hasKey },
+        '/api/admin/recording/v2/keys/me': hasKey
+          ? { activeVersion: 1, versions: [key] }
+          : { activeVersion: null, versions: [] },
+        '/api/admin/recording/v2/keys/me/1': { ...key, blob: 'fixture' },
       };
       return Object.hasOwn(data, url.pathname)
         ? route.fulfill({ json: data[url.pathname] })
         : route.fulfill({ status: 404, json: {} });
     });
     await page.goto('/login/tenant-kassel');
+    await expect(page.locator(`time[datetime="${when}"]`)).toHaveText('Heute, 10:00');
+    await expect(page.locator(`time[datetime="${yesterday}"]`)).toHaveText('Gestern, 15:00');
     const language = page.getByRole('combobox', { name: 'Sprache' });
     const status = page.getByRole('combobox', { name: 'Status' });
     await language.selectOption('ar');
@@ -136,6 +155,9 @@ for (const width of [390, 1200]) {
     await page.keyboard.press('Enter');
     await expect(language).toHaveValue('');
     await status.selectOption('approved');
+    await expect(page.getByRole('button', { name: 'Ergebnis ansehen' })).toBeVisible();
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await page.screenshot({ path: test.info().outputPath('reviews.png'), fullPage: true });
     await page.getByRole('button', { name: 'Ergebnis ansehen' }).click();
     await expect(page.getByText(assignment)).toBeVisible();
     expect(
@@ -147,7 +169,7 @@ for (const width of [390, 1200]) {
     await page.getByRole('button', { name: 'Mein Konto' }).click();
     await expect(page.getByRole('link', { name: 'Kontoeinstellungen' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Schlüssel erzeugen' })).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath('account.png') });
+    await page.screenshot({ path: test.info().outputPath('account.png'), fullPage: true });
     await page.getByRole('button', { name: 'Zurück' }).click();
     await page.getByRole('button', { name: 'Meine Gespräche' }).click();
     await expect(language).toHaveValue('ar');
@@ -157,8 +179,9 @@ for (const width of [390, 1200]) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
-    await page.getByRole('region', { name: 'Meine Gespräche' }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath('dashboard.png') });
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: test.info().outputPath('dashboard.png'), fullPage: true });
     await page.getByRole('button', { name: 'Gespräch AR000001 fortsetzen' }).click();
     await page.getByRole('button', { name: 'Tastatur öffnen' }).click();
     await page.getByRole('textbox').fill('Entwurf');
@@ -173,5 +196,31 @@ for (const width of [390, 1200]) {
     await expect(page.getByRole('textbox')).toHaveValue('Entwurf');
     expect(connections).toBe(1);
     expect(disconnections).toBe(0);
+
+    hasKey = true;
+    await page.reload();
+    await page.getByRole('button', { name: 'Benutzerkonto' }).click();
+    await page.getByRole('button', { name: 'Mein Konto' }).click();
+    const summary = page.getByText('Schlüsseldetails anzeigen');
+    await expect(summary).toBeVisible();
+    const fingerprint = page.getByText('abab abab abab abab abab abab abab abab abab abab');
+    await expect(fingerprint).toBeHidden();
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await page.screenshot({ path: test.info().outputPath('account-unlock.png'), fullPage: true });
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(fingerprint).toBeVisible();
+
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Passphrase aus TXT-Datei laden' }).click();
+    const passphrase = 'lokale Passphrase aus der Testdatei';
+    await (
+      await chooser
+    ).setFiles({
+      name: 'passphrase-test.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(passphraseFileText(passphrase)),
+    });
+    await expect(page.getByLabel('Zugangsschlüssel (Passphrase)')).toHaveValue(passphrase);
   });
 }

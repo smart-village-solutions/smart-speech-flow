@@ -3,6 +3,8 @@ import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { displayFingerprint } from '@/core/crypto/transcript';
 import { Button } from '@/ui/primitives/Button';
+import { StatusChip } from '@/ui/primitives/StatusChip';
+import { KeyDetails } from './KeyDetails';
 
 /** Read aloud and compared out of band at the ceremony and at recovery approvals (spec A.9). */
 export function FingerprintCard({ keys }: Readonly<{ keys: UnlockedKeys }>) {
@@ -10,13 +12,20 @@ export function FingerprintCard({ keys }: Readonly<{ keys: UnlockedKeys }>) {
   const { keyVault } = useServices();
 
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5">
-      <h2 className="text-body font-semibold text-fg-strong">{t('admin.keys.unlockedTitle')}</h2>
-      <p className="text-note leading-chat text-fg-muted">{t('admin.keys.fingerprintHint')}</p>
-      <code className="text-body font-semibold text-fg-strong">{displayFingerprint(keys.fingerprint)}</code>
-      <Button variant="compact" className="self-start bg-accent text-accent-on" onClick={() => keyVault.lock()}>
-        {t('admin.keys.lockAction')}
-      </Button>
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2>
+          <StatusChip tone="success">{t('admin.keys.unlockedTitle')}</StatusChip>
+        </h2>
+        <Button
+          variant="compact"
+          className="border border-border-card text-label hover:bg-surface-row-hover"
+          onClick={() => keyVault.lock()}
+        >
+          {t('admin.keys.lockAction')}
+        </Button>
+      </div>
+      <KeyDetails fingerprint={displayFingerprint(keys.fingerprint)} />
     </section>
   );
 }
