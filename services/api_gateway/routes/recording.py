@@ -7,12 +7,13 @@ future recordings are wrapped for.
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Any, Final
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..dependencies import optional_container
+from ..dependencies import get_studio_runtime_flow, optional_container
 from ..recording.crypto.encoding import b64url, from_b64url
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.keys import Enrolment, KeyEnrolmentService, KeyUnreadableError
@@ -25,6 +26,9 @@ from ..recording.permissions import (
 )
 from ..recording.reenrolment import KeyReenrolment, ReenrolmentError
 from ..recording.repository import KeyAlreadyEnrolledError, RecordingStorageUnavailable
+from ..studio_runtime_flow import StudioRuntimeFlow
+from ..studio_v1 import StudioV1ClientError
+from ..studio_v2 import StudioContractError
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
 
@@ -174,4 +178,23 @@ async def reenrolment_impact(
         "k": impact.k,
         "usable_after": impact.usable_after,
         "pending": waiting,
+    }
+
+
+@router.get("/key-policy")
+async def key_policy(
+    context: TenantContext,
+    _claims: RecordingUser,
+    flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
+) -> dict[str, bool]:
+    """Offer local passphrase files only when the current trusted policy enables them."""
+    if flow is None:
+        return {"passphrase_file_enabled": False}
+    try:
+        runtime = await flow.client.fetch(context.tenant_id, f"key-policy-{uuid.uuid4().hex}")
+    except (StudioV1ClientError, StudioContractError):
+        return {"passphrase_file_enabled": False}
+    policy = runtime.policy.recording
+    return {
+        "passphrase_file_enabled": policy is not None and policy.passphrase_file_enabled is True
     }

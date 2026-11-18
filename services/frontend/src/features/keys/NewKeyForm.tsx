@@ -11,7 +11,7 @@ interface NewKeyFormProps {
   pending: boolean;
   /** The translated error under the confirmation field, if any. */
   error: string | null;
-  onSubmit: (passphrase: string, confirmation: string) => void;
+  onSubmit: (passphrase: string, confirmation: string) => Promise<boolean>;
 }
 
 /** The passphrase twice: shared by first enrolment and re-enrolment (spec §8.3, §9.6). */
@@ -29,7 +29,12 @@ export function NewKeyForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onSubmit(passphrase, confirmation);
+    void onSubmit(passphrase, confirmation).then((success) => {
+      if (success) {
+        setPassphrase('');
+        setConfirmation('');
+      }
+    });
   };
 
   return (
@@ -41,6 +46,7 @@ export function NewKeyForm({
       <p className="text-note leading-chat text-fg-muted">{body}</p>
       <TextField
         type="password"
+        disabled={pending}
         autoComplete="new-password"
         label={t('admin.keys.passphrase')}
         value={passphrase}
@@ -48,6 +54,7 @@ export function NewKeyForm({
       />
       <TextField
         type="password"
+        disabled={pending}
         autoComplete="new-password"
         label={t('admin.keys.passphraseConfirm')}
         value={confirmation}

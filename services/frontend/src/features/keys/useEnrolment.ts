@@ -36,25 +36,29 @@ function enrolmentError(caught: unknown): EnrolmentError {
 /** The passphrase checks, the pending state and the error every new key shares (§8.3, §9.6). */
 export function useNewKeySubmit<E extends string>(
   owner: Readonly<KeyOwner>,
-  work: (passphrase: string) => Promise<void>,
+  work: (passphrase: string, generation: number) => Promise<boolean | void>,
   toError: (caught: unknown) => E
 ) {
-  const { passphraseStrength } = useServices();
+  const { passphraseStrength, keyVault } = useServices();
   const [error, setError] = useState<EnrolmentError | E | null>(null);
   const [pending, setPending] = useState(false);
 
-  const submit = async (passphrase: string, confirmation: string) => {
+  const submit = async (passphrase: string, confirmation: string): Promise<boolean> => {
+    const generation = keyVault.generation();
     setError(null);
     setPending(true);
     try {
       const problem = await problemWith(passphrase, confirmation, owner, passphraseStrength);
       if (problem !== null) {
         setError(problem);
-        return;
+        return false;
       }
-      await work(passphrase);
+      if (generation !== keyVault.generation()) return false;
+      const succeeded = await work(passphrase, generation);
+      return succeeded !== false && generation === keyVault.generation();
     } catch (caught) {
       setError(toError(caught));
+      return false;
     } finally {
       setPending(false);
     }
@@ -68,11 +72,15 @@ export function useEnrolment(owner: Readonly<KeyOwner>) {
   const queryClient = useQueryClient();
   return useNewKeySubmit(
     owner,
-    async (passphrase) => {
+    async (passphrase, generation) => {
       const created = await archiveCrypto.createKeys(passphrase, owner);
+      if (generation !== keyVault.generation()) return false;
       await recordingKeys.enrol(created.unlocked, created.blob);
-      keyVault.hold(created.unlocked);
+      // A read begun before enrolment must not deliver its old key after the new hold.
+      await queryClient.cancelQueries({ queryKey: OWN_KEY_QUERY });
+      if (!keyVault.holdIfCurrent(created.unlocked, generation)) return false;
       await queryClient.invalidateQueries({ queryKey: OWN_KEY_QUERY });
+      return true;
     },
     enrolmentError
   );

@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { followKeycloakIdentity } from '@/app/auth/key-vault-session';
 import type { ReactNode } from 'react';
 import type { AppConfig } from '@/app/config/env';
 import { I18nProvider } from './I18nProvider';
@@ -39,6 +40,7 @@ function LocalisedProviders({ children, config }: Readonly<Props>) {
   // the live conversation socket and refetches its history the moment the
   // session's language lands, which is every load of the conversation screen.
   const services = useMemo(() => createServices(config, getLocale), [config, getLocale]);
+  useEffect(() => followKeycloakIdentity(services.keyVault), [services]);
 
   return (
     <I18nProvider locale={locale}>

@@ -235,6 +235,15 @@
       "backToDashboard": "Back to the overview"
     },
     "keys": {
+      "files": {
+        "title": "Back up passphrase",
+        "warning": "The TXT file contains your passphrase in plaintext. Store it privately, for example in a password manager or on a securely stored USB drive. Do not leave it in the Downloads folder on a shared computer. The file does not back up keys or recordings.",
+        "download": "Download TXT file",
+        "skip": "Not now",
+        "downloadFailed": "The file could not be downloaded. Please try again.",
+        "import": "Load passphrase from TXT file",
+        "importFailed": "This file is not a valid passphrase backup or is too large."
+      },
       "title": "Archive keys",
       "intro": "Your personal keys open recorded conversations. They are protected by a passphrase that only you know; SSF never sees it and cannot reset it. Recording works without them.",
       "stepUpTitle": "Confirm your identity",

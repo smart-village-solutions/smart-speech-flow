@@ -75,3 +75,35 @@ example a later amendment, are marked and are not part of your review.
   comparison of the fingerprint at assignment ties a key to a person.
 - A nightly check removes access from reviewers and supervisors who lost their
   Studio permission (see the operations runbook `recording-revocation.md`).
+
+## Personal passphrase backup and unlock lifetime
+
+Studio administrators can offer a local passphrase TXT workflow through
+`recording.passphraseFileEnabled`. The installation default is false. A tenant
+can inherit that default or explicitly enable or disable the option in Studio's
+recording settings. Effective configuration changes update the runtime revision.
+Missing or unavailable policy leaves the file workflow disabled.
+
+When enabled, successfully creating or unlocking personal keys offers **Back up
+passphrase**. Choose **Download TXT file** to create the file locally, or **Not
+now** to dismiss the offer. The file contains the passphrase in plaintext. Keep
+it private and do not leave it in Downloads on a shared computer. It is not a
+backup of the private keys or recordings. Creating replacement keys can also
+produce a backup; those keys become active only after the existing email
+confirmation process completes.
+
+**Load passphrase from TXT file** reads a supported backup locally into the
+masked passphrase field. Then choose **Unlock**. The file is not uploaded;
+malformed files and files over 16 KiB are rejected. Export is available only for
+the successfully entered passphrase while the backup offer is open. Dismissal,
+download, leaving the keys screen, locking or detected session termination drops
+that transient offer; later export requires entering the passphrase again.
+
+Unlocked personal keys remain only in the current tab's memory. Navigation
+within the application does not require another unlock. Reloading the page,
+closing the tab or opening a new tab requires entering the passphrase again.
+Logout, detected session expiry, identity changes, detected enrolled-key changes
+and explicit locking invalidate the unlock. Token refresh for the same user
+does not lock the vault. No unlocked keys or passphrases are persisted in browser
+storage or shared between tabs. A suspended or offline tab cannot promise
+immediate detection of a remotely ended login session.

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
-import { equalBytes } from '@/core/crypto/bytes';
 import type { OwnKey, PendingReenrolment } from '@/domain/recording/recording.types';
 
 export const OWN_KEY_QUERY = ['recording', 'ownKey'] as const;
@@ -11,7 +10,10 @@ export const KEYS_VIEW = 'keys';
 
 export function useOwnKey() {
   const { recordingKeys } = useServices();
-  return useQuery({ queryKey: OWN_KEY_QUERY, queryFn: () => recordingKeys.ownKey() });
+  const query = useQuery({ queryKey: OWN_KEY_QUERY, queryFn: () => recordingKeys.ownKey() });
+  // Archive verification and other staff screens read this hook too.
+  useVaultFollowsOwnKey(query.data);
+  return query;
 }
 
 export function useUnlockedKeys() {
@@ -67,8 +69,6 @@ export function usePendingReenrolment(): {
 export function useVaultFollowsOwnKey(ownKey: OwnKey | null | undefined) {
   const { keyVault } = useServices();
   useEffect(() => {
-    const unlocked = keyVault.current();
-    if (ownKey == null || unlocked === null) return;
-    if (!equalBytes(unlocked.fingerprint, ownKey.fingerprint)) keyVault.lock();
+    if (ownKey !== undefined) keyVault.observeKey(ownKey);
   }, [keyVault, ownKey]);
 }

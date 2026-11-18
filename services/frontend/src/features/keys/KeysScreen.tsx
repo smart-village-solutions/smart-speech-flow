@@ -1,9 +1,13 @@
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useServices } from '@/app/providers/services';
 import { useTranslation } from 'react-i18next';
 import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
+import { PassphraseBackup } from './PassphraseBackup';
 import { EnrolForm } from './EnrolForm';
 import { FingerprintCard } from './FingerprintCard';
 import { ReenrolPanel } from './ReenrolPanel';
@@ -12,8 +16,38 @@ import { UnlockForm } from './UnlockForm';
 import { useOwnKey, useUnlockedKeys, useVaultFollowsOwnKey } from './useKeys';
 
 function KeysPanel({ onOpenKeyRecovery }: Readonly<{ onOpenKeyRecovery?: () => void }>) {
+  const owner = getAdminIdentity();
+  const { recordingKeys } = useServices();
+  const policy = useQuery({
+    queryKey: ['recording', 'keyPolicy', owner?.tenantId, owner?.userSub],
+    queryFn: () => recordingKeys.passphraseFileEnabled(),
+    enabled: owner !== null,
+    refetchOnWindowFocus: true,
+  });
+  const fileEnabled = policy.data === true && !policy.isError;
+  if (policy.isPending && owner !== null) return null;
+  // A policy or identity change discards transient passphrase input and backup offers.
+  return (
+    <KeysContent
+      key={`${owner?.tenantId}:${owner?.userSub}:${fileEnabled}`}
+      fileEnabled={fileEnabled}
+      onOpenKeyRecovery={onOpenKeyRecovery}
+    />
+  );
+}
+
+function KeysContent({
+  fileEnabled,
+  onOpenKeyRecovery,
+}: Readonly<{ fileEnabled: boolean; onOpenKeyRecovery?: () => void }>) {
   const { t } = useTranslation();
   const owner = getAdminIdentity();
+  const { keyVault } = useServices();
+  const [backup, setBackup] = useState<string | null>(null);
+  const offerBackup = (passphrase: string) => {
+    if (fileEnabled) setBackup(passphrase);
+  };
+  useEffect(() => keyVault.subscribe(() => setBackup(null)), [keyVault]);
   const ownKey = useOwnKey();
   const unlocked = useUnlockedKeys();
   useVaultFollowsOwnKey(ownKey.data);
@@ -26,14 +60,44 @@ function KeysPanel({ onOpenKeyRecovery }: Readonly<{ onOpenKeyRecovery?: () => v
     );
   }
   if (ownKey.isPending) return null;
+  let content;
   if (ownKey.data === null) {
-    if (unlocked !== null) return <FingerprintCard keys={unlocked} />;
-    return hasFreshStepUp() ? <EnrolForm owner={owner} /> : <StepUpPrompt />;
+    content =
+      unlocked !== null ? (
+        <FingerprintCard keys={unlocked} />
+      ) : hasFreshStepUp() ? (
+        <EnrolForm owner={owner} onPassphraseEntered={offerBackup} />
+      ) : (
+        <StepUpPrompt />
+      );
+  } else {
+    content = (
+      <>
+        {unlocked === null ? (
+          <UnlockForm
+            owner={owner}
+            ownKey={ownKey.data}
+            fileEnabled={fileEnabled}
+            onPassphraseEntered={offerBackup}
+          />
+        ) : (
+          <FingerprintCard keys={unlocked} />
+        )}
+        <ReenrolPanel
+          owner={owner}
+          ownKey={ownKey.data}
+          onOpenKeyRecovery={onOpenKeyRecovery}
+          onPassphraseEntered={offerBackup}
+        />
+      </>
+    );
   }
   return (
     <>
-      {unlocked === null ? <UnlockForm owner={owner} ownKey={ownKey.data} /> : <FingerprintCard keys={unlocked} />}
-      <ReenrolPanel owner={owner} ownKey={ownKey.data} onOpenKeyRecovery={onOpenKeyRecovery} />
+      {content}
+      {fileEnabled && backup !== null && (
+        <PassphraseBackup passphrase={backup} onClose={() => setBackup(null)} />
+      )}
     </>
   );
 }
@@ -71,7 +135,9 @@ export function KeysScreen({
       />
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
         <div className="rounded-2xl border border-border-card bg-surface-card p-5">
-          <h1 className="mb-1.5 text-thanks font-semibold text-fg-strong">{t('admin.keys.title')}</h1>
+          <h1 className="mb-1.5 text-thanks font-semibold text-fg-strong">
+            {t('admin.keys.title')}
+          </h1>
           <p className="text-note leading-chat text-fg-muted">{t('admin.keys.intro')}</p>
         </div>
         <KeysPanel onOpenKeyRecovery={onOpenKeyRecovery} />

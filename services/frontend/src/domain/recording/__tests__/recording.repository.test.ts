@@ -16,12 +16,33 @@ const fingerprint = toBase64Url(new Uint8Array(32).fill(7));
 const display = '0707 0707 0707 0707 0707 0707 0707 0707 0707 0707';
 
 function repository() {
-  return createRecordingKeysRepository(createHttpClient(readConfig({ VITE_API_BASE_URL: BASE }), () => 'de'));
+  return createRecordingKeysRepository(
+    createHttpClient(readConfig({ VITE_API_BASE_URL: BASE }), () => 'de')
+  );
 }
 
 describe('recording keys repository', () => {
   beforeEach(() => {
     vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue('staff-token');
+  });
+
+  it('reads the authenticated effective passphrase-file policy', async () => {
+    server.use(
+      http.get(`${BASE}/api/admin/recording/key-policy`, ({ request }) => {
+        expect(request.headers.get('Authorization')).toBe('Bearer staff-token');
+        return HttpResponse.json({ passphrase_file_enabled: true });
+      })
+    );
+    await expect(repository().passphraseFileEnabled()).resolves.toBe(true);
+  });
+
+  it('rejects malformed passphrase-file policy values', async () => {
+    server.use(
+      http.get(`${BASE}/api/admin/recording/key-policy`, () =>
+        HttpResponse.json({ passphrase_file_enabled: 'true' })
+      )
+    );
+    await expect(repository().passphraseFileEnabled()).rejects.toThrow();
   });
 
   it('reads the own key', async () => {
@@ -47,7 +68,10 @@ describe('recording keys repository', () => {
   it('answers null when nothing is enrolled', async () => {
     server.use(
       http.get(`${BASE}/api/admin/recording/keys/me`, () =>
-        HttpResponse.json({ detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } }, { status: 404 })
+        HttpResponse.json(
+          { detail: { error_code: 'KEY_NOT_ENROLLED', message: 'x' } },
+          { status: 404 }
+        )
       )
     );
     expect(await repository().ownKey()).toBeNull();
@@ -56,7 +80,10 @@ describe('recording keys repository', () => {
   it('surfaces the step-up code on enrolment', async () => {
     server.use(
       http.post(`${BASE}/api/admin/recording/keys`, () =>
-        HttpResponse.json({ detail: { error_code: 'STEP_UP_REQUIRED', message: 'x' } }, { status: 403 })
+        HttpResponse.json(
+          { detail: { error_code: 'STEP_UP_REQUIRED', message: 'x' } },
+          { status: 403 }
+        )
       )
     );
     await expect(
@@ -69,7 +96,10 @@ describe('recording keys repository', () => {
     server.use(
       http.post(`${BASE}/api/admin/recording/keys`, async ({ request }) => {
         posted = await request.json();
-        return HttpResponse.json({ fingerprint, fingerprint_display: 'not a fingerprint' }, { status: 201 });
+        return HttpResponse.json(
+          { fingerprint, fingerprint_display: 'not a fingerprint' },
+          { status: 201 }
+        );
       })
     );
     await expect(
@@ -97,12 +127,20 @@ describe('recording keys repository', () => {
           custodian: true,
           k: 2,
           usable_after: 1,
-          pending: { fingerprint, fingerprint_display: display, expires_at: '2026-11-02T10:00:00+00:00' },
+          pending: {
+            fingerprint,
+            fingerprint_display: display,
+            expires_at: '2026-11-02T10:00:00+00:00',
+          },
         })
       )
     );
     const repo = repository();
-    const done = await repo.reenrol({ encPub: publicPoint(5n), sigPub: publicPoint(6n) }, '{"v":1}', 2);
+    const done = await repo.reenrol(
+      { encPub: publicPoint(5n), sigPub: publicPoint(6n) },
+      '{"v":1}',
+      2
+    );
     expect(done.status).toBe('pending_confirmation');
     expect(sent).toMatchObject({ blob: '{"v":1}', replaces_version: 2 });
     expect(await repo.reenrolmentImpact()).toEqual({
@@ -128,7 +166,9 @@ describe('recording keys repository', () => {
 describe('key confirmation repository', () => {
   const token = 'A'.repeat(43);
   const confirmation = () =>
-    createKeyConfirmationRepository(createHttpClient(readConfig({ VITE_API_BASE_URL: BASE }), () => 'de'));
+    createKeyConfirmationRepository(
+      createHttpClient(readConfig({ VITE_API_BASE_URL: BASE }), () => 'de')
+    );
 
   it('looks the link up without a login and posts only the token', async () => {
     let sent: unknown;
@@ -177,6 +217,8 @@ describe('key confirmation repository', () => {
         HttpResponse.json({ detail: { error_code: 'LINK_EXPIRED', message: 'x' } }, { status: 410 })
       )
     );
-    await expect(confirmation().confirm(token)).rejects.toMatchObject({ serverCode: 'LINK_EXPIRED' });
+    await expect(confirmation().confirm(token)).rejects.toMatchObject({
+      serverCode: 'LINK_EXPIRED',
+    });
   });
 });

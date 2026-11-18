@@ -77,3 +77,26 @@ def test_normal_mock_content_retires_storage_questions() -> None:
         assert all(
             entry["guest"]["storageQuestionHtml"] is None for entry in body["guestLanguages"]
         )
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_passphrase_file_flag_is_an_effective_boolean(value):
+    policy = parse_runtime_configuration_v2(
+        _body(passphraseFileEnabled=value), expected_tenant_id=TENANT
+    ).policy.recording
+    assert policy is not None
+    assert policy.passphrase_file_enabled is value
+
+
+def test_absent_passphrase_file_flag_defaults_disabled():
+    policy = parse_runtime_configuration_v2(_body(), expected_tenant_id=TENANT).policy.recording
+    assert policy is not None
+    assert policy.passphrase_file_enabled is False
+
+
+@pytest.mark.parametrize("value", ["true", 1, None, [], {}])
+def test_invalid_passphrase_file_flag_rejects_recording_policy(value):
+    policy = parse_runtime_configuration_v2(
+        _body(passphraseFileEnabled=value), expected_tenant_id=TENANT
+    ).policy.recording
+    assert policy is None

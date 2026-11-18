@@ -23,9 +23,15 @@ interface ReenrolPanelProps {
   owner: KeyOwner;
   ownKey: OwnKey;
   onOpenKeyRecovery?: () => void;
+  onPassphraseEntered?: (passphrase: string) => void;
 }
 
-function ReenrolForm({ owner, ownKey, onOpenKeyRecovery }: Readonly<ReenrolPanelProps>) {
+function ReenrolForm({
+  owner,
+  ownKey,
+  onOpenKeyRecovery,
+  onPassphraseEntered,
+}: Readonly<ReenrolPanelProps>) {
   const { t } = useTranslation();
   const { submit, error, pending, result } = useReenrolment(owner, ownKey.keyVersion);
   if (result !== null)
@@ -44,7 +50,11 @@ function ReenrolForm({ owner, ownKey, onOpenKeyRecovery }: Readonly<ReenrolPanel
       action={t('admin.keys.reenrol.submit')}
       pending={pending}
       error={error === null ? null : t(ERROR_KEYS[error])}
-      onSubmit={(passphrase, confirmation) => void submit(passphrase, confirmation)}
+      onSubmit={async (passphrase, confirmation) => {
+        const success = await submit(passphrase, confirmation);
+        if (success) onPassphraseEntered?.(passphrase);
+        return success;
+      }}
     />
   );
 }

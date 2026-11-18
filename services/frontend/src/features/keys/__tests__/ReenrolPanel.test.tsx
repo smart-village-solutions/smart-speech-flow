@@ -64,6 +64,7 @@ function render({
     lock();
   };
   const recordingKeys = {
+    passphraseFileEnabled: vi.fn().mockResolvedValue(false),
     ownKey: vi
       .fn()
       .mockResolvedValueOnce(ownKey)

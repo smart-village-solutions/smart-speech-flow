@@ -19,3 +19,20 @@ describe('key vault', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 });
+
+it('rejects an unlock that finishes after locking, including an already locked vault', () => {
+  const vault = createKeyVault();
+  const generation = vault.generation();
+  vault.lock();
+  expect(vault.holdIfCurrent(keys, generation)).toBe(false);
+  expect(vault.current()).toBeNull();
+  expect(vault.holdIfCurrent(keys, vault.generation())).toBe(true);
+  expect(vault.current()).toBe(keys);
+});
+
+it('a new tab or reload starts with its own locked vault', () => {
+  const currentTab = createKeyVault();
+  currentTab.hold(keys);
+  expect(createKeyVault().current()).toBeNull();
+  expect(currentTab.current()).toBe(keys);
+});
