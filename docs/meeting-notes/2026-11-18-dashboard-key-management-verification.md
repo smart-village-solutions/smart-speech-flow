@@ -90,6 +90,12 @@ pnpm nx run-many -p auth-runtime,plugin-ssf,plugin-sdk -t test:types lint
 pnpm check:server-runtime
 ```
 
+The full changed-source pre-commit gate passed, including formatting, lint,
+Gateway mypy, high-severity Bandit and file checks. Independent final Gateway,
+SSF, Studio and cross-repository reviews approved the implementation; all
+critical/important findings are closed. The final integration reviewer reran
+56 Gateway and 35 SSF cases on the committed sources.
+
 ## Operational handoff
 
 Implementation lives in isolated branches `feat/dashboard-organisation-keys`

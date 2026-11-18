@@ -32,12 +32,12 @@ The user requested implementing `remove-sensitive-action-reauthentication` along
 **Consumes:** Both approved proposal designs and exact API contracts.
 **Produces:** `/api/admin/dashboard/conversations`, completed-review result endpoint and `/api/admin/recording/v2` contracts, version-aware archive/review DTOs and published vectors for frontend/Studio.
 
-- [ ] Verify baseline recording tests; add and run focused failing tests for version-preserving key supersession and isolation.
-- [ ] Implement additive version/grant/preparation persistence and lifecycle using the approved design, then verify those tests.
-- [ ] Add failing preparation/activation/transfer tests; implement possession transcripts, expiry/CAS/replay/atomic grants and verify.
-- [ ] Add overview/result tests; implement safe server joins, metadata privacy and bound pagination and verify.
-- [ ] Integrate recording recipients, archive versions and assigned-version decisions. Supply operator-only cutover tooling without running it.
-- [ ] Run meaningful affected unit/integration checks, self-review, commit owned files and write report.
+- [x] Verify baseline recording tests; add and run focused failing tests for version-preserving key supersession and isolation.
+- [x] Implement additive version/grant/preparation persistence and lifecycle using the approved design, then verify those tests.
+- [x] Add failing preparation/activation/transfer tests; implement possession transcripts, expiry/CAS/replay/atomic grants and verify.
+- [x] Add overview/result tests; implement safe server joins, metadata privacy and bound pagination and verify.
+- [x] Integrate recording recipients, archive versions and assigned-version decisions. Supply operator-only cutover tooling without running it.
+- [x] Run meaningful affected unit/integration checks, self-review, commit owned files and write report.
 
 ### Task 2: SSF dashboard, account and version-aware keys
 
@@ -45,11 +45,11 @@ The user requested implementing `remove-sensitive-action-reauthentication` along
 **Consumes:** Task 1 exact HTTP/crypto fixtures and approved designs. Gateway response fields must be matched, not guessed.
 **Produces:** Task-oriented dashboard, account entry, metadata-only details, result-only review summary, multi-version in-memory vault and unchanged personal passphrase file flow.
 
-- [ ] Verify baseline affected tests; add failing behavioral tests for role views and independent filters/return targets.
-- [ ] Implement shared tables, paginated overview repository, honest local filtering and existing viewer integration, then verify.
-- [ ] Add failing historical unlock/rotation and review-version tests; implement version-aware repositories, vault and signing without losing old access.
-- [ ] Implement account/menu and coordinated recovery navigation replacement; preserve existing live conversation and usage functions.
-- [ ] Run affected frontend tests, build and lint, self-review, commit owned files and write report.
+- [x] Verify baseline affected tests; add failing behavioral tests for role views and independent filters/return targets.
+- [x] Implement shared tables, paginated overview repository, honest local filtering and existing viewer integration, then verify.
+- [x] Add failing historical unlock/rotation and review-version tests; implement version-aware repositories, vault and signing without losing old access.
+- [x] Implement account/menu and coordinated recovery navigation replacement; preserve existing live conversation and usage functions.
+- [x] Run affected frontend tests, build and lint, self-review, commit owned files and write report.
 
 ### Task 3: Studio organisation key and access transfer
 
@@ -57,15 +57,24 @@ The user requested implementing `remove-sensitive-action-reauthentication` along
 **Consumes:** Task 1 exact DTOs, canonical transcripts, crypto formats and vectors.
 **Produces:** Local key generation/save/activation/replacement and exact-scope local transfer with authenticated server forwarding.
 
-- [ ] Verify Studio baseline and read applicable rules; add failing auth/permission tests before runtime changes.
-- [ ] Implement scoped user-token exchange with explicit same-realm provisioning and original MFA preservation; verify real boundaries.
-- [ ] Add failing local file/possession/activation tests; implement local key pages with guarded routes and existing design system.
-- [ ] Add failing exact-scope recipient/rewrap tests; implement transfer pages and matching Gateway client.
-- [ ] Verify secret-free requests, cancellation, concurrency and historical keys; run Nx checks and server-runtime gate, update required architecture docs, commit owned files and write report.
+- [x] Verify Studio baseline and read applicable rules; add failing auth/permission tests before runtime changes.
+- [x] Implement scoped user-token exchange with explicit same-realm provisioning and original MFA preservation; verify real boundaries.
+- [x] Add failing local file/possession/activation tests; implement local key pages with guarded routes and existing design system.
+- [x] Add failing exact-scope recipient/rewrap tests; implement transfer pages and matching Gateway client.
+- [x] Verify secret-free requests, cancellation, concurrency and historical keys; run Nx checks and server-runtime gate, update required architecture docs, commit owned files and write report.
 
 ### Task 4: Coordinator integration and independent review
 
-- [ ] Compare exact DTOs, auth claims, cryptographic vectors and lifecycle semantics across packages.
-- [ ] Review each worker diff for approved requirements and code quality; route concrete fixes back to its owner.
-- [ ] Run final focused Gateway/Postgres, frontend build/lint/test, Studio Nx/runtime and cross-package checks feasible in the local environment.
-- [ ] Mark only verified proposal tasks complete. Report actual checks and explicit environmental limits; do not deploy or reset data.
+- [x] Compare exact DTOs, auth claims, cryptographic vectors and lifecycle semantics across packages.
+- [x] Review each worker diff for approved requirements and code quality; route concrete fixes back to its owner.
+- [x] Run final focused Gateway/Postgres, frontend build/lint/test, Studio Nx/runtime and cross-package checks feasible in the local environment.
+- [x] Mark only verified proposal tasks complete. Report actual checks and explicit environmental limits; do not deploy or reset data.
+
+## Final handoff
+
+Gateway, SSF, Studio and the cross-repository integration received independent
+specification and quality approval. The final source gates passed. The remaining
+single-journey release acceptance is explicitly left open in key-lifecycle task
+6.3; its implemented behaviors have composed isolated test evidence. See
+`docs/meeting-notes/2026-11-18-dashboard-key-management-verification.md`.
+No deployment, merge, push or existing-data reset was performed.
