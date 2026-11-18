@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasPermission, requestStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity, hasPermission } from '@/app/auth/keycloak';
 import { CeremonyCheckError } from '@/core/crypto/ceremony-crypto.port';
 import { AppError } from '@/core/http/AppError';
 import type { Ceremony } from '@/domain/recovery/recovery.types';
@@ -11,7 +11,6 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
   hasPermission: vi.fn(),
-  requestStepUp: vi.fn(),
 }));
 
 function withPaperHolders(open: Ceremony): Ceremony {
@@ -31,7 +30,6 @@ describe('CeremonyScreen', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'anna' });
     vi.mocked(hasPermission).mockImplementation((permission) => permission !== MANAGE);
-    vi.mocked(requestStepUp).mockResolvedValue(undefined);
   });
 
   it('lets the administrator start with paper shares, making this browser the ceremony device', async () => {
@@ -94,17 +92,6 @@ describe('CeremonyScreen', () => {
     await waitFor(() => expect(studioMode).toHaveBeenCalled());
     expect(await screen.findAllByRole('radio')).toHaveLength(2);
     expect(screen.queryByText('In Studio festgelegt')).not.toBeInTheDocument();
-  });
-
-  it('asks for a fresh MFA login and comes back to the ceremony', async () => {
-    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
-    vi.mocked(hasPermission).mockReturnValue(true);
-    const stepUp = new AppError('validation', { status: 403, serverCode: 'STEP_UP_REQUIRED' });
-    const { remember } = render({ ...noKey, ceremony: null }, { repository: { start: vi.fn().mockRejectedValue(stepUp) } });
-    for (const name of ['Anna', 'Bernd', 'Carla']) await userEvent.click(await screen.findByText(name));
-    await userEvent.click(screen.getByRole('button', { name: 'Zeremonie starten' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Erneut anmelden' }));
-    expect(remember).toHaveBeenCalledWith('ceremony');
   });
 
   it('tells a custodian without a ceremony to wait for the administrator', async () => {

@@ -8,14 +8,10 @@ import {
   type CeremonyFault,
   type CertifiedTrust,
 } from '@/core/crypto/ceremony-crypto.port';
-import { AppError } from '@/core/http/AppError';
-import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import { trustChain } from '@/domain/recovery/chain.mapper';
 import type { Ceremony, CeremonyParticipant, ServedChain } from '@/domain/recovery/recovery.types';
 
 export const CEREMONY_QUERY = ['recording', 'ceremony'] as const;
-/** The staff view the step-up redirect returns to. */
-export const CEREMONY_VIEW = 'ceremony';
 export const TENANT_MANAGE = 'ssf.configuration.tenant.manage';
 export const CUSTODIAN = 'ssf.recording.recovery.custodian';
 /** Other custodians deal and sign on their own devices; this view follows them. */
@@ -76,12 +72,11 @@ export function useCertifiedChain(tenantId: string, chain: Readonly<ServedChain>
   return { previous: query.data ?? null, pending: chain !== null && query.isPending };
 }
 
-export type StepError = 'stepUp' | 'failed' | CeremonyFault;
+export type StepError = 'failed' | CeremonyFault;
 
 /**
  * Runs one ceremony step. A failed check aborts the ceremony with its reason,
- * because the ceremony is abort-on-failure (spec §9.2); a missing step-up asks
- * for a fresh login; anything else may simply be retried.
+ * because the ceremony is abort-on-failure (spec §9.2).
  */
 export function useCeremonyStep(ceremonyId: string) {
   const { recoveryCeremony } = useServices();
@@ -110,7 +105,6 @@ function faultOf(caught: unknown): CeremonyFault {
 }
 
 async function classify(caught: unknown, abort: () => Promise<void>): Promise<StepError> {
-  if (caught instanceof AppError && caught.serverCode === STEP_UP_REQUIRED) return 'stepUp';
   if (!(caught instanceof CeremonyCheckError)) return 'failed';
   await abort().catch(() => undefined);
   return caught.fault;

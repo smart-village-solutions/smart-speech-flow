@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { hasFreshStepUp } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { useUnlockedKeys } from '@/features/keys/useKeys';
 import { KeyRecoveryBatch } from './KeyRecoveryBatch';
 import { OwnFingerprint } from './OwnFingerprint';
@@ -11,7 +9,6 @@ import { RecoveryShell } from './RecoveryShell';
 import { RecoveryLocked } from './RecoveryLocked';
 import { RequestDetail } from './RequestDetail';
 import { SummaryList } from './SummaryList';
-import { KEY_RECOVERY_VIEW } from './useKeyRecovery';
 import { useRecoveryRequests } from './useRecovery';
 
 interface HomeProps {
@@ -21,15 +18,12 @@ interface HomeProps {
 }
 
 interface FilingProps {
-  fresh: boolean;
   keys: UnlockedKeys | null;
   again: boolean;
   onOpenKeys: () => void;
 }
 
-/** Step-up before the unlock, so its redirect never wipes unlocked keys (§9.5). */
-function Filing({ fresh, keys, again, onOpenKeys }: Readonly<FilingProps>) {
-  if (!fresh) return <StepUpPrompt returnTo={KEY_RECOVERY_VIEW} />;
+function Filing({ keys, again, onOpenKeys }: Readonly<FilingProps>) {
   if (keys === null) return <RecoveryLocked onOpenKeys={onOpenKeys} />;
   return <KeyRecoveryBatch keys={keys} again={again} />;
 }
@@ -37,8 +31,6 @@ function Filing({ fresh, keys, again, onOpenKeys }: Readonly<FilingProps>) {
 /** One key recovery at a time: the batch is offered only while none is open (§9.6). */
 function Home({ keys, onOpenKeys, onOpen }: Readonly<HomeProps>) {
   const { t } = useTranslation();
-  // Read once: a later re-render must not swap a half-typed reason for the prompt.
-  const [fresh] = useState(hasFreshStepUp);
   const requests = useRecoveryRequests('key_recovery');
   if (requests.isError)
     return (
@@ -51,7 +43,7 @@ function Home({ keys, onOpenKeys, onOpen }: Readonly<HomeProps>) {
   const again = requests.data.some((row) => row.status === 'completed');
   return (
     <>
-      {!open && <Filing fresh={fresh} keys={keys} again={again} onOpenKeys={onOpenKeys} />}
+      {!open && <Filing keys={keys} again={again} onOpenKeys={onOpenKeys} />}
       {/* The custodians call while the request is open: the value they ask for stays here. */}
       {open && keys !== null && <OwnFingerprint keys={keys} />}
       {open && keys === null && <RecoveryLocked onOpenKeys={onOpenKeys} />}

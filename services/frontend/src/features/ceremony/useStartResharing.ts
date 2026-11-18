@@ -1,9 +1,8 @@
 import { useServices } from '@/app/providers/services';
 import { AppError } from '@/core/http/AppError';
-import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import { useDeviceStart } from './useStartCeremony';
 
-export type ResharingError = 'stepUp' | 'dealers' | 'unusable' | 'changed' | 'invalid' | 'failed';
+export type ResharingError = 'dealers' | 'unusable' | 'changed' | 'invalid' | 'failed';
 
 interface ResharingChoice {
   k: number;
@@ -14,7 +13,6 @@ interface ResharingChoice {
 }
 
 const BY_CODE: Record<string, ResharingError> = {
-  [STEP_UP_REQUIRED]: 'stepUp',
   INVALID_DEALERS: 'dealers',
   HOLDERS_CHANGED: 'changed',
   DEALER_UNUSABLE: 'unusable',

@@ -2,12 +2,7 @@ import {holdTestKeys} from '@/test/personalKeys';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  getAdminIdentity,
-  hasAcceptedStepUp,
-  hasFreshStepUp,
-  stepUpSecondsLeft,
-} from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -22,9 +17,6 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
-  hasFreshStepUp: vi.fn(),
-  hasAcceptedStepUp: vi.fn(),
-  stepUpSecondsLeft: vi.fn(),
 }));
 
 const keys = { fingerprint: new Uint8Array(32) } as unknown as UnlockedKeys;
@@ -113,9 +105,6 @@ async function openRequest() {
 describe('RecoveryApprovalsScreen', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'carol' });
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
-    vi.mocked(hasAcceptedStepUp).mockReturnValue(true);
-    vi.mocked(stepUpSecondsLeft).mockReturnValue(300);
   });
 
   it('labels each request with its kind, in the list and in the review', async () => {
@@ -149,14 +138,11 @@ describe('RecoveryApprovalsScreen', () => {
     await userEvent.click(await screen.findByLabelText(r.approve.confirmed));
     await userEvent.click(screen.getByRole('button', { name: r.approve.action }));
     await waitFor(() => expect(report).toBeDefined());
-    // The step-up ages while the approval computes: no redirect may interrupt it.
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
     act(() => report?.(50, 120));
     const shown = de.admin.keyRecovery.progress
       .replace('{{done}}', '50')
       .replace('{{total}}', '120');
     expect(await screen.findByText(shown)).toBeInTheDocument();
-    expect(screen.queryByText(r.stepUpBody)).not.toBeInTheDocument();
     act(() => finish?.());
   });
 
@@ -203,27 +189,6 @@ describe('RecoveryApprovalsScreen', () => {
     await waitFor(() =>
       expect(recoveryRequests.decline).toHaveBeenCalledWith(R1, 'Not justified.')
     );
-  });
-
-  it('asks for a fresh second factor before anything is unlocked or computed', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    const { recoveryCrypto } = render();
-    await openRequest();
-    expect(await screen.findByText(r.stepUpBody)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: r.approve.action })).not.toBeInTheDocument();
-    expect(recoveryCrypto.approve).not.toHaveBeenCalled();
-  });
-
-  it('a step-up that lapses while the screen is open stops the approval before any check', async () => {
-    const { recoveryCrypto, recoveryRequests } = render();
-    await openRequest();
-    await waitFor(() => expect(screen.queryByText('…')).not.toBeInTheDocument());
-    await userEvent.click(await screen.findByLabelText(r.approve.confirmed));
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    await userEvent.click(screen.getByRole('button', { name: r.approve.action }));
-    expect(await screen.findByText(r.stepUpBody)).toBeInTheDocument();
-    expect(recoveryCrypto.approve).not.toHaveBeenCalled();
-    expect(recoveryRequests.approve).not.toHaveBeenCalled();
   });
 
   it('a locked custodian reads the request and may decline; approving asks to unlock', async () => {

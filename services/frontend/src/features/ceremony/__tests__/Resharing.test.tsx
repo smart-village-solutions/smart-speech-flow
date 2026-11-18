@@ -3,9 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getAdminIdentity,
-  hasFreshStepUp,
   hasPermission,
-  requestStepUp,
 } from '@/app/auth/keycloak';
 import { ShareMismatchError } from '@/core/crypto/ceremony-crypto.port';
 import { AppError } from '@/core/http/AppError';
@@ -21,8 +19,6 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
   hasPermission: vi.fn(),
-  hasFreshStepUp: vi.fn(),
-  requestStepUp: vi.fn(),
 }));
 
 const holders: CurrentHolder[] = [
@@ -110,7 +106,6 @@ describe('changing custodians', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
     vi.mocked(hasPermission).mockReturnValue(true);
-    vi.mocked(requestStepUp).mockResolvedValue(undefined);
   });
 
   it('lets an admin choose exactly k current holders, never one whose share is lost', async () => {
@@ -236,19 +231,6 @@ describe('dealing in a resharing', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'anna' });
     vi.mocked(hasPermission).mockImplementation((permission) => permission !== MANAGE);
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
-  });
-
-  it('asks for a fresh MFA login before the dealer ticks or unlocks anything', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    const { recoveryCeremony } = render(withKey(resharing()), {
-      unlocked: true,
-      crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
-    });
-    expect(await screen.findByText(/zweiten Faktor/)).toBeInTheDocument();
-    expect(screen.queryByText(/· verglichen/)).not.toBeInTheDocument();
-    // Each read of the key is audited: none before the fresh login.
-    expect(recoveryCeremony.dealer).not.toHaveBeenCalled();
   });
 
   it('reads no key once it has dealt', async () => {
@@ -358,7 +340,7 @@ describe('dealing in a resharing', () => {
       crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
     });
     expect(await screen.findByText(/an Ihren früheren Schlüssel gebunden/)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Passphrase'), 'the old one');
+    await userEvent.type(screen.getByLabelText('Zugangsschlüssel (Passphrase)'), 'the old one');
     await userEvent.click(screen.getByRole('button', { name: 'Früheren Schlüssel entsperren' }));
     expect(
       await screen.findByRole('button', { name: 'Meinen Anteil weitergeben' })
@@ -379,7 +361,7 @@ describe('dealing in a resharing', () => {
       crypto: { certifyChain: vi.fn().mockResolvedValue(certified) },
     });
     expect(await screen.findByText(/an Ihren früheren Schlüssel gebunden/)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Passphrase'), 'the old one');
+    await userEvent.type(screen.getByLabelText('Zugangsschlüssel (Passphrase)'), 'the old one');
     await userEvent.click(screen.getByRole('button', { name: 'Früheren Schlüssel entsperren' }));
     expect(
       await screen.findByRole('button', { name: 'Meinen Anteil weitergeben' })

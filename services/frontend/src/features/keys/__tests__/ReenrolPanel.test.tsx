@@ -3,7 +3,7 @@ import { act, screen, waitFor } from '@testing-library/react';
 import { focusManager } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasPermission, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity, hasPermission } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { AppError } from '@/core/http/AppError';
@@ -17,8 +17,6 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
   hasPermission: vi.fn(),
-  hasFreshStepUp: vi.fn(),
-  requestStepUp: vi.fn(),
 }));
 
 const STRONG = 'kanne wolke ferne tisch blau';
@@ -131,7 +129,7 @@ async function throughTheWarning() {
 }
 
 async function submitNewPassphrase() {
-  await userEvent.type(await screen.findByLabelText('Passphrase'), STRONG);
+  await userEvent.type(await screen.findByLabelText('Zugangsschlüssel (Passphrase)'), STRONG);
   await userEvent.type(screen.getByLabelText('Passphrase wiederholen'), STRONG);
   await userEvent.click(screen.getByRole('button', { name: r.submit }));
 }
@@ -139,7 +137,6 @@ async function submitNewPassphrase() {
 describe('re-enrolment', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
   it.each([
@@ -160,13 +157,6 @@ describe('re-enrolment', () => {
       expect(screen.queryByLabelText('Passphrase wiederholen')).not.toBeInTheDocument();
     }
   );
-
-  it('asks for a fresh second factor after the warning', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    render();
-    await throughTheWarning();
-    expect(await screen.findByRole('button', { name: 'Erneut anmelden' })).toBeInTheDocument();
-  });
 
   it('activates the key once its link is confirmed elsewhere, and preserves the old version', async () => {
     const after = { ...ownKey, ...newKey, keyVersion: 5 };
@@ -239,13 +229,12 @@ describe('re-enrolment', () => {
     expect(keyVault.current()).toBe(old);
   });
 
-  it('keeps the waiting key on screen when the step-up ages afterwards', async () => {
+  it('keeps the waiting key on screen after the vault locks', async () => {
     const { recordingKeys, keyVault } = render();
     await throughTheWarning();
     recordingKeys.reenrolmentImpact.mockResolvedValue(impact(waiting));
     await submitNewPassphrase();
     expect(await screen.findByText(until)).toBeInTheDocument();
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
     keyVault.lock(); // any re-render
     expect(await screen.findByText(until)).toBeInTheDocument();
   });

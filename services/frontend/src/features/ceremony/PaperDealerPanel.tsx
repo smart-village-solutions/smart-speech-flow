@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import type { Bytes } from '@/core/crypto/bytes';
 import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
 import type { Ceremony } from '@/domain/recovery/recovery.types';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { TextField } from '@/ui/primitives/TextField';
 import { NewHolderTicks } from './NewHolderTicks';
 import { StepAlert } from './StepAlert';
-import { CEREMONY_VIEW, allTicked } from './useCeremony';
+import { allTicked } from './useCeremony';
 import { usePaperDealing } from './usePaperDealing';
 
 interface PaperDealerPanelProps {
@@ -30,8 +29,6 @@ export function PaperDealerPanel({ ceremony, facts }: Readonly<PaperDealerPanelP
   );
   const [chosen, setChosen] = useState<number | null>(null);
   const sheet = waiting.find((d) => d.dealerIndex === chosen) ?? waiting[0];
-
-  if (paper.error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();

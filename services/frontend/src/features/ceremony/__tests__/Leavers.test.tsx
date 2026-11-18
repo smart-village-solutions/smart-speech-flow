@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasFreshStepUp, hasPermission } from '@/app/auth/keycloak';
+import { getAdminIdentity, hasPermission } from '@/app/auth/keycloak';
 import { AppError } from '@/core/http/AppError';
 import type { LeaverCandidate } from '@/domain/recovery/recovery.types';
 import { installFakeClipboard } from '@/test/fakeClipboard';
@@ -11,8 +11,6 @@ vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
   hasPermission: vi.fn(),
-  hasFreshStepUp: vi.fn(),
-  requestStepUp: vi.fn(),
 }));
 
 const alice: LeaverCandidate = {
@@ -42,7 +40,6 @@ describe('leavers', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
     vi.mocked(hasPermission).mockReturnValue(true);
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
   it('lists what recognises a leaver without a name', async () => {
@@ -97,29 +94,13 @@ describe('leavers', () => {
     expect(recoveryCeremony.markLeaver).not.toHaveBeenCalled();
   });
 
-  it('asks for a fresh MFA login only once a marking is asked for, never on paper', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    const { recoveryCeremony } = render(withKey, {
-      repository: { leavers: vi.fn().mockResolvedValue([alice]) },
-    });
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Als ausgeschieden markieren' })
-    );
-    const prompt = screen.getByText('Identität bestätigen').closest('section');
-    expect(prompt).toHaveClass('print:hidden');
-    expect(screen.queryByRole('button', { name: 'Endgültig markieren' })).not.toBeInTheDocument();
-    expect(recoveryCeremony.markLeaver).not.toHaveBeenCalled();
-  });
-
   it('shows no login card for candidates nobody has asked to mark', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
     render(withKey, { repository: { leavers: vi.fn().mockResolvedValue([alice]) } });
     expect(await screen.findByText('7f1e2d3c-alice', { selector: 'span' })).toBeInTheDocument();
     expect(screen.queryByText('Identität bestätigen')).not.toBeInTheDocument();
   });
 
   it('asks for no login while nobody has left', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
     render(withKey);
     expect(await screen.findByText(/Niemand:/)).toBeInTheDocument();
     expect(screen.queryByText('Identität bestätigen')).not.toBeInTheDocument();
@@ -161,21 +142,6 @@ describe('leavers', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
     await userEvent.click(screen.getByRole('button', { name: 'Als ausgeschieden markieren' }));
     expect(screen.queryByText(/Laden Sie die Liste neu/)).not.toBeInTheDocument();
-  });
-
-  it('sends an expired login back to step-up', async () => {
-    render(withKey, {
-      repository: {
-        leavers: vi.fn().mockResolvedValue([alice]),
-        markLeaver: vi.fn().mockRejectedValue(refused('STEP_UP_REQUIRED')),
-      },
-    });
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Als ausgeschieden markieren' })
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Endgültig markieren' }));
-    expect(await screen.findByText('Identität bestätigen')).toBeInTheDocument();
-    expect(screen.queryByText(/Das hat nicht geklappt/)).not.toBeInTheDocument();
   });
 
   it('says when the directory cannot be trusted', async () => {

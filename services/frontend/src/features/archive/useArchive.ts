@@ -10,8 +10,6 @@ import { type Opened, openConversation, openObject } from './openConversation';
 
 export type { Opened } from './openConversation';
 
-/** The staff view the archive opens as; a step-up redirect may return to it. */
-export const ARCHIVE_VIEW = 'archive';
 const ARCHIVE_LIST_QUERY = ['archive', 'list'] as const;
 /** Any of these opens the archive; the gateway enforces the same list (`RECORDING_PERMISSIONS`). */
 export const ARCHIVE_PERMISSIONS = [

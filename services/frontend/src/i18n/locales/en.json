@@ -254,12 +254,9 @@
         "import": "Load passphrase from TXT file",
         "importFailed": "This file is not a valid passphrase backup or is too large."
       },
-      "stepUpTitle": "Confirm your identity",
-      "stepUpBody": "Setting up keys needs a fresh sign-in with your second factor.",
-      "stepUpAction": "Sign in again",
       "enrolTitle": "Set up your keys",
       "enrolBody": "Choose a passphrase of at least 12 characters, for example four or five unrelated words. It is not your sign-in password.",
-      "passphrase": "Passphrase",
+      "passphrase": "Access key (passphrase)",
       "passphraseConfirm": "Repeat the passphrase",
       "passphraseMismatch": "The two entries differ.",
       "passphraseWeak": "This passphrase is too easy to guess. Use more or less common words.",
@@ -313,7 +310,6 @@
       "title": "Recovery key",
       "intro": "The recovery key lets the organisation open a recorded conversation when the responsible person no longer can – but only when enough recovery approvers agree together. No device and no person ever holds the whole key.",
       "unavailable": "The recovery key is not available right now.",
-      "stepUpBody": "For this step, please sign in again with your second factor.",
       "noCeremony": "This organisation has no recovery key yet. The organisation administrator starts the ceremony.",
       "lastAborted": "The last ceremony was aborted ({{reason}}). There is no recovery key yet; the ceremony must be started again from the beginning.",
       "lastExpired": "The last ceremony lapsed after 24 hours without finishing. It must be started again from the beginning.",
@@ -550,8 +546,7 @@
         },
         "fingerprint": "Fingerprint of {{name}}",
         "fingerprintHint": "Compare it with the reviewer by phone before you assign. Only this person will be able to open the conversation.",
-        "wrapping": "Wrapping the conversation keys…",
-        "stepUpBody": "Assigning a reviewer hands them this conversation, so it needs a fresh second-factor sign-in."
+        "wrapping": "Wrapping the conversation keys…"
       },
       "checking": "Checking integrity …",
       "integrity": {
@@ -678,7 +673,6 @@
     "recovery": {
       "locked": "Unlock your archive key first.",
       "unlock": "Unlock key",
-      "stepUpBody": "Recovery steps need a fresh sign-in with your second factor.",
       "unavailable": "Recovery is not available right now.",
       "requests": {
         "title": "Exceptional access",
@@ -759,7 +753,6 @@
         "share_mismatch": "Your share does not match the transcript. Do not approve.",
         "custodians_changed": "The recovery approvers changed since this request was filed. File it again.",
         "trust": "The recovery transcript does not verify. Do not approve; tell the other recovery approvers.",
-        "step_up": "Sign in again with your second factor first.",
         "unavailable": "Recovery is not available right now.",
         "fingerprint_changed": "The requester's keys changed after you confirmed the fingerprint. Do not approve; compare again."
       },
@@ -800,7 +793,6 @@
       "progress": "{{done}} of {{total}}",
       "unrecoverable": "Keys that could not be recovered: {{count}}",
       "none": "Your key opens all your conversations.",
-      "stepUpBody": "Requesting needs a fresh sign-in with your second factor.",
       "open": "Recover access",
       "banner": "Conversations your key can't open: {{count}}"
     },

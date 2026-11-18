@@ -1,5 +1,4 @@
-import { hasAcceptedStepUp, stepUpSecondsLeft } from '@/app/auth/keycloak';
-import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
+import type { KeyVault, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { Bytes } from '@/core/crypto/bytes';
 import {
   CeremonyCheckError,
@@ -26,6 +25,7 @@ import type {
 } from '@/domain/recovery/requests.types';
 
 export interface RecoveryDeps {
+  keyVault: KeyVault;
   archive: ArchiveRepository;
   ceremonyCrypto: CeremonyCrypto;
   recoveryCrypto: RecoveryCrypto;
@@ -35,6 +35,16 @@ export interface RecoveryDeps {
 export interface Identity {
   tenantId: string;
   userSub: string;
+}
+
+/** Long computations may outlive the key hold that authorized them. */
+function guardKey(vault: KeyVault, keys: Readonly<UnlockedKeys>): () => void {
+  const generation = vault.generation();
+  return () => {
+    if (vault.generation() !== generation || vault.current() !== keys) {
+      throw new Error('Recovery key is no longer unlocked');
+    }
+  };
 }
 
 /** The archive's trust route, certified in this browser for every use (spec §10.6, §9.5). */
@@ -59,6 +69,7 @@ export async function fileOnce(
   keys: Readonly<UnlockedKeys>,
   input: Readonly<FileInput>
 ): Promise<void> {
+  const checkKey = guardKey(deps.keyVault, keys);
   const trust = await certifiedTrust(deps, identity.tenantId);
   const requestId = crypto.randomUUID();
   const scope = input.candidates.flatMap((c) =>
@@ -76,6 +87,7 @@ export async function fileOnce(
     },
     keys.sigPrivate
   );
+  checkKey();
   await deps.recoveryRequests.file({
     requestId,
     kind: input.kind,
@@ -112,6 +124,7 @@ export async function combineOnce(
   requestId: string,
   onProgress?: OnProgress
 ): Promise<CombineOutcome> {
+  const checkKey = guardKey(deps.keyVault, keys);
   let trust: CertifiedTrust;
   try {
     trust = await certifiedTrust(deps, identity.tenantId);
@@ -129,6 +142,7 @@ export async function combineOnce(
     keys,
     onProgress
   );
+  checkKey();
   await Promise.all(
     result.rejections.map((r) => deps.recoveryRequests.reject(requestId, r).catch(() => undefined))
   );
@@ -136,6 +150,7 @@ export async function combineOnce(
   if (result.wraps === null)
     return { kind: 'waiting', rejected: result.rejections.map((r) => r.holderIndex) };
   // One call: the gateway records the unusable keys with the wraps, or nothing at all (§9.6).
+  checkKey();
   await deps.recoveryRequests.storeWraps(requestId, result.wraps, result.unrecoverable);
   return { kind: 'done', unrecoverable: result.unrecoverable.length };
 }
@@ -169,23 +184,6 @@ function approvalFacts(
   };
 }
 
-/** What the upload of the partials may take once they exist. */
-const POST_MARGIN_SECONDS = 15;
-
-/**
- * Passes progress on, and stops the work as soon as its projected end falls outside
- * the step-up window: a fresh step-up then costs one chunk, not the whole run (§9.6).
- */
-function withinStepUp(onProgress?: OnProgress): OnProgress {
-  const started = performance.now();
-  return (done, total) => {
-    onProgress?.(done, total);
-    const elapsed = (performance.now() - started) / 1000;
-    const rest = (elapsed / done) * (total - done);
-    if (rest + POST_MARGIN_SECONDS > stepUpSecondsLeft()) throw new RecoveryCheckError('step_up');
-  };
-}
-
 /** Every check of spec §9.5 in this browser, then the signed partials go to the gateway. */
 export async function approveOnce(
   deps: Readonly<RecoveryDeps>,
@@ -195,6 +193,7 @@ export async function approveOnce(
   confirmed: Bytes,
   onProgress?: OnProgress
 ): Promise<void> {
+  const checkKey = guardKey(deps.keyVault, keys);
   const trust = await certifiedTrust(deps, identity.tenantId);
   const facts = approvalFacts(detail, identity.tenantId, confirmed);
   const result = await deps.recoveryCrypto.approve(
@@ -202,10 +201,9 @@ export async function approveOnce(
     trust,
     keys,
     identity.userSub,
-    withinStepUp(onProgress)
+    onProgress
   );
-  // Thousands of keys take a while: a lapsed step-up would only meet the gateway's 403 (§9.6).
-  if (!hasAcceptedStepUp()) throw new RecoveryCheckError('step_up');
+  checkKey();
   await deps.recoveryRequests.approve(detail.requestId, result.partials, result.signature);
 }
 
@@ -213,8 +211,6 @@ export async function approveOnce(
 export function faultOf(error: unknown): string {
   if (error instanceof RecoveryCheckError) return error.fault;
   if (error instanceof CeremonyCheckError) return 'trust';
-  // The gateway's own step-up check: shown as the prompt, not as a refusal.
-  if (error instanceof RecoveryRefusedError && error.code === 'STEP_UP_REQUIRED') return 'step_up';
   if (error instanceof RecoveryRefusedError) return `refused.${error.code}`;
   return 'unavailable';
 }

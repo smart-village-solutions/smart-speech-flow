@@ -281,15 +281,15 @@ describe('recovery ceremony repository', () => {
     expect(received.get(2)?.get(3)).toBe('b');
   });
 
-  it('surfaces the step-up code when starting', async () => {
+  it('surfaces the permission refusal when starting', async () => {
     server.use(
       http.post(URL, () =>
-        HttpResponse.json({ detail: { error_code: 'STEP_UP_REQUIRED', message: 'x' } }, { status: 403 })
+        HttpResponse.json({ detail: { error_code: 'PERMISSION_REQUIRED', message: 'x' } }, { status: 403 })
       )
     );
     const started = repository().start(2, ['anna', 'bernd', 'carla'], null);
     await expect(started).rejects.toBeInstanceOf(AppError);
-    await expect(started).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+    await expect(started).rejects.toMatchObject({ serverCode: 'PERMISSION_REQUIRED' });
   });
 
   it('lists leavers and marks one by the version it showed', async () => {

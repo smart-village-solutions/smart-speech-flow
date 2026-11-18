@@ -66,7 +66,7 @@ export interface ArchiveRepository {
   reportIntegrity(conversationId: string, stage: IntegrityStage): Promise<void>;
   /** Reviewers eligible for this conversation, with their keys (spec §10.7). */
   reviewers(conversationId: string): Promise<ReviewerCandidate[]>;
-  /** Needs step-up; the wraps were made and signed in the browser. */
+  /** The wraps were made and signed in the browser. */
   assign(conversationId: string, post: Readonly<AssignPost>): Promise<VerificationRecord>;
 }
 

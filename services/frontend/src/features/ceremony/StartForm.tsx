@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
 import { RecoveryModeChoice } from './RecoveryModeChoice';
-import { CEREMONY_VIEW } from './useCeremony';
 import { thresholdOf, useStudioRecoveryMode } from './useStudioRecoveryMode';
 import { type StartError, useStartCeremony } from './useStartCeremony';
 
-const ERROR_KEYS: Record<Exclude<StartError, 'stepUp'>, string> = {
+const ERROR_KEYS: Record<StartError, string> = {
   invalid: 'admin.ceremony.startInvalid',
   failed: 'admin.ceremony.startFailed',
 };
@@ -24,8 +22,6 @@ export function StartForm({ tenantId }: Readonly<{ tenantId: string }>) {
   const [paper, setPaper] = useState(true);
   const studio = useStudioRecoveryMode();
   const threshold = studio.mode === null ? k : thresholdOf(studio.mode);
-
-  if (error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();

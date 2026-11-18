@@ -3,11 +3,9 @@ import { useTranslation } from 'react-i18next';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
 import type { Ceremony, CeremonyParticipant } from '@/domain/recovery/recovery.types';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { StepAlert } from './StepAlert';
-import { CEREMONY_VIEW } from './useCeremony';
 import { useCustodianActions } from './useCustodianActions';
 
 interface CustodianStepsProps {
@@ -32,8 +30,6 @@ export function CustodianSteps({ ceremony, facts, participant, keys }: Readonly<
   const actions = useCustodianActions(ceremony, facts, participant, keys);
   const [compared, setCompared] = useState(false);
   const step = nextStep(ceremony, participant.holderIndex);
-
-  if (actions.error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   return (
     <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5 print:hidden">

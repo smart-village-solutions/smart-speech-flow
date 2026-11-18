@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
 import { QuestionDialog } from '@/ui/patterns/QuestionDialog';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { ReviewerPicker } from './ReviewerPicker';
 import type { RequestVerification } from './useRequestVerification';
 
@@ -29,11 +28,10 @@ export function RequestVerificationDialog({
       )}
       cancelLabel={t('admin.archive.verification.cancel')}
       error={error}
-      confirmDisabled={request.stage === 'stepUp' || request.picked === null || request.pending}
+      confirmDisabled={request.picked === null || request.pending}
       onConfirm={confirming ? request.submit : () => void request.next()}
       onCancel={onClose}
     >
-      {request.stage === 'stepUp' && <StepUpPrompt returnTo="archive" />}
       {request.stage === 'pick' && request.candidates.isError && (
         <p role="alert" className="mt-3 text-label text-fg-status-alert">
           {t('admin.archive.verification.error.DIRECTORY_UNAVAILABLE')}

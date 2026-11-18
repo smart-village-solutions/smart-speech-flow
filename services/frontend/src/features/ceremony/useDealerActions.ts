@@ -29,7 +29,7 @@ export function useDealerActions(
   dealer: Readonly<CeremonyDealer>,
   owner: Readonly<KeyOwner>,
   vault: Readonly<UnlockedKeys> | null,
-  /** Each read of the key is audited: only once the step-up is fresh and while it has to deal. */
+  /** Each read of the key is audited: only while the dealer still needs to deal. */
   active: boolean
 ) {
   const { recoveryCeremony, ceremonyCrypto, archiveCrypto } = useServices();

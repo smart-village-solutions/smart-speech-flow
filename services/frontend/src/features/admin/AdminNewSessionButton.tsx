@@ -6,7 +6,7 @@ import { ConfirmDialog } from '@/ui/patterns/ConfirmDialog';
 import type { CreatedSession } from '@/domain/admin/admin.types';
 import type { InviteCopy } from '@/features/content/staffCopy';
 import { AdminInviteOverlay } from './AdminInviteOverlay';
-import {OVERVIEW} from '@/features/dashboard/filterRows';
+import { OVERVIEW } from '@/features/dashboard/filterRows';
 import { ADMIN_SESSIONS_KEY } from './useAdminSessions';
 
 interface AdminNewSessionButtonProps {
@@ -37,13 +37,18 @@ export function AdminNewSessionButton({
   const [confirming, setConfirming] = useState(false);
   const [invite, setInvite] = useState<CreatedSession | null>(null);
 
+  const refreshSessions = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: OVERVIEW }),
+      queryClient.invalidateQueries({ queryKey: ADMIN_SESSIONS_KEY }),
+    ]);
+
   const create = useMutation({
     mutationFn: () => admin.createSession(),
     onSuccess: (created) => {
       setInvite(created);
       // The gateway ended the admin's previous session, so the list is now stale.
-      void queryClient.invalidateQueries({queryKey:OVERVIEW});
-      void queryClient.invalidateQueries({ queryKey: ADMIN_SESSIONS_KEY });
+      void refreshSessions();
     },
   });
 
@@ -70,7 +75,7 @@ export function AdminNewSessionButton({
     void admin
       .terminateSession(pending.id)
       .catch(() => undefined)
-      .finally(() => queryClient.invalidateQueries({ queryKey: ADMIN_SESSIONS_KEY }));
+      .finally(refreshSessions);
   };
 
   const press = () => {

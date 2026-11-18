@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { AppError } from '@/core/http/AppError';
-import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import type { LeaverCandidate } from '@/domain/recovery/recovery.types';
 import { CEREMONY_QUERY } from './useCeremony';
 
@@ -50,7 +49,6 @@ export function useLeavers() {
     // A refusal names one attempt; asking about a candidate again starts afresh.
     reset: mark.reset,
     pending: mark.isPending,
-    stepUp: mark.isError && serverCode(mark.error) === STEP_UP_REQUIRED,
     markError: mark.isError ? errorKey(mark.error) : null,
   };
 }

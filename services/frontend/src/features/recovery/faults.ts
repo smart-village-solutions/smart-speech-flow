@@ -6,7 +6,6 @@ const CHECKS = new Set([
   'wrap_signature',
   'share_mismatch',
   'trust',
-  'step_up',
   'fingerprint_changed',
   'custodians_changed',
 ]);

@@ -11,10 +11,6 @@ export const hasPermission = p => p==='ssf.recording.review';
 export const getAdminAccessToken = async () => 'test-user';
 export const getAccountConsoleUrl = () => 'https://account.invalid/';
 export const getStudioAdministrationUrl = () => null;
-export const hasFreshStepUp = () => false;
-export const stepUpSecondsLeft = () => 0;
-export const hasAcceptedStepUp = () => false;
-export const requestStepUp = async () => {};
 export const logoutFromKeycloak = async () => {};
 `;
 
@@ -23,6 +19,14 @@ for (const width of [390, 1200]) {
     page,
   }) => {
     const accessed: string[] = [];
+    let connections = 0;
+    let disconnections = 0;
+    await page.routeWebSocket('**/ws/admin/AR000001*', (socket) => {
+      connections++;
+      socket.onClose(() => {
+        disconnections++;
+      });
+    });
     const when = '2026-11-18T09:00:00Z';
     const assignment = '91960b41-2766-4033-840b-31940a312493';
     await page.setViewportSize({ width, height: 850 });
@@ -61,7 +65,7 @@ for (const width of [390, 1200]) {
           items: url.searchParams.has('cursor')
             ? [conversationRow('NEW', false)]
             : [
-                conversationRow('FIRST'),
+                conversationRow('AR000001'),
                 {
                   ...conversationRow('PRIVATE', false),
                   recording_status: 'available',
@@ -97,6 +101,18 @@ for (const width of [390, 1200]) {
           decided_at: when,
           requested_by_name: 'Alice',
         },
+        '/api/admin/session/AR000001/status': {
+          id: 'AR000001',
+          customer_language: 'ar',
+          admin_language: 'de',
+          status: 'active',
+          created_at: when,
+          message_count: 0,
+          admin_connected: true,
+          customer_connected: true,
+        },
+        '/api/admin/session/AR000001/realtime-ticket': { ticket: 'local-fixture' },
+        '/api/admin/session/AR000001/messages': { session_id: 'AR000001', messages: [] },
         '/api/admin/recording/key-policy': { passphrase_file_enabled: false },
         '/api/admin/recording/v2/keys/me': { activeVersion: null, versions: [] },
       };
@@ -130,7 +146,7 @@ for (const width of [390, 1200]) {
     await page.getByRole('button', { name: 'Benutzerkonto' }).click();
     await page.getByRole('button', { name: 'Mein Konto' }).click();
     await expect(page.getByRole('link', { name: 'Kontoeinstellungen' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Erneut anmelden' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Schlüssel erzeugen' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('account.png') });
     await page.getByRole('button', { name: 'Zurück' }).click();
     await page.getByRole('button', { name: 'Meine Gespräche' }).click();
@@ -143,5 +159,19 @@ for (const width of [390, 1200]) {
     ).toBe(true);
     await page.getByRole('region', { name: 'Meine Gespräche' }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: test.info().outputPath('dashboard.png') });
+    await page.getByRole('button', { name: 'Gespräch AR000001 fortsetzen' }).click();
+    await page.getByRole('button', { name: 'Tastatur öffnen' }).click();
+    await page.getByRole('textbox').fill('Entwurf');
+    await expect.poll(() => connections).toBe(1);
+    await page.getByRole('button', { name: 'Benutzerkonto' }).click();
+    await page.getByRole('button', { name: 'Mein Konto' }).click();
+    await expect(page.getByRole('heading', { name: 'Mein Konto' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Gespräch beenden' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Zurück' }).click();
+    if (!(await page.getByRole('textbox').isVisible()))
+      await page.getByRole('button', { name: 'Tastatur öffnen' }).click();
+    await expect(page.getByRole('textbox')).toHaveValue('Entwurf');
+    expect(connections).toBe(1);
+    expect(disconnections).toBe(0);
   });
 }

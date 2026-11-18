@@ -2,17 +2,15 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { RecoveryKey } from '@/domain/recovery/recovery.types';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { CandidateList } from './CandidateList';
 import { RecoveryModeChoice } from './RecoveryModeChoice';
 import { thresholdOf, useStudioRecoveryMode } from './useStudioRecoveryMode';
 import { DealerPicker } from './DealerPicker';
-import { CEREMONY_VIEW } from './useCeremony';
 import { type ResharingError, useStartResharing } from './useStartResharing';
 
-const ERROR_KEYS: Record<Exclude<ResharingError, 'stepUp'>, string> = {
+const ERROR_KEYS: Record<ResharingError, string> = {
   dealers: 'admin.ceremony.reshare.errorDealers',
   unusable: 'admin.ceremony.reshare.errorUnusable',
   changed: 'admin.ceremony.reshare.errorChanged',
@@ -37,8 +35,6 @@ export function ReshareForm({ tenantId, recoveryKey, onCancel }: Readonly<Reshar
   const [paper, setPaper] = useState(false);
   const studio = useStudioRecoveryMode();
   const threshold = studio.mode === null ? k : thresholdOf(studio.mode);
-
-  if (error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   const ready =
     !studio.pending &&

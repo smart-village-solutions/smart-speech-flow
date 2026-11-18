@@ -30,8 +30,6 @@ vi.mock('@/app/auth/keycloak', () => ({
   getStudioAdministrationUrl: vi.fn(),
   hasPermission: vi.fn(),
   getAdminIdentity: vi.fn(),
-  hasFreshStepUp: () => false,
-  requestStepUp: vi.fn(),
   getAccountConsoleUrl: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   subscribeToKeycloakAuthorization: (listener: () => void) => {
@@ -254,6 +252,33 @@ describe('tenant login routes', () => {
     expect(screen.queryByText('private details')).not.toBeInTheDocument();
     if (source === 'directory') expect(requireKeycloakLogin).not.toHaveBeenCalled();
   });
+
+  it.each(['alice', 'bob'])(
+    'restores Account after actual session expiry only for the same user, logging back in as %s',
+    async (returningUser) => {
+      const owner = { tenantId: kassel.id, userSub: 'alice' };
+      vi.mocked(getAdminIdentity).mockReturnValue(owner);
+      renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+      await userEvent.click(await screen.findByRole('button', { name: 'Benutzerkonto' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Mein Konto' }));
+      await screen.findByRole('heading', { name: 'Mein Konto' });
+      act(() => {
+        vi.mocked(getAdminIdentity).mockReturnValue(null);
+        for (const listener of authorizationListeners) listener();
+        for (const listener of expirationListeners) listener();
+      });
+      const entry = await screen.findByRole('link', { name: 'Stadt Kassel' });
+      vi.mocked(getAdminIdentity).mockReturnValue({ ...owner, userSub: returningUser });
+      await userEvent.click(entry);
+      if (returningUser === 'alice') {
+        expect(await screen.findByRole('heading', { name: 'Mein Konto' })).toBeInTheDocument();
+      } else {
+        expect(
+          await screen.findByRole('button', { name: 'Neues Gespräch starten' })
+        ).toBeInTheDocument();
+      }
+    }
+  );
 
   it('returns to the chooser on logout', async () => {
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel' });

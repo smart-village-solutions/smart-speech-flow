@@ -5,8 +5,6 @@ import { INVENTORY_QUERY } from './useKeyInventory';
 import type { PendingReenrolment } from '@/domain/recording/recording.types';
 
 const REENROLMENT_IMPACT_QUERY = ['recording', 'reenrolmentImpact'] as const;
-/** The staff view the step-up redirect returns to. */
-export const KEYS_VIEW = 'keys';
 
 export function useUnlockedKeys() {
   const { keyVault } = useServices();

@@ -2,7 +2,7 @@ import {holdTestKeys} from '@/test/personalKeys';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import type { RecoveryRequestsRepository } from '@/domain/recovery/requests.repository';
@@ -14,7 +14,6 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
-  hasFreshStepUp: vi.fn(),
 }));
 
 const keys = {
@@ -108,21 +107,9 @@ function render(options: { unlocked?: UnlockedKeys | null; progress?: RequestPro
 describe('RecoveryRequestsScreen', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'sam' });
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
-  it('lists requests without a key, and a new request asks for step-up before the unlock', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    const { recoveryRequests, onOpenKeys } = render({ unlocked: null });
-    expect(await screen.findByText(summary.reason)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: r.new.action }));
-    expect(await screen.findByText(r.stepUpBody)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: r.unlock })).not.toBeInTheDocument();
-    expect(recoveryRequests.employees).not.toHaveBeenCalled();
-    expect(onOpenKeys).not.toHaveBeenCalled();
-  });
-
-  it('with a fresh step-up but locked keys, a new request asks to unlock', async () => {
+  it('with locked keys, a new request asks to unlock', async () => {
     const { onOpenKeys } = render({ unlocked: null });
     await userEvent.click(await screen.findByRole('button', { name: r.new.action }));
     await userEvent.click(await screen.findByRole('button', { name: r.unlock }));
@@ -165,13 +152,6 @@ describe('RecoveryRequestsScreen', () => {
     await waitFor(() => expect(recoveryRequests.cancel).toHaveBeenCalledWith(R1));
   });
 
-  it('needs a fresh second factor before the form', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    render();
-    await userEvent.click(await screen.findByRole('button', { name: r.new.action }));
-    expect(await screen.findByText(r.stepUpBody)).toBeInTheDocument();
-  });
-
   it('signs and files exactly the ticked conversations with every key of each', async () => {
     const { recoveryRequests, recoveryCrypto } = render();
     await userEvent.click(await screen.findByRole('button', { name: r.new.action }));
@@ -192,18 +172,6 @@ describe('RecoveryRequestsScreen', () => {
     ]);
     const [filed] = vi.mocked(recoveryRequests.file).mock.calls[0];
     expect(filed.conversationIds).toEqual([C2]);
-  });
-
-  it('a step-up that lapsed while filling the form asks again instead of filing', async () => {
-    const { recoveryRequests } = render();
-    await userEvent.click(await screen.findByRole('button', { name: r.new.action }));
-    await userEvent.selectOptions(await screen.findByLabelText(r.new.employee), 'alice');
-    await userEvent.click((await screen.findAllByRole('checkbox'))[0]);
-    await userEvent.type(screen.getByLabelText(r.new.reason), 'Employee left.');
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    await userEvent.click(screen.getByRole('button', { name: r.new.submit }));
-    expect(await screen.findByText(r.stepUpBody)).toBeInTheDocument();
-    expect(recoveryRequests.file).not.toHaveBeenCalled();
   });
 
   it('switching employee drops the earlier ticks', async () => {

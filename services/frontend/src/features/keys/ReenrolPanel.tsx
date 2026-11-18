@@ -1,15 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { hasFreshStepUp } from '@/app/auth/keycloak';
 import type { KeyOwner } from '@/core/crypto/archive-crypto.port';
 import type { OwnKey } from '@/domain/recording/recording.types';
 import { NewKeyForm } from './NewKeyForm';
 import { ReenrolmentStatus } from './ReenrolmentStatus';
 import { ReenrolWarning } from './ReenrolWarning';
-import { StepUpPrompt } from './StepUpPrompt';
 import { type ReenrolmentError, useReenrolment } from './useReenrolment';
 
-const ERROR_KEYS: Record<Exclude<ReenrolmentError, 'stepUp'>, string> = {
+const ERROR_KEYS: Record<ReenrolmentError, string> = {
   mismatch: 'admin.keys.passphraseMismatch',
   weak: 'admin.keys.passphraseWeak',
   failed: 'admin.keys.reenrol.failed',
@@ -39,7 +37,6 @@ function ReenrolForm({
         requested={result.fingerprintDisplay}
       />
     );
-  if (error === 'stepUp') return <StepUpPrompt />;
   return (
     <NewKeyForm
       title={t('admin.keys.reenrol.submit')}
@@ -53,16 +50,14 @@ function ReenrolForm({
   );
 }
 
-/** "Forgot your passphrase?": a warning, a fresh second factor, then a new key (spec §9.6). */
+/** "Forgot your passphrase?": a warning, then a new key (spec §9.6). */
 export function ReenrolPanel(props: Readonly<ReenrolPanelProps>) {
   const { t } = useTranslation();
-  const [stage, setStage] = useState<'idle' | 'warning' | 'stepUp' | 'form'>('idle');
-  // Decided once, at Continue: a re-render 240 s later must not hide the new key's result.
-  const proceed = () => setStage(hasFreshStepUp() ? 'form' : 'stepUp');
+  const [stage, setStage] = useState<'idle' | 'warning' | 'form'>('idle');
+  const proceed = () => setStage('form');
 
   if (stage === 'warning')
     return <ReenrolWarning onContinue={proceed} onCancel={() => setStage('idle')} />;
-  if (stage === 'stepUp') return <StepUpPrompt />;
   if (stage === 'form') return <ReenrolForm {...props} />;
   return (
     <>

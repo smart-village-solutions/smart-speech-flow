@@ -61,7 +61,7 @@ export function PaperDevicePanel({ ceremony, facts }: Readonly<PaperDevicePanelP
           </Button>
         </>
       )}
-      {paper.error !== null && paper.error !== 'stepUp' && <StepAlert error={paper.error} />}
+      {paper.error !== null && <StepAlert error={paper.error} />}
     </section>
   );
 }

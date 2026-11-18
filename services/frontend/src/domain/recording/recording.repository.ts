@@ -8,9 +8,6 @@ import type { EnrolledKey, OwnKey, Reenrolled, ReenrolmentImpact } from './recor
 
 const KEYS = '/api/admin/recording/keys';
 
-/** The gateway's answer when the caller needs a fresh MFA login first. */
-export const STEP_UP_REQUIRED = 'STEP_UP_REQUIRED';
-
 export interface RecordingKeysRepository {
   passphraseFileEnabled(): Promise<boolean>;
   /** Null when the caller has not enrolled yet. */

@@ -3,10 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import type { Bytes } from '@/core/crypto/bytes';
 import { AppError } from '@/core/http/AppError';
-import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import { CEREMONY_QUERY } from './useCeremony';
 
-export type StartError = 'stepUp' | 'invalid' | 'failed';
+export type StartError = 'invalid' | 'failed';
 
 interface StartChoice {
   k: number;
@@ -16,7 +15,6 @@ interface StartChoice {
 
 function startError(caught: unknown): StartError {
   if (!(caught instanceof AppError)) return 'failed';
-  if (caught.serverCode === STEP_UP_REQUIRED) return 'stepUp';
   return caught.status === 422 ? 'invalid' : 'failed';
 }
 

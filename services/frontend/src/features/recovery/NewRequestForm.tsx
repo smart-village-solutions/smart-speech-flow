@@ -4,11 +4,10 @@ import { useTranslation } from 'react-i18next';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { Button } from '@/ui/primitives/Button';
 import { CandidatePicker, MAX_CONVERSATIONS } from './CandidatePicker';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { dayRange, localDay } from './days';
 import { type Filter, LABEL, RequestFilter } from './RequestFilter';
 import { faultKey } from './faults';
-import { RECOVERY_REQUESTS_VIEW, useCandidates, useEmployees, useFileRequest } from './useRecovery';
+import { useCandidates, useEmployees, useFileRequest } from './useRecovery';
 
 interface NewRequestFormProps {
   keys: UnlockedKeys;
@@ -33,8 +32,6 @@ export function NewRequestForm({ keys, onFiled }: Readonly<NewRequestFormProps>)
     setFilter(next);
     setTicked(new Set());
   };
-
-  if (filing.fault === 'step_up') return <StepUpPrompt returnTo={RECOVERY_REQUESTS_VIEW} />;
 
   const toggle = (id: string) =>
     setTicked((current) => {

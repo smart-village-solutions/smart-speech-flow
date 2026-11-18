@@ -86,13 +86,13 @@ it('cancels to the filtered inbox and unlocks only the selected assignment versi
   await screen.findAllByRole('button', { name: 'Prüfung öffnen' });
   await userEvent.selectOptions(screen.getByLabelText('Status'), 'in_review');
   await userEvent.click(screen.getByRole('button', { name: 'Prüfung öffnen' }));
-  await screen.findByLabelText('Passphrase');
+  await screen.findByLabelText('Zugangsschlüssel (Passphrase)');
   expect(screen.getByRole('combobox', { name: 'Schlüsselversion' })).toHaveValue('1');
   await userEvent.click(screen.getByRole('button', { name: 'Zurück' }));
   expect(await screen.findByLabelText('Status')).toHaveValue('in_review');
   expect(vault.version(owner, 1)).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: 'Prüfung öffnen' }));
-  await userEvent.type(await screen.findByLabelText('Passphrase'), 'historical passphrase');
+  await userEvent.type(await screen.findByLabelText('Zugangsschlüssel (Passphrase)'), 'historical passphrase');
   const checks = open.mock.calls.length;
   await userEvent.click(screen.getByRole('button', { name: 'Entsperren' }));
   expect(await screen.findByText('Editing chosen with fingerprint 1')).toBeInTheDocument();
@@ -103,7 +103,7 @@ it('cancels to the filtered inbox and unlocks only the selected assignment versi
   expect(vault.current()).toBe(newKeys);
 });
 
-it('restores only the signed-in owner’s permitted summary and view choices after a step-up redirect', async () => {
+it('restores only the signed-in owner’s permitted summary and view choices after session login', async () => {
   const id = '20000000-0000-4000-8000-000000000001';
   const filters = { language: '', status: 'approved', order: 'oldest' };
   const memory = {

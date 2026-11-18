@@ -1,4 +1,11 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
@@ -89,11 +96,15 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
     () => null
   );
   const navigate = useNavigate();
+  const lastLocation = useRef<string | null>(null);
+  const noteLocation = useCallback((location: string) => {
+    lastLocation.current = location;
+  }, []);
 
   useEffect(
     () =>
       subscribeToKeycloakExpiration(() => {
-        resume.take();
+        if (lastLocation.current !== null) resume.remember(lastLocation.current);
         void navigate('/login', { replace: true });
       }),
     [navigate, resume]
@@ -143,7 +154,11 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
 
   return (
     <AdminQueryBoundary key={identity}>
-      <TaskWorkspace onSignOut={out} studioUrl={studioUrl ?? undefined} />
+      <TaskWorkspace
+        onLocationChange={noteLocation}
+        onSignOut={out}
+        studioUrl={studioUrl ?? undefined}
+      />
     </AdminQueryBoundary>
   );
 }

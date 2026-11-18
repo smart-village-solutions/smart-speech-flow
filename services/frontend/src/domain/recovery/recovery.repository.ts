@@ -41,7 +41,7 @@ export interface RecoveryCeremonyRepository {
   paperDeal(ceremonyId: string, dealerIndex: number, dealing: Readonly<NewDealing>): Promise<void>;
   /** Users with a key whom Studio no longer gives a recording permission (spec §9.8). */
   leavers(): Promise<LeaverCandidate[]>;
-  /** Retires `keyVersion`, the version the list showed; needs a fresh MFA login. */
+  /** Retires `keyVersion`, the version the list showed. */
   markLeaver(sub: string, keyVersion: number): Promise<void>;
 }
 

@@ -1,5 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasAcceptedStepUp, stepUpSecondsLeft } from '@/app/auth/keycloak';
+import { describe, expect, it, vi } from 'vitest';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { CeremonyCheckError } from '@/core/crypto/ceremony-crypto.port';
 import { RecoveryCheckError } from '@/core/crypto/recovery-crypto.port';
@@ -12,8 +11,6 @@ import {
   faultOf,
   fileOnce,
 } from '@/features/recovery/steps';
-
-vi.mock('@/app/auth/keycloak', () => ({ hasAcceptedStepUp: vi.fn(), stepUpSecondsLeft: vi.fn() }));
 
 const identity = { tenantId: 'tenant-kassel', userSub: 'sam' };
 const keys = { sigPrivate: {} as CryptoKey } as UnlockedKeys;
@@ -54,6 +51,7 @@ function deps(overrides: Partial<Record<string, unknown>> = {}) {
     ceremonyCrypto,
     recoveryCrypto,
     recoveryRequests,
+    keyVault: { current: () => keys, generation: () => 0 },
     ...overrides,
   } as unknown as RecoveryDeps & {
     recoveryRequests: typeof recoveryRequests;
@@ -166,32 +164,22 @@ describe('combining', () => {
 });
 
 describe('approving', () => {
-  beforeEach(() => {
-    vi.mocked(hasAcceptedStepUp).mockReset().mockReturnValue(true);
-    vi.mocked(stepUpSecondsLeft).mockReset().mockReturnValue(300);
-  });
-
-  const reportingFirstChunk = (d: ReturnType<typeof deps>) =>
-    d.recoveryCrypto.approve.mockImplementation(async (...args: unknown[]) => {
-      (args[4] as (done: number, total: number) => void)(50, 2000);
-      return { partials: new Map(), signature: new Uint8Array(64) };
-    });
-
-  it('stops after the first chunk when the rest would outlast the step-up', async () => {
-    const d = deps();
-    reportingFirstChunk(d);
-    vi.mocked(stepUpSecondsLeft).mockReturnValue(10);
-    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toMatchObject({
-      fault: 'step_up',
-    });
-    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
-  });
-
-  it('goes on while the projection fits the step-up', async () => {
-    const d = deps();
-    reportingFirstChunk(d);
-    await approveOnce(d, identity, keys, detail, new Uint8Array(32));
-    expect(d.recoveryRequests.approve).toHaveBeenCalled();
+  it('finishes an approval that takes over five minutes and reports progress before submission', async () => {
+    vi.useFakeTimers();
+    try {
+      const d = deps();
+      const progress = vi.fn();
+      d.recoveryCrypto.approve.mockImplementation(async (...args: unknown[]) => {
+        vi.advanceTimersByTime(301_000);
+        (args[4] as (done: number, total: number) => void)(50, 2000);
+        return { partials: new Map(), signature: new Uint8Array(64) };
+      });
+      await approveOnce(d, identity, keys, detail, new Uint8Array(32), progress);
+      expect(progress).toHaveBeenCalledWith(50, 2000);
+      expect(d.recoveryRequests.approve).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   const detail = {
@@ -225,6 +213,17 @@ describe('approving', () => {
     );
   });
 
+  it('withholds computed partials if the tab locks and reopens during approval', async () => {
+    let generation = 3;
+    const d = deps({ keyVault: { current: () => keys, generation: () => generation } });
+    d.recoveryCrypto.approve.mockImplementation(async () => {
+      generation++;
+      return { partials: new Map(), signature: new Uint8Array(64) };
+    });
+    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toThrow();
+    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
+  });
+
   it('a failed check posts nothing', async () => {
     const d = deps();
     d.recoveryCrypto.approve.mockRejectedValue(new RecoveryCheckError('not_listed'));
@@ -234,22 +233,10 @@ describe('approving', () => {
     expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
   });
 
-  it('posts nothing once the computation outlasted the step-up', async () => {
-    const d = deps();
-    vi.mocked(hasAcceptedStepUp).mockReturnValue(false);
-    await expect(approveOnce(d, identity, keys, detail, new Uint8Array(32))).rejects.toMatchObject({
-      fault: 'step_up',
-    });
-    expect(d.recoveryCrypto.approve).toHaveBeenCalled();
-    expect(d.recoveryRequests.approve).not.toHaveBeenCalled();
-  });
-
   it('names each kind of failure for the screen', () => {
     expect(faultOf(new RecoveryCheckError('self_approval'))).toBe('self_approval');
-    expect(faultOf(new RecoveryCheckError('step_up'))).toBe('step_up');
     expect(faultOf(new CeremonyCheckError('signature_invalid'))).toBe('trust');
     expect(faultOf(new RecoveryRefusedError('ALREADY_DECIDED'))).toBe('refused.ALREADY_DECIDED');
-    expect(faultOf(new RecoveryRefusedError('STEP_UP_REQUIRED'))).toBe('step_up');
     expect(faultOf(new Error('x'))).toBe('unavailable');
   });
 });

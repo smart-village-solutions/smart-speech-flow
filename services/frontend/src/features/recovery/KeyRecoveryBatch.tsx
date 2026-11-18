@@ -2,11 +2,10 @@ import { Textarea } from '@/ui/primitives/Textarea';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { Button } from '@/ui/primitives/Button';
 import { faultKey } from './faults';
 import { OwnFingerprint } from './OwnFingerprint';
-import { KEY_RECOVERY_VIEW, useOwnCandidates } from './useKeyRecovery';
+import { useOwnCandidates } from './useKeyRecovery';
 import { useFileRequest } from './useRecovery';
 
 const MAX_REASON = 1000;
@@ -34,7 +33,6 @@ export function KeyRecoveryBatch({ keys, again }: Readonly<KeyRecoveryBatchProps
   const { conversations, remaining } = own.data;
   if (conversations.length === 0)
     return <p className="text-note text-fg-muted">{t('admin.keyRecovery.none')}</p>;
-  if (filing.fault === 'step_up') return <StepUpPrompt returnTo={KEY_RECOVERY_VIEW} />;
 
   return (
     <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5">

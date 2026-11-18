@@ -17,7 +17,6 @@ import { initialFilters, OVERVIEW } from './filterRows';
 import { actionStyle } from './TaskTable';
 import { ConversationTable, ReviewTable, type TaskTarget } from './TaskLists';
 import { MetadataDetail, ProtectedDetail } from './TaskDetail';
-import { TaskStepUpReturn } from './stepUpReturn';
 
 const filters = z.object({
   language: z.string().max(64),
@@ -62,12 +61,17 @@ function restore(raw: string | null, owner: string) {
 export function TaskWorkspace({
   onSignOut,
   studioUrl,
-}: Readonly<{ onSignOut: () => void; studioUrl?: string }>) {
+  onLocationChange,
+}: Readonly<{
+  onSignOut: () => void;
+  studioUrl?: string;
+  onLocationChange?: (location: string) => void;
+}>) {
   const { resume } = useServices();
   const { t } = useTranslation();
   const client = useQueryClient();
   const owner = JSON.stringify(getAdminIdentity());
-  const [start] = useState(() => restore(resume.take(), owner));
+  const [start] = useState(() => restore(owner === 'null' ? null : resume.take(), owner));
   const [target, setTarget] = useState<TaskTarget | null>(start.target);
   const [account, setAccount] = useState(start.account);
   const [tab, setTab] = useState<'reviews' | 'conversations'>(start.tab);
@@ -110,11 +114,21 @@ export function TaskWorkspace({
     accountUrl: getAccountConsoleUrl() ?? undefined,
   };
   const view = () => {
-    if (account) return <KeysScreen {...nav} onBack={() => setAccount(false)} />;
+    const accountScreen = account ? <KeysScreen {...nav} onBack={() => setAccount(false)} /> : null;
+    if (allowed?.kind === 'session') {
+      // The mounted session owns the socket, microphone and unsent draft.
+      return (
+        <>
+          <div hidden={account} inert={account}>
+            <AdminSessionScreen key={allowed.id} {...nav} sessionId={allowed.id} onLeave={done} />
+          </div>
+          {accountScreen}
+        </>
+      );
+    }
+    if (accountScreen) return accountScreen;
     if (allowed) {
       switch (allowed.kind) {
-        case 'session':
-          return <AdminSessionScreen {...nav} sessionId={allowed.id} onLeave={done} />;
         case 'recording':
         case 'review':
           return <ProtectedDetail key={allowed.id} target={allowed} {...nav} onDone={done} />;
@@ -152,11 +166,12 @@ export function TaskWorkspace({
       </AdminDashboardScreen>
     );
   };
-  return (
-    <TaskStepUpReturn.Provider
-      value={JSON.stringify({ owner, tab, account, target: allowed, conversations, reviews })}
-    >
-      {view()}
-    </TaskStepUpReturn.Provider>
-  );
+  useEffect(() => {
+    if (owner !== 'null') {
+      onLocationChange?.(
+        JSON.stringify({ owner, tab, account, target: allowed, conversations, reviews })
+      );
+    }
+  }, [onLocationChange, owner, tab, account, allowed, conversations, reviews]);
+  return view();
 }

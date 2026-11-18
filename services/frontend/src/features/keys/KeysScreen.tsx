@@ -4,7 +4,7 @@ import { useServices } from '@/app/providers/services';
 import { useTranslation } from 'react-i18next';
 import type { KeyOwner, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { OwnKey } from '@/domain/recording/recording.types';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
@@ -13,7 +13,6 @@ import { PassphraseBackup } from './PassphraseBackup';
 import { EnrolForm } from './EnrolForm';
 import { FingerprintCard } from './FingerprintCard';
 import { ReenrolPanel } from './ReenrolPanel';
-import { StepUpPrompt } from './StepUpPrompt';
 import { UnlockForm } from './UnlockForm';
 import { useKeyInventory, useVaultRevision } from './useKeyInventory';
 
@@ -146,11 +145,7 @@ function KeyActions({
 }: Readonly<KeyActionsProps>) {
   if (ownKey === null) {
     if (unlocked !== null) return <FingerprintCard keys={unlocked} />;
-    return hasFreshStepUp() ? (
-      <EnrolForm owner={owner} onPassphraseEntered={onPassphraseEntered} />
-    ) : (
-      <StepUpPrompt />
-    );
+    return <EnrolForm owner={owner} onPassphraseEntered={onPassphraseEntered} />;
   }
   return (
     <>

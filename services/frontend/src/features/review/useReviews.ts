@@ -6,8 +6,6 @@ import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { type ReviewState, openReview } from './openReview';
 
-/** The staff view reviewers work in; a step-up redirect may return to it. */
-export const REVIEWS_VIEW = 'reviews';
 export const REVIEW_PERMISSION = 'ssf.recording.review';
 export const INBOX_QUERY = ['reviews', 'inbox'] as const;
 

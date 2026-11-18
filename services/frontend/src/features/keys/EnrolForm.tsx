@@ -1,10 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import type { KeyOwner } from '@/core/crypto/archive-crypto.port';
 import { NewKeyForm } from './NewKeyForm';
-import { StepUpPrompt } from './StepUpPrompt';
 import { type EnrolmentError, useEnrolment } from './useEnrolment';
 
-const ERROR_KEYS: Record<Exclude<EnrolmentError, 'stepUp'>, string> = {
+const ERROR_KEYS: Record<EnrolmentError, string> = {
   mismatch: 'admin.keys.passphraseMismatch',
   weak: 'admin.keys.passphraseWeak',
   email: 'admin.keys.emailNotVerified',
@@ -17,8 +16,6 @@ export function EnrolForm({
 }: Readonly<{ owner: KeyOwner; onPassphraseEntered?: (passphrase: string) => void }>) {
   const { t } = useTranslation();
   const { submit, error, pending } = useEnrolment(owner);
-
-  if (error === 'stepUp') return <StepUpPrompt />;
 
   return (
     <NewKeyForm

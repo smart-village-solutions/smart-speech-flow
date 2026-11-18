@@ -96,18 +96,18 @@ describe('recording keys repository', () => {
     expect(await repository().ownKey()).toBeNull();
   });
 
-  it('surfaces the step-up code on enrolment', async () => {
+  it('surfaces the permission refusal on enrolment', async () => {
     server.use(
       http.post(`${BASE}/api/admin/recording/keys`, () =>
         HttpResponse.json(
-          { detail: { error_code: 'STEP_UP_REQUIRED', message: 'x' } },
+          { detail: { error_code: 'PERMISSION_REQUIRED', message: 'x' } },
           { status: 403 }
         )
       )
     );
     await expect(
       repository().enrol({ encPub: publicPoint(5n), sigPub: publicPoint(6n) }, '{"v":1}')
-    ).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+    ).rejects.toMatchObject({ serverCode: 'PERMISSION_REQUIRED' });
   });
 
   it('posts the public keys as base64url and rejects a malformed answer', async () => {

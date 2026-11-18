@@ -2,7 +2,7 @@ import {holdTestKeys} from '@/test/personalKeys';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
 import { displayFingerprint } from '@/core/crypto/transcript';
@@ -15,7 +15,6 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
-  hasFreshStepUp: vi.fn(),
 }));
 
 const k = de.admin.keyRecovery;
@@ -92,7 +91,6 @@ function render({ unlocked = true, own, requests = [] }: Options = {}) {
 describe('KeyRecoveryScreen', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
   it('shows the batch, what remains, and the fingerprint of the key in this browser', async () => {
@@ -139,13 +137,6 @@ describe('KeyRecoveryScreen', () => {
     expect(onOpenKeys).toHaveBeenCalled();
   });
 
-  it('asks for a fresh second factor before the batch', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    render();
-    expect(await screen.findByText(k.stepUpBody)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: k.file })).not.toBeInTheDocument();
-  });
-
   it('opens a listed request', async () => {
     const { recoveryRequests } = render({ requests: [request('open')] });
     await userEvent.click(await screen.findByText(de.admin.recovery.kind.key_recovery));
@@ -158,21 +149,10 @@ describe('KeyRecoveryScreen', () => {
     expect(screen.getByText(k.fingerprintHint)).toBeInTheDocument();
   });
 
-  it('asks for step-up before the unlock, so the redirect wipes no unlocked key', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    render({ unlocked: false });
-    expect(await screen.findByText(k.stepUpBody)).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: de.admin.recovery.unlock })
-    ).not.toBeInTheDocument();
-  });
-
-  it('keeps a half-typed reason when the step-up ages during the form', async () => {
+  it('keeps a half-typed reason when the vault updates during the form', async () => {
     const { keyVault } = render();
     await userEvent.type(await screen.findByLabelText(k.reason), 'Forgot');
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
     act(() => holdTestKeys(keyVault,{ ...keys })); // the whole screen renders again
     expect(screen.getByLabelText(k.reason)).toHaveValue('Forgot');
-    expect(screen.queryByText(k.stepUpBody)).not.toBeInTheDocument();
   });
 });

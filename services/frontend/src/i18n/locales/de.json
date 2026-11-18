@@ -254,12 +254,9 @@
         "import": "Passphrase aus TXT-Datei laden",
         "importFailed": "Diese Datei ist keine gültige Passphrase-Sicherung oder ist zu groß."
       },
-      "stepUpTitle": "Identität bestätigen",
-      "stepUpBody": "Zum Einrichten der Schlüssel melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
-      "stepUpAction": "Erneut anmelden",
       "enrolTitle": "Schlüssel einrichten",
       "enrolBody": "Wählen Sie eine Passphrase mit mindestens 12 Zeichen, zum Beispiel vier oder fünf zusammenhanglose Wörter. Sie ist nicht Ihr Anmeldepasswort.",
-      "passphrase": "Passphrase",
+      "passphrase": "Zugangsschlüssel (Passphrase)",
       "passphraseConfirm": "Passphrase wiederholen",
       "passphraseMismatch": "Die beiden Eingaben stimmen nicht überein.",
       "passphraseWeak": "Diese Passphrase ist zu leicht zu erraten. Verwenden Sie mehr oder seltenere Wörter.",
@@ -313,7 +310,6 @@
       "title": "Wiederherstellungsschlüssel",
       "intro": "Mit dem Wiederherstellungsschlüssel kann die Organisation ein aufgezeichnetes Gespräch öffnen, wenn die zuständige Person nicht mehr kann – aber nur, wenn genug Freigabeberechtigte gemeinsam zustimmen. Kein Gerät und keine Person hält den ganzen Schlüssel.",
       "unavailable": "Der Wiederherstellungsschlüssel ist gerade nicht verfügbar.",
-      "stepUpBody": "Für diesen Schritt melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
       "noCeremony": "Für diese Organisation gibt es noch keinen Wiederherstellungsschlüssel. Die Organisationsverwaltung startet die Zeremonie.",
       "lastAborted": "Die letzte Zeremonie wurde abgebrochen ({{reason}}). Es gibt noch keinen Wiederherstellungsschlüssel; die Zeremonie muss vollständig neu gestartet werden.",
       "lastExpired": "Die letzte Zeremonie ist nach 24 Stunden abgelaufen, ohne abgeschlossen zu werden. Sie muss vollständig neu gestartet werden.",
@@ -550,8 +546,7 @@
         },
         "fingerprint": "Fingerabdruck von {{name}}",
         "fingerprintHint": "Vergleichen Sie ihn vor der Beauftragung telefonisch mit der prüfenden Person. Nur diese Person kann das Gespräch dann öffnen.",
-        "wrapping": "Die Gesprächsschlüssel werden verschlüsselt …",
-        "stepUpBody": "Mit der Beauftragung erhält die prüfende Person Zugang zu diesem Gespräch. Dafür ist eine frische Anmeldung mit zweitem Faktor nötig."
+        "wrapping": "Die Gesprächsschlüssel werden verschlüsselt …"
       },
       "checking": "Integrität wird geprüft …",
       "integrity": {
@@ -678,7 +673,6 @@
     "recovery": {
       "locked": "Entsperren Sie zuerst Ihren Archivschlüssel.",
       "unlock": "Schlüssel entsperren",
-      "stepUpBody": "Für Wiederherstellungsschritte melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
       "unavailable": "Die Wiederherstellung ist gerade nicht verfügbar.",
       "requests": {
         "title": "Ausnahmezugriffe",
@@ -759,7 +753,6 @@
         "share_mismatch": "Ihr Anteil passt nicht zum Protokoll. Stimmen Sie nicht zu.",
         "custodians_changed": "Die Freigabeberechtigten haben sich geändert, seit dieser Antrag gestellt wurde. Stellen Sie ihn neu.",
         "trust": "Das Wiederherstellungsprotokoll ist ungültig. Stimmen Sie nicht zu und informieren Sie die anderen Freigabeberechtigten.",
-        "step_up": "Melden Sie sich zuerst erneut mit Ihrem zweiten Faktor an.",
         "unavailable": "Die Wiederherstellung ist gerade nicht verfügbar.",
         "fingerprint_changed": "Die Schlüssel der antragstellenden Person haben sich nach Ihrer Bestätigung geändert. Stimmen Sie nicht zu; vergleichen Sie erneut."
       },
@@ -800,7 +793,6 @@
       "progress": "{{done}} von {{total}}",
       "unrecoverable": "Nicht wiederherstellbare Schlüssel: {{count}}",
       "none": "Ihr Schlüssel öffnet alle Ihre Gespräche.",
-      "stepUpBody": "Für den Antrag ist eine frische Anmeldung mit zweitem Faktor nötig.",
       "open": "Zugang wiederherstellen",
       "banner": "Gespräche, die sich mit Ihrem Schlüssel nicht öffnen lassen: {{count}}"
     },

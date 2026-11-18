@@ -1,14 +1,12 @@
 import { useTranslation } from 'react-i18next';
-import { hasFreshStepUp } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { displayFingerprint } from '@/core/crypto/transcript';
 import type { ApprovalDetail } from '@/domain/recovery/requests.types';
 import { formatDate, formatTimeRange } from '@/features/archive/format';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { faultKey } from './faults';
 import { ReviewActions } from './ReviewActions';
 import { Chip } from './StatusChip';
-import { RECOVERY_APPROVALS_VIEW, useApprove } from './useRecovery';
+import { useApprove } from './useRecovery';
 
 function Conversations({ detail }: Readonly<{ detail: ApprovalDetail }>) {
   const { i18n } = useTranslation();
@@ -63,7 +61,7 @@ interface ApprovalReviewProps {
 
 /**
  * The fingerprint shown is computed here from the served keys, never read from the
- * server; the step-up comes before the unlock, so its redirect wipes nothing (§9.5).
+ * server (§9.5).
  */
 export function ApprovalReview({
   detail,
@@ -74,8 +72,6 @@ export function ApprovalReview({
 }: Readonly<ApprovalReviewProps>) {
   const { t, i18n } = useTranslation();
   const review = useApprove(detail, keys);
-  // Not while an approval computes: its progress re-renders must not offer a redirect.
-  const stale = review.fault === 'step_up' || (!review.pending && !hasFreshStepUp());
   const decide = async (work: Promise<boolean>) => {
     if (await work) onDecided();
   };
@@ -114,9 +110,8 @@ export function ApprovalReview({
         )}
       </div>
       <Conversations detail={detail} />
-      {stale && <StepUpPrompt returnTo={RECOVERY_APPROVALS_VIEW} />}
-      {!stale && review.fault !== null && <Fault fault={review.fault} onRetry={retry} />}
-      {!stale && review.fault === null && (
+      {review.fault !== null && <Fault fault={review.fault} onRetry={retry} />}
+      {review.fault === null && (
         <ReviewActions
           fingerprint={review.fingerprint}
           keys={keys}

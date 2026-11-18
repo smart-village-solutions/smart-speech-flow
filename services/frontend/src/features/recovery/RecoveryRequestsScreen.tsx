@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { hasFreshStepUp } from '@/app/auth/keycloak';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
-import { StepUpPrompt } from '@/features/keys/StepUpPrompt';
 import { useUnlockedKeys } from '@/features/keys/useKeys';
 import { Button } from '@/ui/primitives/Button';
 import { NewRequestForm } from './NewRequestForm';
@@ -10,7 +8,7 @@ import { RecoveryShell } from './RecoveryShell';
 import { RecoveryLocked } from './RecoveryLocked';
 import { RequestDetail } from './RequestDetail';
 import { SummaryList } from './SummaryList';
-import { RECOVERY_REQUESTS_VIEW, useRecoveryRequests } from './useRecovery';
+import { useRecoveryRequests } from './useRecovery';
 
 export interface StaffScreenProps {
   onBack: () => void;
@@ -57,9 +55,7 @@ interface NewRequestProps {
   onFiled: () => void;
 }
 
-/** Step-up before the unlock, so its redirect never wipes unlocked keys (§9.5). */
 function NewRequest({ keys, onOpenKeys, onFiled }: Readonly<NewRequestProps>) {
-  if (!hasFreshStepUp()) return <StepUpPrompt returnTo={RECOVERY_REQUESTS_VIEW} />;
   if (keys === null) return <RecoveryLocked onOpenKeys={onOpenKeys} />;
   return <NewRequestForm keys={keys} onFiled={onFiled} />;
 }

@@ -1,18 +1,18 @@
-import { UnlockSigningVersion } from '@/features/dashboard/stepUpReturn';
+import { UnlockSigningVersion } from '@/features/dashboard/unlockSigningVersion';
 import { useContext, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { equalBytes } from '@/core/crypto/bytes';
 import { displayFingerprint, fingerprint } from '@/core/crypto/transcript';
-import { AppError, knownServerCode } from '@/core/http/AppError';
+import { knownServerCode } from '@/core/http/AppError';
 import type { ReviewerCandidate } from '@/domain/archive/archive.types';
 import { useKeyInventory } from '@/features/keys/useKeyInventory';
 import type { Opened } from './openConversation';
 
 type Ready = Extract<Opened, { status: 'ready' }>;
-type RequestStage = 'stepUp' | 'pick' | 'confirm';
+type RequestStage = 'pick' | 'confirm';
 
 const KNOWN = new Set([
   'NOT_A_REVIEWER',
@@ -25,10 +25,9 @@ const KNOWN = new Set([
   'DIRECTORY_UNAVAILABLE',
 ]);
 
-function requestError(mismatch: boolean, stage: RequestStage, error: unknown): string | null {
+function requestError(mismatch: boolean, error: unknown): string | null {
   if (mismatch) return 'FINGERPRINT_MISMATCH';
-  // The step-up prompt says it all; a FAILED line beside it would only confuse.
-  if (stage === 'stepUp' || error === null) return null;
+  if (error === null) return null;
   return knownServerCode(error, KNOWN, 'FAILED');
 }
 
@@ -56,7 +55,7 @@ export function useRequestVerification(
   const inventory = useKeyInventory(getAdminIdentity());
   const unlockSigner = useContext(UnlockSigningVersion);
   const conversationId = state.opened.conversation.conversationId;
-  const [stage, setStage] = useState<RequestStage>(() => (hasFreshStepUp() ? 'pick' : 'stepUp'));
+  const [stage, setStage] = useState<RequestStage>('pick');
   const [picked, setPicked] = useState<ReviewerCandidate | null>(null);
   // Computed here from the keys the wraps are sealed to; what the server displays is not shown.
   const [checked, setChecked] = useState<string | null>(null);
@@ -64,7 +63,6 @@ export function useRequestVerification(
   const candidates = useQuery({
     queryKey: ['archive', 'reviewers', conversationId],
     queryFn: () => archive.reviewers(conversationId),
-    enabled: stage !== 'stepUp',
     staleTime: 0,
   });
 
@@ -127,9 +125,6 @@ export function useRequestVerification(
       });
     },
     onSuccess: onAssigned,
-    onError: (error) => {
-      if (error instanceof AppError && error.serverCode === 'STEP_UP_REQUIRED') setStage('stepUp');
-    },
   });
 
   return {
@@ -156,7 +151,7 @@ export function useRequestVerification(
     back: () => setStage('pick'),
     submit: () => picked && assign.mutate(picked),
     pending: assign.isPending,
-    error: requestError(mismatch, stage, assign.isError ? assign.error : null),
+    error: requestError(mismatch, assign.isError ? assign.error : null),
   };
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import type { Bytes } from '@/core/crypto/bytes';
@@ -15,15 +15,12 @@ import {
   fileOnce,
 } from './steps';
 
-/** The staff views exceptional access opens as; a step-up redirect may return to either. */
-export const RECOVERY_REQUESTS_VIEW = 'recoveryRequests';
-export const RECOVERY_APPROVALS_VIEW = 'recoveryApprovals';
 export const SUPERVISE = 'ssf.recording.supervise';
 const RECOVERY_QUERY = ['recovery'] as const;
 
 function useDeps(): RecoveryDeps {
-  const { archive, ceremonyCrypto, recoveryCrypto, recoveryRequests } = useServices();
-  return { archive, ceremonyCrypto, recoveryCrypto, recoveryRequests };
+  const { keyVault, archive, ceremonyCrypto, recoveryCrypto, recoveryRequests } = useServices();
+  return { keyVault, archive, ceremonyCrypto, recoveryCrypto, recoveryRequests };
 }
 
 /** The caller's own requests of one kind: a supervisor's access, an employee's key recovery. */
@@ -111,20 +108,14 @@ function useStep() {
 export function useFileRequest(keys: UnlockedKeys, kind: RequestKind) {
   const deps = useDeps();
   const step = useStep();
-  const [stale, setStale] = useState(false);
   const file = (input: Readonly<{ reason: string; candidates: readonly RecoveryCandidate[] }>) => {
     const identity = getAdminIdentity();
-    // The form may have taken longer than the step-up lasts; filing would only answer 403.
-    if (!hasFreshStepUp()) {
-      setStale(true);
-      return Promise.resolve(false);
-    }
     return step.run(async () => {
       if (identity === null) throw new Error('not signed in');
       await fileOnce(deps, identity, keys, { ...input, kind });
     });
   };
-  return { file, pending: step.pending, fault: stale ? 'step_up' : step.fault };
+  return { file, pending: step.pending, fault: step.fault };
 }
 
 export function useCancel(requestId: string) {
@@ -200,18 +191,9 @@ export function useApprove(detail: Readonly<ApprovalDetail>, keys: UnlockedKeys 
   const deps = useDeps();
   const step = useStep();
   const fingerprint = useRequesterFingerprint(detail);
-  const [stale, setStale] = useState(false);
   const [progress, setProgress] = useState<Done | null>(null);
-  // A step-up older than 240 s would expire mid-approval; asking first wipes nothing (§9.5).
-  const guarded = (work: () => Promise<void>) => {
-    if (!hasFreshStepUp()) {
-      setStale(true);
-      return Promise.resolve(false);
-    }
-    return step.run(work);
-  };
   const approve = (confirmed: Bytes) =>
-    guarded(async () => {
+    step.run(async () => {
       const identity = getAdminIdentity();
       if (identity === null || keys === null) throw new Error('not signed in or locked');
       await approveOnce(deps, identity, keys, detail, confirmed, (done, total) =>
@@ -219,18 +201,14 @@ export function useApprove(detail: Readonly<ApprovalDetail>, keys: UnlockedKeys 
       );
     });
   const decline = (reason: string) =>
-    guarded(() => deps.recoveryRequests.decline(detail.requestId, reason));
-  const retry = () => {
-    setStale(false);
-    step.reset();
-  };
+    step.run(() => deps.recoveryRequests.decline(detail.requestId, reason));
   return {
     approve,
     decline,
-    retry,
+    retry: step.reset,
     fingerprint,
     progress,
     pending: step.pending,
-    fault: stale ? 'step_up' : step.fault,
+    fault: step.fault,
   };
 }

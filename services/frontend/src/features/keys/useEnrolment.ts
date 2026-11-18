@@ -3,10 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import type { KeyOwner, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
 import { fromServerCode } from '@/core/http/AppError';
-import { STEP_UP_REQUIRED } from '@/domain/recording/recording.repository';
 import { INVENTORY_QUERY } from './useKeyInventory';
 
-export type EnrolmentError = 'mismatch' | 'weak' | 'stepUp' | 'email' | 'failed';
+export type EnrolmentError = 'mismatch' | 'weak' | 'email' | 'failed';
 
 /** Spec §8.3: at least 12 characters and the top zxcvbn score. */
 const MIN_LENGTH = 12;
@@ -25,7 +24,6 @@ async function problemWith(
 }
 
 export const ENROLMENT_CODES: Readonly<Record<string, EnrolmentError>> = {
-  [STEP_UP_REQUIRED]: 'stepUp',
   EMAIL_NOT_VERIFIED: 'email',
 };
 

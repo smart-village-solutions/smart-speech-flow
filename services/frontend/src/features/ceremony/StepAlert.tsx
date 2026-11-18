@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { StepError } from './useCeremony';
 
 /** A failed check has already aborted the ceremony; anything else may be retried. */
-export function StepAlert({ error }: Readonly<{ error: Exclude<StepError, 'stepUp'> }>) {
+export function StepAlert({ error }: Readonly<{ error: StepError }>) {
   const { t } = useTranslation();
   const message =
     error === 'failed' ? t('admin.ceremony.stepFailed') : t('admin.ceremony.checkFailed', { reason: error });

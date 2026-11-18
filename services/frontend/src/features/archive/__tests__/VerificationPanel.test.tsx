@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
+import { getAdminIdentity } from '@/app/auth/keycloak';
 import type { ArchiveCrypto, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { displayFingerprint, fingerprint } from '@/core/crypto/transcript';
 import { AppError } from '@/core/http/AppError';
@@ -19,7 +19,6 @@ import { IDS, loadedFixture, openedConversation } from './archiveFixture';
 vi.mock('@/app/auth/keycloak', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/auth/keycloak')>()),
   getAdminIdentity: vi.fn(),
-  hasFreshStepUp: vi.fn(),
 }));
 
 const v = de.admin.archive.verification;
@@ -129,21 +128,12 @@ function render(
 describe('VerificationPanel (spec §10.7)', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
   it('withholds the request while a part of the conversation is not open to the caller', () => {
     render(ready({ allKeys: false }));
     expect(screen.queryByRole('button', { name: v.request })).not.toBeInTheDocument();
     expect(screen.getByText(v.missingKeys)).toBeInTheDocument();
-  });
-
-  it('asks for a fresh second factor before anything else', async () => {
-    vi.mocked(hasFreshStepUp).mockReturnValue(false);
-    const { archive } = render();
-    await userEvent.click(screen.getByRole('button', { name: v.request }));
-    expect(screen.getByText(v.stepUpBody)).toBeInTheDocument();
-    expect(archive.reviewers).not.toHaveBeenCalled();
   });
 
   it('lists reviewers covering every language, and all on request', async () => {
@@ -198,21 +188,6 @@ describe('VerificationPanel (spec §10.7)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
   });
 
-  it('turns a late step-up refusal into the step-up prompt', async () => {
-    render(ready(), {
-      assign: vi
-        .fn()
-        .mockRejectedValue(
-          new AppError('validation', { status: 403, serverCode: 'STEP_UP_REQUIRED' })
-        ),
-    });
-    await userEvent.click(screen.getByRole('button', { name: v.request }));
-    await userEvent.click(await screen.findByRole('radio'));
-    await userEvent.click(screen.getByRole('button', { name: v.next }));
-    await userEvent.click(await screen.findByRole('button', { name: v.assign }));
-    expect(await screen.findByText(v.stepUpBody)).toBeInTheDocument();
-  });
-
   it('lists records with their state, and offers reassigning a declined one', async () => {
     const decided: RecordView = {
       record: record('rita', 'approved', {
@@ -253,7 +228,6 @@ describe('VerificationPanel (spec §10.7)', () => {
 describe('VerificationPanel: the reviewer fingerprint (M2)', () => {
   beforeEach(() => {
     vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'alice' });
-    vi.mocked(hasFreshStepUp).mockReturnValue(true);
   });
 
   it('refuses keys that do not match the fingerprint served for them', async () => {
