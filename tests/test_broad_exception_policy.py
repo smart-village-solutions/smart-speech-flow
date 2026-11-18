@@ -25,6 +25,14 @@ BROAD = {"Exception", "BaseException"}
 REASONS = {"fallback", "boundary", "bookkeeping-reraise"}
 
 ALLOWED: dict[tuple[str, str], list[str]] = {
+    # Closing a partially initialised SQLite connection precedes re-raising.
+    ("services/api_gateway/conversation_usage.py", "ConversationUsage._db"): [
+        "bookkeeping-reraise"
+    ],
+    # Reconcile or undo a failed activation before propagating the save failure.
+    ("services/api_gateway/session_manager.py", "TenantSessionManager._activate_session"): [
+        "bookkeeping-reraise"
+    ],
     # records the breaker failure, then re-raises
     ("services/api_gateway/ai_service_client.py", "call_ai_service"): ["bookkeeping-reraise"],
     # one failed timeout pass must not end the monitor
@@ -215,13 +223,15 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/session_lifecycle.py", "SessionLifecycleService._activate"): [
         "bookkeeping-reraise"
     ],
-    ("services/api_gateway/session_manager.py", "SessionManagerBase._emit_lifecycle"): ["fallback"],
+    ("services/api_gateway/session_manager_base.py", "SessionManagerBase._emit_lifecycle"): [
+        "fallback"
+    ],
     # one session must not stop the retention sweep
-    ("services/api_gateway/session_manager.py", "SessionManagerBase.sweep_expired_content"): [
+    ("services/api_gateway/session_manager_base.py", "SessionManagerBase.sweep_expired_content"): [
         "boundary"
     ],
     # rolls the in-memory change back, then re-raises
-    ("services/api_gateway/session_manager.py", "SessionManagerBase._sweep_session_content"): [
+    ("services/api_gateway/session_manager_base.py", "SessionManagerBase._sweep_session_content"): [
         "bookkeeping-reraise"
     ],
     # display content must never cost a persistence read, nor a content route a 500

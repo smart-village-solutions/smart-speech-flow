@@ -462,3 +462,122 @@ async def test_termination_preserves_activation_committed_before_save_response(s
     assert (await manager.conversation_usage_report("a", "alice")).personal.by_language == {
         "ar": 60
     }
+
+
+async def test_reconnect_replaces_obsolete_failed_disconnect_projection(setup_usage):
+    clock, usage, manager = setup_usage
+    session = await manager.create_admin_session("a", REVISION, owner_ref="alice")
+    await manager.admin_connected(session.key)
+    await manager.activate_session(session.key, "ar")
+    original_record = usage.record
+    offline = [True]
+
+    async def flaky_record(snapshot):
+        if offline[0]:
+            raise UsageUnavailable("offline")
+        await original_record(snapshot)
+
+    usage.record = flaky_record
+    clock.advance(minutes=1)
+    await manager.admin_disconnected(session.key)
+    clock.advance(minutes=1)
+    await manager.admin_connected(session.key)
+    offline[0] = False
+    clock.advance(hours=1)
+    report = await manager.conversation_usage_report("a", "alice")
+    assert report.personal.total_seconds == 3720
+
+
+async def test_presence_save_cannot_project_a_failed_activation(setup_usage):
+    import asyncio
+
+    from services.api_gateway.session_store import SessionStoreConsistencyError
+
+    clock, usage, manager = setup_usage
+    session = await manager.create_admin_session("a", REVISION, owner_ref="alice")
+    original = manager.store
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = [0]
+
+    class DelayedStore(MemoryTenantSessionStore):
+        async def save(self, session):
+            calls[0] += 1
+            this_call = calls[0]
+            if this_call == 1:
+                entered.set()
+                await release.wait()
+                raise SessionStoreConsistencyError("not committed")
+            await release.wait()
+            await original.save(session)
+
+        async def load(self, key):
+            return await original.load(key)
+
+    manager.store = DelayedStore()
+    activation = asyncio.create_task(manager.activate_session(session.key, "ar"))
+    await entered.wait()
+    presence = asyncio.create_task(manager.admin_connected(session.key))
+    await asyncio.wait({presence}, timeout=0.05)
+    release.set()
+    with pytest.raises(SessionStoreConsistencyError):
+        await activation
+    await presence
+    clock.advance(minutes=10)
+    assert (await manager.conversation_usage_report("a", "alice")).personal.total_seconds == 0
+
+
+async def test_commit_then_error_is_reconciled_before_termination(setup_usage):
+    clock, usage, manager = setup_usage
+    session = await manager.create_admin_session("a", REVISION, owner_ref="alice")
+    original = manager.store
+
+    class LostAcknowledgement(MemoryTenantSessionStore):
+        async def save(self, session):
+            await original.save(session)
+            raise OSError("acknowledgement lost")
+
+        async def load(self, key):
+            return await original.load(key)
+
+        async def terminate(self, session):
+            return await original.terminate(session)
+
+    manager.store = LostAcknowledgement()
+    with pytest.raises(OSError):
+        await manager.activate_session(session.key, "ar")
+    clock.advance(minutes=1)
+    await manager.terminate_session(session.key)
+    assert (await manager.conversation_usage_report("a", "alice")).personal.by_language == {
+        "ar": 60
+    }
+
+
+async def test_unreadable_uncertain_save_evicts_cache_and_blocks_usage_until_reconciled(
+    setup_usage,
+):
+    clock, usage, manager = setup_usage
+    session = await manager.create_admin_session("a", REVISION, owner_ref="alice")
+    original = manager.store
+    offline = [True]
+
+    class UncertainSave(MemoryTenantSessionStore):
+        async def save(self, session):
+            await original.save(session)
+            raise OSError("acknowledgement lost")
+
+        async def load(self, key):
+            if offline[0]:
+                raise OSError("persistence offline")
+            return await original.load(key)
+
+    manager.store = UncertainSave()
+    with pytest.raises(OSError):
+        await manager.activate_session(session.key, "ar")
+    assert session.key not in manager.sessions
+    with pytest.raises(UsageUnavailable):
+        await manager.conversation_usage_report("a", "alice")
+    offline[0] = False
+    clock.advance(minutes=10)
+    assert (await manager.conversation_usage_report("a", "alice")).personal.by_language == {
+        "ar": 600
+    }

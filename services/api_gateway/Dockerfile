@@ -70,7 +70,8 @@ RUN printf '%s%s\n' \
     # the container, which runs as app, cannot write a single file into it.
     # The retention worker's state volume (#618) on the archive VMs likewise.
     && mkdir -p /data/archive-spool /var/lib/ssf-retention /var/lib/ssf-usage \
-    && chown -R app:app /data /var/lib/ssf-retention /var/lib/ssf-usage \
+    && chown -R app:app /data /var/lib/ssf-retention \
+    && chown -R app:app /var/lib/ssf-usage \
     && chmod 700 /var/lib/ssf-usage
 
 COPY services/api_gateway/ /app/services/api_gateway/
