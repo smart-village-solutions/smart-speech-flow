@@ -21,6 +21,20 @@ interface PlaybackProviderProps {
 // phase so the speaker is unlocked before a tapped control asks it to play.
 const GESTURES = ['click', 'touchend', 'keydown'] as const;
 
+/** Whether this native key action will be followed by an activation click. */
+function activatesControl(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || !(event.target instanceof Element)) return false;
+  const control = event.target.closest('button, input, summary, a[href], area[href]');
+  if (control === null) return false;
+  const button = control.matches(
+    'button, summary, input:is([type="button"], [type="submit"], [type="reset"])'
+  );
+  if (event.key === 'Enter') return button || control.matches('a[href], area[href]');
+  if (event.key === ' ')
+    return button || control.matches('input:is([type="checkbox"], [type="radio"])');
+  return false;
+}
+
 /** Owns the conversation's single audio player; see `createPlaybackQueue`. */
 export function PlaybackProvider({
   children,
@@ -45,15 +59,29 @@ export function PlaybackProvider({
   // the page is backgrounded or a call comes in, and only a gesture restarts it.
   useEffect(() => {
     const unlock = () => output.unlock();
+    const retry = (event: Event) => {
+      // Enter/Space can activate a button with a later click. Likewise,
+      // touchend unlocks the output, but its following click owns the retry.
+      if (event instanceof KeyboardEvent && activatesControl(event)) {
+        return;
+      }
+      queue.retryBlocked();
+    };
     for (const type of GESTURES) {
       document.addEventListener(type, unlock, { capture: true });
     }
+    // Bubble phase: React's control handlers at the app root must run first.
+    // A microtask in capture can run before those handlers for trusted events.
+    document.addEventListener('click', retry);
+    document.addEventListener('keydown', retry);
     return () => {
       for (const type of GESTURES) {
         document.removeEventListener(type, unlock, { capture: true });
       }
+      document.removeEventListener('click', retry);
+      document.removeEventListener('keydown', retry);
     };
-  }, [output]);
+  }, [output, queue]);
 
   useEffect(() => () => loader.dispose(), [loader]);
 

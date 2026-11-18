@@ -1,3 +1,8 @@
+# Updated on 2026-11-18: frontend autoplay fix from release source d0199c03,
+# based on the running dashboard release 18c7645b. Previous live frontend:
+# ssf-backend-frontend:prod-dashboard-18c7645b,
+# sha256:fa830e69e227b0447c095360ddf866536c4f0bc1199060f51df63575aca5e2b8.
+# The previous image remains on the host for rollback.
 # Updated on 2026-11-03: api_gateway and frontend built on the host from merged
 # main 24c088e8 (recording mode through #681); keycloak records the 26.8.1 image
 # ssf-keycloak:prod-2681-5ebdcb0 that has run since 2026-11-01. Previous
@@ -49,7 +54,7 @@ api_gateway	sha256:d4707f8e8e8292c92f0902dce87d2e14c669188fc927a9395daef823d5d12
 asr	sha256:1765aa6bbbbf1c4d94f95d354a1e25788e385652401585543e56d38092b6f07c	ssf-backend-asr:prod-2acde0bd
 translation	sha256:928bfcde85dd612fd32cdf620ba63604346e1eef27ae630a46045e22c0e36a91	ssf-backend-translation:prod-2acde0bd
 tts	sha256:7411dc37013ea329d5da82299cd149ecc30fd10a0017a09bf4abaec69e2f65e1	ssf-backend-tts:prod-2acde0bd
-frontend	sha256:addd987d6a5528bae6a20d81aebd140576f6fcfc7189c96400cf3419d6ab99e2	ssf-backend-frontend:prod-24c088e8
+frontend	sha256:55ad08e923a20345256f18b6c8e7861748dfee1e730f6ca606d12423e5685e78	ssf-backend-frontend:prod-autoplay-d0199c03
 keycloak	sha256:03a99f77ebfa395d7d672feaeff6a2d1cb8676a2e03f417dfba6f09eafca9f10	ssf-keycloak:prod-2681-5ebdcb0
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
