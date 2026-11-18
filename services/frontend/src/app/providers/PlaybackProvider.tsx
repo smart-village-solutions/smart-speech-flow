@@ -21,6 +21,20 @@ interface PlaybackProviderProps {
 // phase so the speaker is unlocked before a tapped control asks it to play.
 const GESTURES = ['click', 'touchend', 'keydown'] as const;
 
+/** Whether this native key action will be followed by an activation click. */
+function activatesControl(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || !(event.target instanceof Element)) return false;
+  const control = event.target.closest('button, input, summary, a[href], area[href]');
+  if (control === null) return false;
+  const button = control.matches(
+    'button, summary, input:is([type="button"], [type="submit"], [type="reset"])'
+  );
+  if (event.key === 'Enter') return button || control.matches('a[href], area[href]');
+  if (event.key === ' ')
+    return button || control.matches('input:is([type="checkbox"], [type="radio"])');
+  return false;
+}
+
 /** Owns the conversation's single audio player; see `createPlaybackQueue`. */
 export function PlaybackProvider({
   children,
@@ -48,7 +62,7 @@ export function PlaybackProvider({
     const retry = (event: Event) => {
       // Enter/Space can activate a button with a later click. Likewise,
       // touchend unlocks the output, but its following click owns the retry.
-      if (event instanceof KeyboardEvent && (event.key === 'Enter' || event.key === ' ')) {
+      if (event instanceof KeyboardEvent && activatesControl(event)) {
         return;
       }
       queue.retryBlocked();

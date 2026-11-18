@@ -5,7 +5,7 @@ export interface PlaybackState {
   playingId: string | null;
   /** Progress of the playing clip, 0 to 1. Zero whenever nothing is playing. */
   progress: number;
-  /** True while the listener has paused the clip named by `playingId`. */
+  /** True while paused by the listener or waiting for browser audio permission. */
   paused: boolean;
   /**
    * Clips heard through to the end. Their waveforms stay solid rather than
@@ -132,7 +132,7 @@ export function createPlaybackQueue(
             // Nothing was heard. Keep this clip and everything behind it until
             // a gesture unlocks the output, with Play showing instead of Pause.
             blocked = true;
-            emit(IDLE);
+            emit({ playingId: playing!.id, progress: 0, paused: true });
           } else {
             advance();
           }
@@ -224,6 +224,7 @@ export function createPlaybackQueue(
     }
 
     const era = generation;
+    blocked = false;
     emit({ ...state, paused: false });
 
     if (!audible) {

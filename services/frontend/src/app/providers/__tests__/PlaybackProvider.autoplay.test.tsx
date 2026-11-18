@@ -1,15 +1,19 @@
 import type { ReactNode } from 'react';
-import { act, fireEvent, renderHook } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PlaybackProvider } from '@/app/providers/PlaybackProvider';
 import { usePlayback } from '@/app/providers/playback';
+import { ServicesProvider } from '@/app/providers/ServicesProvider';
+import { createServices } from '@/app/providers/services';
+import { readConfig } from '@/app/config/env';
+import { useReadAloud } from '@/features/recording/useReadAloud';
 import { createAudioOutput } from '@/core/audio/audio-output';
 import { createWebAudioPlayer } from '@/core/audio/web-audio-player';
 import { asAudioContext, createFakeAudioContext } from '@/test/fakeAudioContext';
 
 afterEach(() => vi.useRealTimers());
 
-function setup() {
+function setup(requestId: string | null = null) {
   vi.useFakeTimers();
   const context = createFakeAudioContext();
   context.resumeBehaviour = 'hang';
@@ -23,13 +27,25 @@ function setup() {
     peek: () => null,
     dispose: () => undefined,
   };
-  const view = renderHook(() => usePlayback(), {
-    wrapper: ({ children }: { children: ReactNode }) => (
-      <PlaybackProvider output={output} player={player} clips={clips}>
-        {children}
-      </PlaybackProvider>
-    ),
-  });
+  const services = createServices(readConfig({}), () => 'en');
+  const view = renderHook(
+    ({ requestId }: { requestId: string | null }) => {
+      useReadAloud('SESSION1', requestId, null);
+      return usePlayback();
+    },
+    {
+      initialProps: { requestId },
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <ServicesProvider services={services}>
+          <PlaybackProvider output={output} player={player} clips={clips}>
+            <button data-testid="activation">Play</button>
+            <textarea data-testid="text" />
+            {children}
+          </PlaybackProvider>
+        </ServicesProvider>
+      ),
+    }
+  );
   const speech = () => context.started.filter((source) => source.buffer?.duration === 10);
   const unlock = async () => {
     context.resumeBehaviour = 'run';
@@ -41,6 +57,76 @@ function setup() {
 }
 
 describe('PlaybackProvider blocked autoplay', () => {
+  it.each([
+    { key: ' ', element: <a href="#test">Link</a> },
+    { key: 'Enter', element: <input type="checkbox" /> },
+  ])('retries $key when this control does not generate a click', async ({ key, element }) => {
+    const { result, context, speech } = setup();
+    const target = render(element).container.firstElementChild!;
+    await act(async () => {
+      result.current.enqueue('first', 'blob:first');
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    context.resumeBehaviour = 'run';
+    await act(async () => fireEvent.keyDown(target, { key }));
+    expect(speech()).toHaveLength(1);
+  });
+
+  it('retries when a control prevents its native activation click', async () => {
+    const { result, context, speech } = setup();
+    await act(async () => {
+      result.current.enqueue('first', 'blob:first');
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    const button = screen.getByTestId('activation');
+    button.addEventListener('keydown', (event) => event.preventDefault(), { once: true });
+    context.resumeBehaviour = 'run';
+    await act(async () => fireEvent.keyDown(button, { key: 'Enter' }));
+    expect(speech()).toHaveLength(1);
+  });
+
+  it('clears the browser block when the bubble explicitly resumes playback', async () => {
+    const { result, context, speech, unlock } = setup();
+    await act(async () => {
+      result.current.enqueue('first', 'blob:first');
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    document.body.addEventListener('click', () => result.current.resume(), { once: true });
+    await unlock();
+    expect(speech()).toHaveLength(1);
+    await act(async () => context.last()?.finish());
+    await act(async () => result.current.enqueue('second', 'blob:second'));
+    expect(speech()).toHaveLength(2);
+    expect(result.current.playingId).toBe('second');
+  });
+  it.each(['Enter', ' '])(
+    'retries after %s in the conversation textarea without an activation click',
+    async (key) => {
+      const { result, context, speech } = setup();
+      await act(async () => {
+        result.current.enqueue('first', 'blob:first');
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      context.resumeBehaviour = 'run';
+      await act(async () => fireEvent.keyDown(screen.getByTestId('text'), { key }));
+      expect(speech()).toHaveLength(1);
+      expect(result.current.paused).toBe(false);
+    }
+  );
+
+  it('cancels a blocked consent reading when its question closes, preserving later peer audio', async () => {
+    const { result, rerender, speech, unlock } = setup('r1');
+    await act(async () => {
+      result.current.playNow('consent-r1', 'blob:consent');
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    rerender({ requestId: null });
+    await act(async () => result.current.enqueue('peer', 'blob:peer'));
+    await unlock();
+    expect(result.current.playingId).toBe('peer');
+    expect(speech()).toHaveLength(1);
+  });
+
   it('plays the first blocked arrival after an ordinary gesture without tapping Play', async () => {
     const { result, speech, unlock } = setup();
     await act(async () => {
@@ -48,7 +134,8 @@ describe('PlaybackProvider blocked autoplay', () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
     expect(speech()).toHaveLength(0);
-    expect(result.current.playingId).toBeNull();
+    expect(result.current.playingId).toBe('first');
+    expect(result.current.paused).toBe(true);
 
     await unlock();
 
@@ -149,10 +236,11 @@ describe('PlaybackProvider blocked autoplay', () => {
         if (activation === 'touch') {
           fireEvent.touchEnd(document.body);
         } else {
-          fireEvent.keyDown(document.body, { key: activation });
+          fireEvent.keyDown(screen.getByTestId('activation'), { key: activation });
         }
       });
-      expect(result.current.playingId).toBeNull();
+      expect(result.current.playingId).toBe('first');
+      expect(result.current.paused).toBe(true);
       expect(speech()).toHaveLength(0);
 
       await act(async () => fireEvent.click(document.body));
