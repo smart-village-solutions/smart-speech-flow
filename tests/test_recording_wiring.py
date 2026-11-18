@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi import HTTPException
 
 from services.api_gateway.recording import wiring
-from services.api_gateway.recording.ceremony_model import CeremonyError
 from services.api_gateway.recording.secrets import BLOB_KEY_FILE_ENV, SIGNING_KEY_FILE_ENV
 from services.api_gateway.recording.session_service import RecordingUnavailableError
 from services.api_gateway.recording.session_store import MemoryRecordingStateStore
@@ -115,7 +115,7 @@ async def test_an_unreachable_database_asks_for_a_retry(secrets_on_disk, monkeyp
     async def refuse(**_):
         raise OSError("connection refused")
 
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", refuse)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", refuse)
     assert await wiring.connect_recording(_state(), DSN) is False
 
 
@@ -125,11 +125,12 @@ async def test_a_connected_gateway_registers_its_signing_key(secrets_on_disk, mo
     async def create(**_):
         return repository
 
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     state = _state()
     assert await wiring.connect_recording(state, DSN) is True
     assert state.recording_keys is not None
-    assert state.recording_ceremony is not None
+    assert state.recording_organisation_keys is not None
+    assert state.recording_ceremony is None
     assert state.recording_retention is not None
     assert repository.registered == [state.recording_secrets.signing_key_id]
     sessions = state.recording_sessions
@@ -143,17 +144,19 @@ async def test_a_connected_gateway_registers_its_signing_key(secrets_on_disk, mo
     assert state.session_manager.recording is None
 
 
-async def test_without_studio_the_ceremony_cannot_name_custodians(secrets_on_disk, monkeypatch):
+async def test_without_studio_access_transfer_cannot_authorize(secrets_on_disk, monkeypatch):
     async def create(**_):
         return _Repository()
 
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     monkeypatch.delenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", raising=False)
     state = _state()
     await wiring.connect_recording(state, DSN)
-    with pytest.raises(CeremonyError) as caught:
-        await state.recording_ceremony.candidates("tenant-test", "corr")
-    assert caught.value.code == "DIRECTORY_UNAVAILABLE"
+    with pytest.raises(HTTPException) as caught:
+        await state.recording_access_transfer.authorize(
+            "tenant-test", "actor", "recording.access.transfer"
+        )
+    assert caught.value.detail["error_code"] == "RECORDING_UNAVAILABLE"
 
 
 async def test_without_an_archive_store_recording_is_wired_but_unavailable(
@@ -162,7 +165,7 @@ async def test_without_an_archive_store_recording_is_wired_but_unavailable(
     async def create(**_):
         return _Repository()
 
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     monkeypatch.delenv("SSF_ARCHIVE_ENDPOINT", raising=False)
     state = _state()
     await wiring.connect_recording(state, DSN)
@@ -170,9 +173,10 @@ async def test_without_an_archive_store_recording_is_wired_but_unavailable(
     assert state.recording_archive is None and state.recording_stamper is None
     assert state.recording_archive_access is None
     # Exceptional access needs the keys only, not the store (#617a).
-    assert state.recording_recovery_requests is not None
+    assert state.recording_recovery_requests is None
+    assert state.recording_access_transfer is not None
     assert state.recording_reenrolment is not None
-    assert state.recording_resharing is not None
+    assert state.recording_resharing is None
     with pytest.raises(RecordingUnavailableError) as caught:
         await state.recording_sessions.check_available("tenant-test")
     assert caught.value.code == "ARCHIVE_UNAVAILABLE"
@@ -189,7 +193,7 @@ async def test_an_archive_store_wires_spools_that_stop_with_recording(
     writers.write_text(
         json.dumps({"tenant-test": {"access_key_id": "k", "secret_access_key": "s"}})
     )
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
     monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(writers))
     monkeypatch.setenv("SSF_ARCHIVE_SPOOL_DIR", str(tmp_path / "spool"))
@@ -228,7 +232,7 @@ async def test_the_archive_counts_a_session_live_until_it_ends(
     writers.write_text(
         json.dumps({"tenant-test": {"access_key_id": "k", "secret_access_key": "s"}})
     )
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
     monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(writers))
     monkeypatch.setenv("SSF_ARCHIVE_SPOOL_DIR", str(tmp_path / "spool"))
@@ -293,7 +297,7 @@ async def test_a_tenant_missing_from_the_writers_file_cannot_record(
     writers.write_text(
         json.dumps({"tenant-test": {"access_key_id": "k", "secret_access_key": "s"}})
     )
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
     monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(writers))
     monkeypatch.setenv("SSF_ARCHIVE_SPOOL_DIR", str(tmp_path / "spool"))
@@ -313,7 +317,7 @@ async def test_an_unreadable_writers_file_leaves_the_archive_off(
     async def create(**_):
         return _Repository()
 
-    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
     monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
     monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(tmp_path / "absent.json"))
     state = _state()

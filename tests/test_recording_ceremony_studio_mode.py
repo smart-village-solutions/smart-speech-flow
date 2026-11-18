@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.dependencies import get_studio_runtime_flow
 from services.api_gateway.studio_v1 import StudioV1ClientError
 from services.api_gateway.studio_v2 import StudioContractError
 from services.api_gateway.tenant_context import require_studio_tenant_context
+from tests.recording_legacy_http import app
 
 URL = "/api/admin/recording/ceremony/studio-mode"
 TENANT = "tenant-kassel"

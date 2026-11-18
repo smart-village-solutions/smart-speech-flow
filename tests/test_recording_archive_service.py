@@ -131,33 +131,19 @@ async def test_the_conversation_key_is_wrapped_for_recovery_and_the_enrolled_emp
     wraps = h.rig.repository.keys[consent.key_id].wraps
 
     assert {(w.recipient_kind, w.recipient_ref) for w in wraps} == {
-        ("recovery", "5d1f3a2b-0000-4000-8000-00000000000a"),
+        ("organisation", "5d1f3a2b-0000-4000-8000-00000000000a"),
         ("user", "emp-sub"),
     }
     assert _conversation_key(h, consent) == _conversation_key(h, consent, scalar=EMPLOYEE_SCALAR)
-    for wrap in wraps:
-        sealed = ecies.Sealed.from_json(wrap.blob, expected_type=tags.CK_WRAP)
-        fingerprint = b"\x31" * 32 if wrap.recipient_kind == "recovery" else b"\x21" * 32
-        signed = wrap_fields(
-            KEY.tenant_id,
-            consent.conversation_id,
-            consent.key_id,
-            sealed.ephemeral,
-            wrap.recipient_kind,
-            wrap.recipient_ref,
-            fingerprint,
-        )
-        assert verify_fields(
-            h.rig.secrets.signing_public_key, wrap.creator_signature, tags.WRAP_SIG, *signed
-        )
+    assert all(w.recipient_version == 1 for w in wraps)
 
 
-async def test_an_employee_without_keys_still_records_for_recovery_only(h):
+async def test_personal_enrolment_is_required_to_request_a_recording(h):
     h.rig.employee_enrolled = False
-    await h.on()
-
-    [consent] = _chain(h)
-    assert [w.recipient_kind for w in h.rig.repository.keys[consent.key_id].wraps] == ["recovery"]
+    with pytest.raises(RecordingUnavailableError) as missing:
+        await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
+    assert missing.value.code == "PERSONAL_KEY_MISSING"
+    assert not h.rig.repository.keys
 
 
 @pytest.mark.parametrize("fault", ["database", "recovery_key", "spool_full"])
@@ -432,7 +418,8 @@ async def test_a_resume_reuses_the_conversation_and_its_key(h):
     await say_yes(h.service, KEY, "r2")
 
     first, second = _chain(h)
-    assert (second.kind, second.seq, second.key_id) == ("consent", 2, first.key_id)
+    assert (second.kind, second.seq) == ("consent", 2)
+    assert second.key_id != first.key_id
     assert first.window_id != second.window_id
     assert json.loads(await _object(h, second, "consent.json"))["kind"] == "resume"
 
@@ -456,7 +443,7 @@ async def test_after_a_restart_the_chain_continues_under_a_new_key_epoch(h):
         repository=h.rig.repository,
         spools=h.rig.spools,
         secrets=h.rig.secrets,
-        recovery_key=h.rig.archive._recovery_key,
+        organisation_key=h.rig.archive._organisation_key,
         user_key=h.rig.archive._user_key,
         session_ref=lambda session_id: "ref",
         clock=lambda: h.clocks.now,

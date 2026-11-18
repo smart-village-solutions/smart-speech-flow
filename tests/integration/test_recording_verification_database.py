@@ -13,11 +13,14 @@ from services.api_gateway.recording.recovery_requests_model import Refused
 from services.api_gateway.recording.verification_model import AssignWrap, NewAssignment
 from services.api_gateway.recording.verification_repository import PostgresVerifications
 from services.api_gateway.recording.verification_sql import LIVE_REASON
+from tests.integration.test_recording_archive_access_database import access  # noqa: F401 - fixture
 from tests.integration.test_recording_archive_access_database import (
     _ended,
     _recovered,
-    access,  # noqa: F401 - fixture
+    _transferred,
 )
+from tests.integration.test_recording_archive_database import archive  # noqa: F401 - fixture
+from tests.integration.test_recording_archive_database import owner  # noqa: F401 - fixture
 from tests.integration.test_recording_archive_database import (
     _BIND,
     APP_DSN,
@@ -25,8 +28,6 @@ from tests.integration.test_recording_archive_database import (
     NOW,
     TENANT,
     _opened,
-    archive,  # noqa: F401 - fixture
-    owner,  # noqa: F401 - fixture
 )
 
 pytestmark = pytest.mark.integration
@@ -278,12 +279,20 @@ async def _reasons(owner, conversation_id):
 async def test_live_reason_counts_each_kind_of_wrap(archive, owner):
     conversation, key_id, _ = await _ended(archive, owner)  # alice's own, gateway-made
     cid = conversation.conversation_id
-    await _recovered(owner, conversation, key_id, requester="sam")  # self-made, completed
+    await _transferred(owner, conversation, key_id, requester="sam")
     await _recovered(owner, conversation, key_id, requester="olga", status="open")  # not completed
     await _granted(owner, key_id, "rita", "alice")  # assigned below
     await _granted(owner, key_id, "ralf", "alice")  # no assignment
     await _granted(owner, key_id, "rosa", "sam")  # an assignment by someone else
-    await _verification(cid, reviewer="rita")
+    vid = await _verification(cid, reviewer="rita")
+    await _key(owner, "rita")
+    await owner.execute(
+        "UPDATE key_wraps SET recipient_version=1,recipient_fingerprint=$1 WHERE recipient_ref='rita'",
+        bytes([1]) * 32,
+    )
+    await owner.execute(
+        "INSERT INTO key_grants VALUES($1,$2,'rita',1,'review',$3)", TENANT, key_id, vid
+    )
     await _verification(cid, reviewer="rosa")  # requested_by alice, but sam made the wrap
 
     reasons = await _reasons(owner, cid)
@@ -339,10 +348,10 @@ async def test_a_supervisor_cannot_open_through_a_reviewer_grant(archive, owner,
     assert location is None
 
 
-async def test_the_employee_still_opens_with_a_self_made_wrap(archive, owner, access):
+async def test_an_employee_with_only_a_legacy_wrap_requires_a_transfer(archive, owner, access):
     conversation, key_id, _ = await _ended(archive, owner, wrapped=False)
     await _granted(owner, key_id, "alice", "alice")  # key recovery (§9.6)
-    assert await access.open(TENANT, "alice", conversation.conversation_id, NOW) is not None
+    assert await access.open(TENANT, "alice", conversation.conversation_id, NOW) is None
 
 
 def _point(seed: int) -> bytes:
@@ -352,7 +361,7 @@ def _point(seed: int) -> bytes:
 async def _key(owner, sub, version=1, *, retired=False):
     await owner.execute(
         "INSERT INTO user_keys (tenant_id, user_sub, key_version, enc_pub, sig_pub, fingerprint,"
-        " encrypted_private, created_at, retired_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        " encrypted_private, created_at, retired_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (tenant_id,user_sub,key_version) DO UPDATE SET sig_pub=EXCLUDED.sig_pub, encrypted_private=EXCLUDED.encrypted_private,retired_at=EXCLUDED.retired_at,fingerprint=EXCLUDED.fingerprint",
         TENANT,
         sub,
         version,
@@ -426,7 +435,7 @@ async def test_nobody_who_can_or_tries_to_read_it_can_be_assigned(
     requester, supervisor = "alice", False
     if who == "alice":
         # A recovered supervisor tries to assign the employee herself.
-        await _recovered(owner, conversation, key_id, requester="sam")
+        await _transferred(owner, conversation, key_id, requester="sam")
         requester, supervisor = "sam", True
     elif who == "sam":
         await _recovered(owner, conversation, key_id, requester="sam")
@@ -706,9 +715,8 @@ async def test_releasing_never_takes_a_wrap_with_another_reason(archive, owner, 
     await _key(owner, "alice")
     await _key(owner, "rita")
     row = await verifications.assign(_assignment(cid, [key_id]), NOW, supervisor=False)
-    # A second record for the same reviewer cannot be open (unique index); fake another reason:
     await owner.execute(
-        "UPDATE conversations SET employee_sub = 'rita' WHERE conversation_id = $1", uuid.UUID(cid)
+        "INSERT INTO key_grants VALUES ($1,$2,'rita',1,'transfer',$3)", TENANT, key_id, uuid.uuid4()
     )
 
     assert await verifications.decline(TENANT, "rita", row.verification_id, NOW) is None
@@ -980,7 +988,7 @@ async def test_a_leaver_marking_withdraws_the_reviewers_open_assignment(
     assert ("admin", "recording.verification.withdrawn.key_retired", row.ref) in events
 
 
-async def test_a_reenrolment_withdraws_the_reviewers_open_assignment(archive, owner, verifications):
+async def test_a_reenrolment_preserves_the_reviewers_open_assignment(archive, owner, verifications):
     from services.api_gateway.recording.repository import UserKeyRecord
     from tests.recording_swap import swap_key
 
@@ -998,12 +1006,12 @@ async def test_a_reenrolment_withdraws_the_reviewers_open_assignment(archive, ow
 
     assert await swap_key(archive._pool, record, 1, NOW) is None
 
-    assert await owner.fetchval("SELECT status FROM verifications") == "withdrawn"
+    assert await owner.fetchval("SELECT status FROM verifications") == "in_review"
     events = {
         (r["actor_sub"], r["event_type"])
         for r in await owner.fetch("SELECT actor_sub, event_type FROM audit_events")
     }
-    assert ("rita", "recording.verification.withdrawn.key_retired") in events
+    assert ("rita", "recording.verification.withdrawn.key_retired") not in events
 
 
 async def test_a_completed_request_keeps_only_the_wraps_its_requester_made(archive, owner):

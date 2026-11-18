@@ -52,7 +52,7 @@ GATEWAY_PUBLIC = ref.public_point(7)
 GATEWAY_ID = gateway_key_id(GATEWAY_PUBLIC)
 RECOVERY = Recipient("recovery", "rk-1", ref.public_point(31), b"\x31" * 32)
 _ARCHIVE_TABLES = (
-    "verification_notes, verifications, revocation_runs, recovery_unrecoverable_keys, recovery_rejections, recovery_partials, recovery_decisions,"
+    "key_grants, verification_notes, verifications, revocation_runs, recovery_unrecoverable_keys, recovery_rejections, recovery_partials, recovery_decisions,"
     " recovery_request_keys, recovery_requests, version_locks, site_clearances, retention_decisions, retention_worker_status,"
     " chain_stamps, stored_objects, chain_entries, key_wraps, conversation_keys,"
     " recording_windows, conversations"
@@ -116,22 +116,67 @@ def _entry(conversation, seq, prev_hash, key_id, *, kind="message", window_id=No
     )
 
 
-def _new_key(conversation, epoch=1) -> tuple[NewKey, str]:
+def _new_key(conversation, epoch=1, recipients=(RECOVERY,)) -> tuple[NewKey, str]:
     key = new_conversation_key(epoch)
-    wrap = wrap_key(
-        key,
-        RECOVERY,
-        tenant_id=conversation.tenant_id,
-        conversation_id=conversation.conversation_id,
-        signing_key=GATEWAY,
-        signer_key_id=GATEWAY_ID,
+    wraps = tuple(
+        wrap_key(
+            key,
+            recipient,
+            tenant_id=conversation.tenant_id,
+            conversation_id=conversation.conversation_id,
+            signing_key=GATEWAY,
+            signer_key_id=GATEWAY_ID,
+        )
+        for recipient in recipients
     )
-    return NewKey(key.key_id, epoch, NOW, (wrap,)), key.key_id
+    return NewKey(key.key_id, epoch, NOW, wraps), key.key_id
 
 
-async def _opened(archive, conversation=None):
+async def _opened(archive, conversation=None, *, employee=None):
     conversation = conversation or _conversation()
-    key, key_id = _new_key(conversation)
+    recipients = (RECOVERY,)
+    if employee is not None:
+        from dataclasses import replace
+
+        conversation = replace(conversation, employee_sub=employee)
+        async with archive._pool.acquire() as db, db.transaction():
+            await db.execute(_BIND, conversation.tenant_id)
+            org_id = "00000000-0000-4000-8000-000000000031"
+            await db.execute(
+                "INSERT INTO organisation_keys VALUES ($1,$2,1,$3,$4,'active',$5,$5) ON CONFLICT DO NOTHING",
+                conversation.tenant_id,
+                org_id,
+                ref.public_point(31),
+                bytes([31]) * 32,
+                NOW,
+            )
+            await db.execute(
+                "INSERT INTO user_keys(tenant_id,user_sub,key_version,enc_pub,sig_pub,fingerprint,created_at) "
+                "VALUES ($1,$2,1,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+                conversation.tenant_id,
+                employee,
+                ref.public_point(32),
+                ref.public_point(33),
+                bytes([1]) * 32,
+                NOW,
+            )
+            user = await db.fetchrow(
+                "SELECT * FROM user_keys WHERE user_sub=$1 AND state='active'", employee
+            )
+            org = await db.fetchrow("SELECT * FROM organisation_keys WHERE state='active'")
+            recipients = (
+                Recipient(
+                    "organisation",
+                    str(org["key_id"]),
+                    org["public_key"],
+                    org["fingerprint"],
+                    org["version"],
+                ),
+                Recipient(
+                    "user", employee, user["enc_pub"], user["fingerprint"], user["key_version"]
+                ),
+            )
+    key, key_id = _new_key(conversation, recipients=recipients)
     window_id = str(uuid.uuid4())
     consent = _entry(conversation, 1, GENESIS, key_id, kind="consent", window_id=window_id)
     await archive.open_window(
@@ -192,7 +237,7 @@ async def test_a_yes_that_fails_part_way_writes_nothing(archive, owner):
 
 
 async def test_appended_entries_form_an_intact_chain_with_a_new_epoch(archive):
-    conversation, key_id, window_id, consent = await _opened(archive)
+    conversation, key_id, window_id, consent = await _opened(archive, employee="alice")
     second = _entry(conversation, 2, consent.hash, key_id, window_id=window_id)
     await archive.append_entry(second, None)
     key, new_key_id = _new_key(conversation, epoch=2)
@@ -208,7 +253,7 @@ async def test_appended_entries_form_an_intact_chain_with_a_new_epoch(archive):
 
 
 async def test_a_second_entry_with_the_same_seq_is_refused(archive):
-    conversation, key_id, _, consent = await _opened(archive)
+    conversation, key_id, _, consent = await _opened(archive, employee="alice")
     await archive.append_entry(_entry(conversation, 2, consent.hash, key_id), None)
 
     with pytest.raises(RecordingStorageUnavailable):
@@ -262,7 +307,7 @@ async def test_stored_objects_are_recorded_once_and_only_for_known_entries(archi
 
 
 async def test_a_closed_window_is_stamped_only_once_all_its_entries_are_stored(archive):
-    conversation, key_id, window_id, consent = await _opened(archive)
+    conversation, key_id, window_id, consent = await _opened(archive, employee="alice")
     two = (
         ChainObject("original.wav", "k/original.wav", 5, "bb" * 32),
         ChainObject("record.json", "k/record.json", 5, "cc" * 32),

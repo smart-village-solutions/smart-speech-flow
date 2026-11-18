@@ -79,7 +79,7 @@ async def test_a_directory_for_another_tenant_or_contract_is_refused(changes, co
     "user_change",
     [
         {"sub": "has space"},
-        {"permissions": ["ssf.configuration.tenant.manage"]},
+        {"permissions": ["ssf.configuration.unknown.manage"]},
         {"permissions": []},
         {"languages": ["Deutsch"]},
         {"displayName": ""},
@@ -177,8 +177,15 @@ def test_a_review_snapshot_needs_the_review_permission_and_carries_sworn_status(
 
     body = _body()
     body["users"] = [
-        {"sub": "sworn", "displayName": "S", "permissions": [
-            "ssf.recording.review.sworn", "ssf.recording.supervise", "ssf.recording.review"]},
+        {
+            "sub": "sworn",
+            "displayName": "S",
+            "permissions": [
+                "ssf.recording.review.sworn",
+                "ssf.recording.supervise",
+                "ssf.recording.review",
+            ],
+        },
         {"sub": "plain", "displayName": "P", "permissions": ["ssf.recording.review"]},
         {"sub": "sworn-only", "displayName": "O", "permissions": ["ssf.recording.review.sworn"]},
     ]

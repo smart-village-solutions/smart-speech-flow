@@ -491,7 +491,7 @@ class PostgresRecoveryRequests:
                 " creator_ref, creator_signature, granted_at)"
                 " SELECT $1, w.key_id, 'user', $2, w.blob, $2, w.signature, $3"
                 " FROM unnest($4::uuid[], $5::text[], $6::bytea[]) AS w(key_id, blob, signature)"
-                " ON CONFLICT (tenant_id, key_id, recipient_kind, recipient_ref) DO NOTHING"
+                " ON CONFLICT (tenant_id, key_id, recipient_kind, recipient_ref, recipient_version) DO NOTHING"
                 " RETURNING key_id",
                 tenant_id,
                 sub,

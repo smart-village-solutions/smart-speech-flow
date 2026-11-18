@@ -36,7 +36,7 @@ async def access(archive):
     return PostgresArchiveAccess(archive._pool)
 
 
-async def _ended(archive, owner, *, employee="alice", wrapped=True, at=NOW):
+async def _legacy_ended(archive, owner, *, employee="alice", wrapped=True, at=NOW):
     """An ended conversation of `employee`, wrapped for them unless `wrapped` is False.
 
     `_opened` wraps for recovery only; the user wrap's blob is never opened here.
@@ -59,6 +59,25 @@ async def _ended(archive, owner, *, employee="alice", wrapped=True, at=NOW):
             GATEWAY_ID,
             bytes(64),
             NOW,
+        )
+    return conversation, key_id, consent
+
+
+async def _ended(archive, owner, *, employee="alice", wrapped=True, at=NOW):
+    conversation, key_id, _, consent = await _opened(archive, employee=employee)
+    await owner.execute(
+        "UPDATE conversations SET ended_at=$2 WHERE conversation_id=$1",
+        conversation.conversation_id,
+        at,
+    )
+    if not wrapped:
+        await owner.execute(
+            "DELETE FROM key_grants WHERE key_id=$1 AND user_sub=$2", key_id, employee
+        )
+        await owner.execute(
+            "DELETE FROM key_wraps WHERE key_id=$1 AND recipient_kind='user' AND recipient_ref=$2",
+            key_id,
+            employee,
         )
     return conversation, key_id, consent
 
@@ -180,7 +199,22 @@ async def test_an_object_is_located_only_through_a_wrap_of_its_entry(archive, ow
 
 async def test_an_entry_under_a_key_without_the_callers_wrap_is_not_served(archive, owner, access):
     conversation, _, consent = await _ended(archive, owner)
-    later_key, later_key_id = _new_key(conversation, epoch=2)
+    from services.api_gateway.recording.conversation_keys import Recipient
+    from tests import recording_crypto_reference as ref
+
+    later_key, later_key_id = _new_key(
+        conversation,
+        epoch=2,
+        recipients=(
+            Recipient(
+                "organisation",
+                "00000000-0000-4000-8000-000000000031",
+                ref.public_point(31),
+                bytes([31]) * 32,
+                1,
+            ),
+        ),
+    )
     later = _entry(conversation, 2, consent.hash, later_key_id)
     await archive.append_entry(later, later_key)
     await archive.record_stored(TENANT, later.entry_id, "record.json", "v2", NOW)
@@ -265,7 +299,7 @@ async def test_an_amendment_needs_the_opening_rule_and_a_key_wrapped_for_both(
             TENANT, "bob", conversation.conversation_id, key_id, NOW, seal, NOW
         )
     assert refused.value.code == "no_conversation"
-    await owner.execute("DELETE FROM key_wraps WHERE recipient_kind = 'recovery'")
+    await owner.execute("DELETE FROM key_wraps WHERE recipient_kind = 'organisation'")
     with pytest.raises(ArchiveAccessRefusedError) as refused:
         await access.append_amendment(
             TENANT, "alice", conversation.conversation_id, key_id, NOW, seal, NOW
@@ -354,9 +388,34 @@ async def _recovered(
     )
 
 
-async def test_a_supervisor_with_a_completed_request_opens_the_conversation(archive, owner, access):
+async def _transferred(owner, conversation, key_id, requester="sam"):
+    from tests.integration.test_recording_recovery_requests_database import enrol
+
+    await enrol(owner, requester)
+    await owner.execute(
+        "INSERT INTO key_wraps(tenant_id,key_id,recipient_kind,recipient_ref,recipient_version,recipient_fingerprint,blob,creator_ref,creator_signature,granted_at) "
+        "SELECT $1,$2,'user',$3,key_version,fingerprint,'{}',$4,$5,$6 FROM user_keys "
+        "WHERE tenant_id=$1 AND user_sub=$3 AND state='active' ON CONFLICT DO NOTHING",
+        TENANT,
+        key_id,
+        requester,
+        GATEWAY_ID,
+        bytes(64),
+        NOW,
+    )
+    await owner.execute(
+        "INSERT INTO key_grants SELECT $1,$2,$3,key_version,'transfer',$4 FROM user_keys "
+        "WHERE tenant_id=$1 AND user_sub=$3 AND state='active'",
+        TENANT,
+        key_id,
+        requester,
+        uuid.uuid4(),
+    )
+
+
+async def test_a_transfer_recipient_opens_the_conversation(archive, owner, access):
     conversation, key_id, _ = await _ended(archive, owner)
-    await _recovered(owner, conversation, key_id)
+    await _transferred(owner, conversation, key_id)
 
     opened = await access.open(TENANT, "sam", conversation.conversation_id, NOW, supervisor=True)
 
@@ -364,19 +423,21 @@ async def test_a_supervisor_with_a_completed_request_opens_the_conversation(arch
     assert await access.openable(TENANT, "sam", conversation.conversation_id, NOW, supervisor=True)
 
 
-async def test_without_supervise_or_a_completed_request_it_stays_closed(archive, owner, access):
+async def test_even_a_completed_legacy_request_stays_closed_without_a_versioned_grant(
+    archive, owner, access
+):
     conversation, key_id, _ = await _ended(archive, owner)
     await _recovered(owner, conversation, key_id, status="cancelled")
     cid = conversation.conversation_id
     assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None
     await owner.execute("UPDATE recovery_requests SET status = 'completed'")
     assert await access.open(TENANT, "sam", cid, NOW, supervisor=False) is None
-    assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is not None
+    assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None
 
 
 async def test_a_supervisor_cannot_amend_a_recovered_conversation(archive, owner, access):
     conversation, key_id, _ = await _ended(archive, owner)
-    await _recovered(owner, conversation, key_id)
+    await _transferred(owner, conversation, key_id)
     with pytest.raises(ArchiveAccessRefusedError, match="no_conversation"):
         await access.append_amendment(
             TENANT,
@@ -391,7 +452,7 @@ async def test_a_supervisor_cannot_amend_a_recovered_conversation(archive, owner
 
 async def test_the_list_carries_each_rows_employee(archive, owner, access):
     conversation, key_id, _ = await _ended(archive, owner)
-    await _recovered(owner, conversation, key_id)
+    await _transferred(owner, conversation, key_id)
     rows = await access.own_conversations(
         TENANT, "sam", NOW, limit=50, started_before=None, before_id=None, supervisor=True
     )
@@ -405,10 +466,10 @@ async def test_a_supervisor_fetches_objects_of_a_recovered_conversation_only(
     archive, owner, access
 ):
     conversation, key_id, consent = await _ended(archive, owner)
-    await _recovered(owner, conversation, key_id)
+    await _transferred(owner, conversation, key_id)
     args = (TENANT, "sam", conversation.conversation_id, consent.entry_id, "record.json", NOW)
     assert await access.object_location(*args, supervisor=True) is not None
-    assert await access.object_location(*args, supervisor=False) is None
+    assert await access.object_location(*args, supervisor=False) is not None
 
 
 async def test_another_supervisors_completed_request_opens_nothing_for_the_caller(

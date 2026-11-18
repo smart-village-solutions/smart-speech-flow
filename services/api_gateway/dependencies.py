@@ -87,6 +87,8 @@ class GatewayDependencies:
     feedback_read_service: Any = None
     feedback_maintenance: Any = None
     # Recording mode (#614); None until its database and secrets are wired.
+    recording_organisation_keys: Any = None
+    recording_access_transfer: Any = None
     recording_repository: Any = None
     recording_secrets: Any = None
     recording_keys: Any = None

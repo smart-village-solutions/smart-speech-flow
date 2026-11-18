@@ -1,12 +1,4 @@
-"""Staff routes of the recovery-key ceremony (spec §9.2).
-
-The tenant administrator starts a ceremony and, when paper shares are wanted,
-runs the ceremony device; custodians deal and confirm. Starting, dealing and
-confirming need a fresh MFA login. Aborting does not, so that a custodian
-whose browser finds a fault can always stop the ceremony; the paper
-confirmation does not either, because a step-up redirect would wipe the
-device key it depends on. Both are audited.
-"""
+"""Isolated legacy ceremony routes for authorized administrators and custodians."""
 
 from __future__ import annotations
 
@@ -34,7 +26,6 @@ from ..recording.permissions import (
     coded,
     permissions_of,
     require_permission,
-    require_step_up,
 )
 from ..recording.repository import RecordingStorageUnavailable
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
@@ -59,7 +50,6 @@ Staff = Annotated[
     dict[str, Any], Depends(require_permission(TENANT_MANAGE, *RECORDING_PERMISSIONS))
 ]
 TenantContext = Annotated[StudioTenantContext, Depends(require_studio_tenant_context)]
-StepUp = [Depends(require_step_up)]
 POINT = 87  # a 65-byte point in unpadded base64url
 SCALAR = 43  # 32 bytes
 _SIGNATURE = 86  # 64 bytes
@@ -292,7 +282,7 @@ async def candidates(
     }
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, dependencies=StepUp)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def start(
     body: StartBody,
     request: Request,
@@ -315,7 +305,7 @@ async def start(
     return ceremony_body(snapshot)
 
 
-@router.post("/{ceremony_id}/dealings", status_code=status.HTTP_201_CREATED, dependencies=StepUp)
+@router.post("/{ceremony_id}/dealings", status_code=status.HTTP_201_CREATED)
 async def deal(
     ceremony_id: uuid.UUID,
     body: DealingBody,
@@ -359,9 +349,7 @@ async def subshares(
     }
 
 
-@router.post(
-    "/{ceremony_id}/confirmations", status_code=status.HTTP_201_CREATED, dependencies=StepUp
-)
+@router.post("/{ceremony_id}/confirmations", status_code=status.HTTP_201_CREATED)
 async def confirm(
     ceremony_id: uuid.UUID,
     body: ConfirmationBody,

@@ -47,6 +47,16 @@ class FakeRecordingRepository:
     async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None:
         return self.keys.get((tenant_id, user_sub))
 
+    async def user_key_versions(self, tenant_id: str, user_sub: str) -> list[UserKeyRecord]:
+        record = self.keys.get((tenant_id, user_sub))
+        return [] if record is None else [record]
+
+    async def usable_user_key(
+        self, tenant_id: str, user_sub: str, version: int
+    ) -> UserKeyRecord | None:
+        record = self.keys.get((tenant_id, user_sub))
+        return record if record is not None and record.key_version == version else None
+
     async def enrol_user_key(self, record: UserKeyRecord) -> int:
         if (record.tenant_id, record.user_sub) in self.keys:
             raise KeyAlreadyEnrolledError()

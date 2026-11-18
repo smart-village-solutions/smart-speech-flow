@@ -114,15 +114,14 @@ def test_every_route_needs_the_supervise_permission(client_for):
     assert decisions.decided == []
 
 
-def test_changes_need_a_fresh_mfa_login(client_for):
+def test_changes_use_the_authenticated_session(client_for):
     row = _summary()
     decisions = FakeDecisions(row)
     client = client_for(_claims(fresh=False), decisions)
     for method, path, body in _calls(row.conversation_id)[2:]:
         response = client.request(method, path, json=body)
-        assert response.status_code == 403, path
-        assert _code(response) == "STEP_UP_REQUIRED"
-    assert decisions.decided == []
+        assert response.status_code == 200, path
+    assert decisions.decided
     assert client.get(f"{BASE}/{row.conversation_id}").status_code == 200
 
 

@@ -20,6 +20,7 @@ from services.api_gateway.recording.leavers_repository import PostgresLeavers
 from services.api_gateway.recording.recovery_requests_model import Refused
 from services.api_gateway.recording.repository import PostgresRecordingRepository
 from tests import recording_crypto_reference as ref
+from tests.integration.test_recording_archive_access_database import _legacy_ended as _ended
 from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
     _BIND,
     APP_DSN,
@@ -31,7 +32,6 @@ from tests.integration.test_recording_archive_database import (  # noqa: F401 - 
     archive,
     owner,
 )
-from tests.integration.test_recording_archive_access_database import _ended
 from tests.integration.test_recording_key_recovery_database import _key_recovery, _new_key
 from tests.integration.test_recording_leavers_database import _running_ceremony, _waiting
 from tests.integration.test_recording_recovery_requests_database import (  # noqa: F401

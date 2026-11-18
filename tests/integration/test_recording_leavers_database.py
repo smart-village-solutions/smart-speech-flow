@@ -14,20 +14,18 @@ import pytest
 
 from services.api_gateway.recording.audit import chain_is_intact
 from services.api_gateway.recording.ceremony_repository import PostgresCeremonyRepository
-from services.api_gateway.recording.leavers import MarkedLeaver
-from services.api_gateway.recording.leavers_repository import PostgresLeavers
 from services.api_gateway.recording.crypto import ecies, tags
 from services.api_gateway.recording.crypto.curve import decode_point, encode_point, multiply
 from services.api_gateway.recording.crypto.encoding import b64url, from_b64url
-from services.api_gateway.recording.leavers import Leavers
+from services.api_gateway.recording.leavers import Leavers, MarkedLeaver
+from services.api_gateway.recording.leavers_repository import PostgresLeavers
 from services.api_gateway.recording.recovery_requests_model import Approval, NewRequest, Refused
 from services.api_gateway.recording.recovery_requests_repository import PostgresRecoveryRequests
 from services.api_gateway.recording.recovery_requests_sql import USABLE_SHARES
 from services.api_gateway.recording.repository import PostgresRecordingRepository
 from services.api_gateway.recording.resharing_model import ResharingStart
 from tests import recording_crypto_reference as ref
-from tests.recording_ceremony_actors import ANNA, DORA, ORG_ADMIN, reshare_dealing
-from tests.integration.test_recording_archive_access_database import _ended
+from tests.integration.test_recording_archive_access_database import _legacy_ended as _ended
 from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
     NOW,
     OWNER_DSN,
@@ -37,14 +35,6 @@ from tests.integration.test_recording_archive_database import (  # noqa: F401 - 
     owner,
 )
 from tests.integration.test_recording_key_recovery_database import _key_recovery, _new_key, _reenrol
-from tests.integration.test_recording_resharing_database import (  # noqa: F401 - fixtures
-    _clean,
-    _confirm_all,
-    _file,
-    _first_generation,
-    _services,
-    store,
-)
 from tests.integration.test_recording_recovery_requests_database import (  # noqa: F401
     _always,
     _approval,
@@ -54,6 +44,15 @@ from tests.integration.test_recording_recovery_requests_database import (  # noq
     recovery_key,
     requests,
 )
+from tests.integration.test_recording_resharing_database import (  # noqa: F401 - fixtures
+    _clean,
+    _confirm_all,
+    _file,
+    _first_generation,
+    _services,
+    store,
+)
+from tests.recording_ceremony_actors import ANNA, DORA, ORG_ADMIN, reshare_dealing
 
 pytestmark = pytest.mark.integration
 
@@ -183,7 +182,7 @@ async def test_a_listed_custodian_keeps_the_blob_and_the_share_goes_stale(archiv
     assert (ADMIN, "recovery.share.stale", recovery) in await _audit(owner)
 
 
-async def test_a_custodian_who_re_enrolled_earlier_keeps_the_older_blob(archive, owner, leavers):
+async def test_leaving_blocks_all_historical_personal_versions(archive, owner, leavers):
     await recovery_key(owner)
     await owner.execute("UPDATE user_keys SET encrypted_private = 'x' WHERE user_sub = 'carol'")
     assert await _reenrol(archive, "carol") is None
@@ -192,10 +191,9 @@ async def test_a_custodian_who_re_enrolled_earlier_keeps_the_older_blob(archive,
 
     assert marked.custodian is True
     listed, active = await _keys(owner, "carol")
-    assert listed["encrypted_private"] == b"x" and listed["left_at"] is None
+    assert listed["encrypted_private"] is None and listed["left_at"] == NOW
     assert active["encrypted_private"] is None and active["left_at"] == NOW
-    # The share went stale at the re-enrolment, not again now.
-    assert sum(e[1] == "recovery.share.stale" for e in await _audit(owner)) == 1
+    assert sum(e[1] == "user_left" for e in await _audit(owner)) == 1
 
 
 async def test_marking_refuses_no_key_a_stale_version_and_an_already_left_user(

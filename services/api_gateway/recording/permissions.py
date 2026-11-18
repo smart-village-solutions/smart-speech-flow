@@ -1,14 +1,7 @@
-"""Recording permissions from the Studio `ssf_permissions` claim, and step-up (spec §14, §3).
-
-Studio is authoritative for administrative permissions, and the gateway
-already verifies the token they arrive in. No permission grants content
-access by itself; only a key wrap does. Step-up is a fresh multi-factor
-login: the realm maps it to an `acr` value, and `auth_time` says how fresh.
-"""
+"""Effective recording permissions and verified email from authenticated user tokens."""
 
 from __future__ import annotations
 
-import time
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Final
 
@@ -22,6 +15,7 @@ REVIEW: Final[str] = "ssf.recording.review"
 REVIEW_SWORN: Final[str] = "ssf.recording.review.sworn"
 # What a verification decision snapshots (spec A.3a).
 REVIEW_PERMISSIONS: Final[tuple[str, ...]] = (REVIEW, REVIEW_SWORN)
+TRANSFER: Final[str] = "ssf.recording.access.transfer"
 SUPERVISE: Final[str] = "ssf.recording.supervise"
 CUSTODIAN: Final[str] = "ssf.recording.recovery.custodian"
 # The tenant administrator's existing Studio permission (keycloak.ts reads it too).
@@ -29,13 +23,6 @@ TENANT_MANAGE: Final[str] = "ssf.configuration.tenant.manage"
 RECORDING_PERMISSIONS: Final[frozenset[str]] = frozenset(
     {REQUEST, REVIEW, REVIEW_SWORN, SUPERVISE, CUSTODIAN}
 )
-
-# The realm maps this `acr` to an OTP login (runbook Step 6). keycloak.ts asks
-# for the same value, so the two change together or not at all.
-STEP_UP_ACR: Final[str] = "mfa"
-STEP_UP_MAX_AGE_SECONDS: Final[int] = 300
-# Keycloak stamps `auth_time` by its own clock, which may run a little ahead.
-CLOCK_SKEW_SECONDS: Final[int] = 60
 
 Claims = dict[str, Any]
 MAX_EMAIL_CHARACTERS: Final[int] = 254
@@ -63,22 +50,6 @@ def require_permission(*accepted: str) -> Callable[..., Awaitable[Claims]]:
         return claims
 
     return dependency
-
-
-def step_up_satisfied(claims: Claims, now: float) -> bool:
-    acr, auth_time = claims.get("acr"), claims.get("auth_time")
-    if acr != STEP_UP_ACR:
-        return False
-    if not isinstance(auth_time, int) or isinstance(auth_time, bool):
-        return False
-    return -CLOCK_SKEW_SECONDS <= now - auth_time <= STEP_UP_MAX_AGE_SECONDS
-
-
-async def require_step_up(claims: Annotated[Claims, Depends(require_ssf_user)]) -> Claims:
-    """403 STEP_UP_REQUIRED tells the browser to re-authenticate with MFA and retry."""
-    if not step_up_satisfied(claims, time.time()):
-        raise coded(status.HTTP_403_FORBIDDEN, "STEP_UP_REQUIRED", "Fresh MFA login required")
-    return claims
 
 
 def verified_email(claims: Claims) -> str | None:

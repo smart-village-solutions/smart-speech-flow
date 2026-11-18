@@ -115,6 +115,26 @@ class MemoryArchiveRepository:
             raise RecordingStorageUnavailable("duplicate seq")
         chain.append(entry)
 
+    async def pinned_recipients(self, tenant_id, conversation_id, window_id):
+        from services.api_gateway.recording.conversation_keys import Recipient
+
+        entries = [
+            e for e in self.chain(conversation_id) if window_id is None or e.window_id == window_id
+        ]
+        wraps = self.keys[entries[-1].key_id].wraps
+        return [
+            Recipient(
+                w.recipient_kind,
+                w.recipient_ref,
+                ref.public_point(
+                    RECOVERY_SCALAR if w.recipient_kind == "organisation" else EMPLOYEE_SCALAR
+                ),
+                w.recipient_fingerprint,
+                w.recipient_version,
+            )
+            for w in wraps
+        ]
+
     async def open_window(self, opening: WindowOpening) -> None:
         self._check()
         conversation = opening.conversation
@@ -293,8 +313,17 @@ def archive_rig(
     secrets = gateway_secrets()
     rig: ArchiveRig
 
-    async def recovery_key(tenant_id: str) -> RecoveryKeyRecord | None:
-        return recovery_record(tenant_id) if rig.recovery_present else None
+    async def organisation_key(tenant_id: str):
+        from services.api_gateway.recording.conversation_keys import Recipient
+
+        record = recovery_record(tenant_id)
+        return (
+            Recipient(
+                "organisation", record.key_id, record.recovery_public_key, record.transcript_hash, 1
+            )
+            if rig.recovery_present
+            else None
+        )
 
     async def live_sessions(tenant_id: str) -> set[str]:
         if rig.live_sessions is None:
@@ -308,7 +337,7 @@ def archive_rig(
         repository=repository,
         spools=spools,
         secrets=secrets,
-        recovery_key=recovery_key,
+        organisation_key=organisation_key,
         user_key=user_key,
         session_ref=lambda session_id: f"ref-{session_id}",
         tenant_ready=lambda _tenant_id: rig.writer_ready,
@@ -326,12 +355,13 @@ def decoded_objects(entry: ChainEntry) -> list[dict[str, Any]]:
 def conversation_key(rig: ArchiveRig, entry: ChainEntry, *, scalar: int = RECOVERY_SCALAR) -> bytes:
     """Unwrap the entry's conversation key as the recovery or the employee key would (#616)."""
     new_key = rig.repository.keys[entry.key_id]
-    kind = "recovery" if scalar == RECOVERY_SCALAR else "user"
+    kind = "organisation" if scalar == RECOVERY_SCALAR else "user"
     wrap = next(w for w in new_key.wraps if w.recipient_kind == kind)
     context = ecies.ck_wrap_context(
         entry.tenant_id, entry.conversation_id, entry.key_id, kind, wrap.recipient_ref
     )
-    sealed = ecies.Sealed.from_json(wrap.blob, expected_type=tags.CK_WRAP)
+    context = (*context, wrap.recipient_version, wrap.recipient_fingerprint)
+    sealed = ecies.Sealed.from_json(wrap.blob, expected_type=tags.CK_WRAP_V2)
     return ecies.open_with_private_key(sealed, ref.private_key(scalar), context)
 
 

@@ -20,6 +20,7 @@ from tests.integration.test_recording_verification_database import (  # noqa: F4
     _key,
     _no_keys,
     _recovered,
+    _transferred,
     access,
     archive,
     owner,
@@ -99,13 +100,13 @@ async def test_a_reviewer_still_in_the_directory_keeps_the_assignment(
     assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref = 'rita'") == 1
 
 
-async def test_a_supervisor_without_supervise_loses_recovered_wraps_only(
+async def test_a_transfer_is_independent_of_supervisor_permissions(
     archive, owner, verifications, revocations
 ):
     conversation, key_id, _ = await _ended(archive, owner)
     await _key(owner, "alice")
-    await _recovered(owner, conversation, key_id, requester="sam")
-    await _recovered(owner, conversation, key_id, requester="sven")
+    await _transferred(owner, conversation, key_id, requester="sam")
+    await _transferred(owner, conversation, key_id, requester="sven")
 
     outcome = await _check(revocations, ("alice", REVIEW), ("sven", SUPERVISE)).run_tenant(
         TENANT, "c"
@@ -118,9 +119,9 @@ async def test_a_supervisor_without_supervise_loses_recovered_wraps_only(
             "SELECT recipient_ref FROM key_wraps WHERE recipient_kind = 'user'"
         )
     }
-    assert remaining == {"alice", "sven"}
+    assert remaining == {"alice", "sam", "sven"}
     assert (
-        await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind = 'recovery'")
+        await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind = 'organisation'")
         == 1
     )
 

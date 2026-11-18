@@ -78,8 +78,8 @@ _INSERT = (
 )
 _GRANT = (
     "INSERT INTO key_wraps (tenant_id, key_id, recipient_kind, recipient_ref, blob,"
-    " creator_ref, creator_signature, granted_at)"
-    " SELECT $1, w.key_id, 'user', $2, w.blob, $3, w.signature, $4"
+    " creator_ref, creator_signature, granted_at,recipient_version,recipient_fingerprint)"
+    " SELECT $1, w.key_id, 'user', $2, w.blob, $3, w.signature, $4,$8,$9"
     " FROM unnest($5::uuid[], $6::text[], $7::bytea[]) AS w(key_id, blob, signature)"
 )
 
@@ -139,7 +139,7 @@ _PUT_NOTES = (
 )
 _PUT_OVERALL = "UPDATE verifications SET overall_note = $2 WHERE verification_id = $1"
 _REVIEWER_KEY = (
-    "SELECT key_version, fingerprint FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL"
+    "SELECT key_version, fingerprint FROM user_keys WHERE user_sub = $1 AND key_version=$2 AND state IN ('active','superseded')"
     " FOR SHARE"
 )
 _RECORD_PRE_READ = "SELECT * FROM verifications WHERE verification_id = $1 AND reviewer_sub = $2"
@@ -206,6 +206,15 @@ class PostgresVerifications:
 
         return frozenset(row["sub"] for row in await self._run(tenant_id, work))
 
+    async def usable_key(self, tenant_id: str, sub: str, version: int) -> KeyRow | None:
+        async def work(db: asyncpg.Connection) -> asyncpg.Record | None:
+            return await db.fetchrow(
+                _KEY_AT + " AND state IN ('active','superseded')", sub, version
+            )
+
+        row = await self._run(tenant_id, work)
+        return None if row is None else key_from_row(row)
+
     async def active_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, KeyRow]:
         async def work(connection: asyncpg.Connection) -> Any:
             return await connection.fetch(_KEYS, list(subs))
@@ -255,7 +264,9 @@ class PostgresVerifications:
                 return None
             record = verification_from_row(row)
             conversation_row = await connection.fetchrow(_CONVERSATION, row["conversation_id"])
-            opened = await read_conversation(connection, conversation_row, sub)
+            opened = await read_conversation(
+                connection, conversation_row, sub, review_id=record.verification_id
+            )
             notes = await connection.fetch(_NOTES, row["verification_id"])
             requester = await connection.fetchrow(
                 _KEY_AT, record.requested_by, record.requester_key_version
@@ -289,7 +300,7 @@ class PostgresVerifications:
                     row = await _insert(connection, assignment, now)
             except asyncpg.UniqueViolationError:
                 return Refused("assignment_exists")
-            await _grant(connection, assignment, now)
+            await _grant(connection, assignment, now, row.verification_id)
             await append_audits(connection, _granted_events(assignment, row, now))
             return row
 
@@ -392,14 +403,22 @@ class PostgresVerifications:
         self, tenant_id: str, sub: str, verification_id: str, decision: DecisionPost, now: datetime
     ) -> Refused | VerificationRow:
         async def work(connection: asyncpg.Connection) -> Refused | VerificationRow:
-            key = await connection.fetchrow(_REVIEWER_KEY, sub)
-            record = await locked_record(connection, sub, verification_id, now)
+            key = await connection.fetchrow(_REVIEWER_KEY, sub, decision.signer_key_version)
+            record = await locked_record(connection, sub, verification_id, now, readable=False)
             if isinstance(record, Refused):
                 return record
             if record.status != "in_review":
                 return Refused("not_started")
-            if key is None or bytes(key["fingerprint"]) != record.reviewer_fingerprint:
+            if (
+                key is None
+                or decision.signer_key_version != record.reviewer_key_version
+                or bytes(key["fingerprint"]) != record.reviewer_fingerprint
+            ):
                 return Refused("key_changed")
+            if not await connection.fetchval(
+                _STILL_REVIEWING, uuid.UUID(record.conversation_id), sub, now
+            ):
+                return Refused("verification_closed")
             signed = (decision.snapshot, decision.reviewed_head)
             if signed != (record.permission_snapshot, record.reviewed_head):
                 return Refused("permissions_changed")
@@ -518,7 +537,9 @@ async def _insert(
     return verification_from_row(row)
 
 
-async def _grant(connection: asyncpg.Connection, assignment: NewAssignment, now: datetime) -> None:
+async def _grant(
+    connection: asyncpg.Connection, assignment: NewAssignment, now: datetime, verification_id: str
+) -> None:
     wraps = sorted(assignment.wraps, key=lambda wrap: wrap.key_id)
     await connection.execute(
         _GRANT,
@@ -529,6 +550,16 @@ async def _grant(connection: asyncpg.Connection, assignment: NewAssignment, now:
         [uuid.UUID(wrap.key_id) for wrap in wraps],
         [wrap.blob for wrap in wraps],
         [wrap.signature for wrap in wraps],
+        assignment.reviewer_key_version,
+        assignment.reviewer_fingerprint,
+    )
+    await connection.execute(
+        "INSERT INTO key_grants SELECT $1,k,$2,$3,'review',$4 FROM unnest($5::uuid[]) k",
+        assignment.tenant_id,
+        assignment.reviewer_sub,
+        assignment.reviewer_key_version,
+        verification_id,
+        [uuid.UUID(w.key_id) for w in wraps],
     )
 
 
@@ -606,6 +637,10 @@ async def put_notes(
 
 
 async def release(connection: asyncpg.Connection, record: VerificationRow) -> list[str]:
+    await connection.execute(
+        "DELETE FROM key_grants WHERE reason='review' AND grant_ref=$1",
+        uuid.UUID(record.verification_id),
+    )
     rows = await connection.fetch(RELEASE, uuid.UUID(record.conversation_id), record.reviewer_sub)
     return sorted(str(row["key_id"]) for row in rows)
 

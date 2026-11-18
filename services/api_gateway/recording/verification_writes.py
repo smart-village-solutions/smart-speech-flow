@@ -31,4 +31,7 @@ async def close_records(
     if not ids:
         return
     await connection.execute(_DROP_NOTES, list(ids))
+    await connection.execute(
+        "DELETE FROM key_grants WHERE reason='review' AND grant_ref=ANY($1::uuid[])", list(ids)
+    )
     await connection.execute(_CLOSE, list(ids), status, now, reason)

@@ -26,4 +26,10 @@ POK: Final[str] = "ssf-rec/pok/v1"
 SHARE_POK: Final[str] = "ssf-rec/share-pok/v1"
 FINGERPRINT: Final[str] = "ssf-rec/fpr/v1"
 
-SEALED_TYPES: Final[frozenset[str]] = frozenset({CK_WRAP, SHARE, SUBSHARE, PARTIAL})
+ORG_POSSESSION = "SSF-ORG-POSSESSION-V1"
+CK_WRAP_V2 = "SSF-CK-WRAP-V2"
+WRAP_SIG_V2 = "SSF-CK-WRAP-SIG-V2"
+
+SEALED_TYPES: Final[frozenset[str]] = frozenset(
+    {ORG_POSSESSION, CK_WRAP_V2, CK_WRAP, SHARE, SUBSHARE, PARTIAL}
+)

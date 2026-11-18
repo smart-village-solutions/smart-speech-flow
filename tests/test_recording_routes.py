@@ -76,11 +76,11 @@ def test_a_caller_without_a_recording_permission_is_refused(client_for):
     assert _code(response) == "PERMISSION_REQUIRED"
 
 
-def test_enrolment_without_a_fresh_mfa_login_asks_for_step_up(client_for):
-    client = client_for(_claims(fresh=False))
+@pytest.mark.parametrize("session", [{"acr": "pwd"}, {"acr": "mfa", "auth_time": 1}, {}])
+def test_enrolment_uses_the_authenticated_session(client_for, session):
+    client = client_for({**_claims(fresh=False), **session})
     response = client.post("/api/admin/recording/keys", json=enrolment_body())
-    assert response.status_code == 403
-    assert _code(response) == "STEP_UP_REQUIRED"
+    assert response.status_code == 201
 
 
 def test_enrolment_pins_the_verified_address(client_for):
@@ -216,12 +216,12 @@ def test_a_re_enrolment_answers_its_status_and_the_new_fingerprint(reenrolment_c
     assert service.calls == [(TENANT, "alice", 3)]
 
 
-def test_a_re_enrolment_without_a_fresh_mfa_login_asks_for_step_up(reenrolment_client):
+def test_reenrolment_uses_the_authenticated_session(reenrolment_client):
     service = FakeReenrolment()
     client = reenrolment_client(_claims(fresh=False), service)
     answer = client.post(REENROL, json={**enrolment_body(), "replaces_version": 1})
-    assert (answer.status_code, _code(answer)) == (403, "STEP_UP_REQUIRED")
-    assert service.calls == []
+    assert answer.status_code == 201
+    assert service.calls == [(TENANT, "alice", 1)]
 
 
 @pytest.mark.parametrize(
@@ -274,3 +274,110 @@ def test_the_impact_names_a_pending_key(reenrolment_client):
     assert len(pending["fingerprint_display"].split()) == 10
     assert pending["expires_at"] == expires.isoformat()
     assert reenrolment_client(_claims(), FakeReenrolment()).get(REENROL).json()["pending"] is None
+
+
+def test_version_catalog_does_not_download_the_blob(client_for):
+    client = client_for(_claims())
+    body = enrolment_body()
+    enrolled = client.post("/api/admin/recording/keys", json=body).json()
+    catalog = client.get("/api/admin/recording/v2/keys/me")
+    assert catalog.status_code == 200
+    assert catalog.json()["activeVersion"] == 1
+    version = catalog.json()["versions"][0]
+    assert set(version) == {"version", "state", "fingerprint", "encPub", "sigPub", "createdAt"}
+    assert (version["state"], version["fingerprint"]) == ("active", enrolled["fingerprint"])
+    assert client.get("/api/admin/recording/v2/keys/me/1").json() == {
+        **version,
+        "blob": body["blob"],
+    }
+    assert client.get("/api/admin/recording/v2/keys/me/2").status_code == 404
+
+
+def test_transfer_permission_is_individual_even_for_managers(client_for):
+    client = client_for(_claims(permissions=("ssf.configuration.tenant.manage",)))
+    response = client.get(
+        "/api/admin/recording/v2/access-transfer/candidates", params={"employeeSub": "alice"}
+    )
+    assert (response.status_code, _code(response)) == (403, "PERMISSION_REQUIRED")
+
+
+@pytest.mark.parametrize("session", [{"acr": "pwd"}, {"acr": "mfa", "auth_time": 1}, {}])
+def test_org_preparation_uses_the_authenticated_session(client_for, monkeypatch, session):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from services.api_gateway.routes import recording_lifecycle_auth
+    from tests import recording_crypto_reference as ref
+
+    public = b64url(ref.public_point(1))
+    example = {
+        "preparationId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "keyId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "version": 1,
+        "fingerprint": "f" * 43,
+        "expiresAt": "2030-01-01T00:00:00.000000Z",
+        "challengeEnvelope": {
+            "v": 1,
+            "t": "SSF-ORG-POSSESSION-V1",
+            "R": public,
+            "nonce": "n" * 16,
+            "ct": "c" * 64,
+        },
+    }
+    org, transfer = AsyncMock(), AsyncMock()
+    org.prepare.return_value = example
+    state = SimpleNamespace(recording_organisation_keys=org, recording_access_transfer=transfer)
+    monkeypatch.setattr(recording_lifecycle_auth, "optional_container", lambda req: state)
+    claims = {
+        **_claims(permissions=("ssf.configuration.tenant.manage",), fresh=False),
+        "sid": "user-session",
+        **session,
+    }
+    response = client_for(claims).post(
+        "/api/admin/recording/v2/organisation-keys/preparations",
+        json={"publicKey": public, "expectedActiveKeyId": None},
+    )
+    assert response.status_code == 200 and response.json() == example
+    transfer.authorize.assert_awaited_once_with(TENANT, "alice", "ssf.configuration.tenant.manage")
+
+
+@pytest.mark.parametrize(
+    "body,code",
+    [
+        ({"publicKey": "sensitive-private-input", "expectedActiveKeyId": None}, "INVALID_KEY"),
+        (
+            {
+                "publicKey": "x" * 87,
+                "expectedActiveKeyId": None,
+                "secret_extra_name": "sensitive-private-input",
+            },
+            "INVALID_KEY",
+        ),
+    ],
+)
+def test_invalid_org_dto_has_a_value_free_fixed_error(client_for, body, code):
+    client = client_for(
+        {**_claims(permissions=("ssf.configuration.tenant.manage",)), "sid": "session"}
+    )
+    response = client.post("/api/admin/recording/v2/organisation-keys/preparations", json=body)
+    assert response.status_code == 422 and _code(response) == code
+    assert "sensitive-private-input" not in response.text
+    assert "secret_extra_name" not in response.text
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"sid": None},
+        {"sid": "session", "preferred_username": "service-account-fixture"},
+        {"sid": "session", "gty": "client_credentials"},
+        {"sid": "session", "clientId": "client"},
+    ],
+)
+def test_registry_rejects_non_user_tokens_and_untrusted_actor_headers(client_for, invalid):
+    claims = {**_claims(permissions=("ssf.configuration.tenant.manage",), fresh=False), **invalid}
+    response = client_for(claims).get(
+        "/api/admin/recording/v2/organisation-keys",
+        headers={"X-Actor": "alice", "X-Tenant": "other", "X-Actor-Acr": "mfa"},
+    )
+    assert (response.status_code, _code(response)) == (403, "PERMISSION_REQUIRED")

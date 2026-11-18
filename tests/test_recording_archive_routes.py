@@ -26,8 +26,6 @@ from services.api_gateway.recording.ceremony_model import (
 from services.api_gateway.recording.crypto.encoding import b64url
 from services.api_gateway.routes.recording_archive import (
     get_archive_access,
-    get_trust_source,
-    trust_body,
 )
 from services.api_gateway.tenant_context import require_studio_tenant_context
 from tests.recording_archive_fakes import recovery_record
@@ -132,7 +130,7 @@ def client_for():
         return TestClient(app)
 
     yield build
-    for dependency in (get_archive_access, get_trust_source, require_ssf_user):
+    for dependency in (get_archive_access, require_ssf_user):
         app.dependency_overrides.pop(dependency, None)
 
 
@@ -153,7 +151,6 @@ def test_every_route_needs_a_recording_permission(client_for):
     entry = str(uuid.uuid4())
     for method, path, body in [
         ("GET", BASE, None),
-        ("GET", f"{BASE}/trust", None),
         ("GET", f"{BASE}/{CONVERSATION}", None),
         ("GET", f"{BASE}/{CONVERSATION}/objects/{entry}/record.json", None),
         ("POST", f"{BASE}/{CONVERSATION}/amendments", _amendment_body()),
@@ -288,6 +285,8 @@ def _snapshot(encrypted_share: str) -> CeremonySnapshot:
 
 
 def test_the_trust_body_names_only_public_fields():
+    from services.api_gateway.routes.recording_generations import trust_body
+
     snapshot = _snapshot("SECRET-SHARE")
     body = trust_body(recovery_record(TENANT), [snapshot])
     text = str(body)
@@ -302,15 +301,8 @@ def test_the_trust_body_names_only_public_fields():
     assert body["recovery_key"]["holders_ceremony_id"] == body["recovery_key"]["key_id"]
 
 
-def test_trust_without_an_active_key_is_a_404(client_for):
-    class NoKey:
-        async def active_recovery_key(self, tenant_id):
-            return None
-
-    client = client_for(_claims(), FakeService())
-    app.dependency_overrides[get_trust_source] = lambda: NoKey()
-    response = client.get(f"{BASE}/trust")
-    assert (response.status_code, _code(response)) == (404, "RECOVERY_KEY_MISSING")
+def test_retired_archive_trust_endpoint_is_not_public(client_for):
+    assert client_for(_claims(), FakeService()).get(f"{BASE}/trust").status_code == 404
 
 
 @pytest.mark.parametrize(

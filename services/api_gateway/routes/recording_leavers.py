@@ -1,9 +1,4 @@
-"""An org admin's leaver list and marking (spec §9.8).
-
-Marking needs step-up: it deletes a user's key blob and wraps. Both routes read
-the Studio directory live and answer 503 rather than trust a failed or
-implausible answer.
-"""
+"""Tenant administrators can mark a leaver and revoke their keys after a live Studio directory check."""
 
 from __future__ import annotations
 
@@ -16,7 +11,7 @@ from ..dependencies import optional_container
 from ..recording.crypto.encoding import b64url
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.leavers import KeyHolder, LeaverError, Leavers
-from ..recording.permissions import coded, require_step_up
+from ..recording.permissions import coded
 from ..studio_recording_directory_client import SUB_PATTERN
 from ..studio_runtime_flow import correlation_id_from_request
 from ..value_free_validation import ValueFreeValidationRoute
@@ -89,7 +84,7 @@ async def candidates(
     return {"candidates": [_candidate_body(holder) for holder in found]}
 
 
-@router.post("/{sub}", dependencies=[Depends(require_step_up)])
+@router.post("/{sub}")
 async def mark(
     sub: Sub,
     body: MarkBody,

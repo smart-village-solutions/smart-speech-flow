@@ -146,14 +146,12 @@ def test_the_list_over_http(http):
     assert carol["fingerprint_display"] and carol["enrolled_at"] == NOW.isoformat()
 
 
-def test_marking_over_http_needs_the_admin_and_step_up(http):
+def test_marking_over_http_needs_an_authorized_admin_session(http):
     client, caller, store, _ = http
     caller.be("admin", CUSTODIAN)
     assert _code(client.post(f"{BASE}/alice", json={"key_version": 1})) == "PERMISSION_REQUIRED"
     assert _code(client.get(BASE)) == "PERMISSION_REQUIRED"
     caller.be("admin", MANAGE, fresh=False)
-    assert _code(client.post(f"{BASE}/alice", json={"key_version": 1})) == "STEP_UP_REQUIRED"
-    caller.be("admin", MANAGE)
     response = client.post(f"{BASE}/alice", json={"key_version": 1})
     assert response.status_code == 200
     assert response.json() == {

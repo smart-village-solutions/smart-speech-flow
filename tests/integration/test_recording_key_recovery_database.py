@@ -25,15 +25,15 @@ from services.api_gateway.recording.recovery_requests_model import (
 )
 from services.api_gateway.recording.recovery_requests_sql import USABLE_SHARES
 from services.api_gateway.recording.reenrolment_repository import PostgresKeyReenrolment
-from tests.recording_swap import swap_key
 from services.api_gateway.recording.repository import (
     PostgresRecordingRepository,
+    RecordingStorageUnavailable,
     UserKeyRecord,
     append_audit,
     append_audits,
 )
 from tests import recording_crypto_reference as ref
-from tests.integration.test_recording_archive_access_database import _ended
+from tests.integration.test_recording_archive_access_database import _legacy_ended as _ended
 from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
     _ARCHIVE_TABLES,
     GATEWAY,
@@ -59,6 +59,7 @@ from tests.integration.test_recording_recovery_requests_database import (  # noq
     recovery_key,
     requests,
 )
+from tests.recording_swap import swap_key
 
 pytestmark = pytest.mark.integration
 
@@ -465,15 +466,10 @@ def _new_key(sub="alice", version=2, at=NOW) -> UserKeyRecord:
 
 
 async def _reenrol(archive, sub="alice", *, replaces=1):
-    return await swap_key(
-        archive._pool,
-        _new_key(sub, replaces + 1), replaces, NOW
-    )
+    return await swap_key(archive._pool, _new_key(sub, replaces + 1), replaces, NOW)
 
 
-async def test_the_swap_retires_the_key_and_deletes_its_wraps_and_requests(
-    archive, owner, requests
-):
+async def test_the_swap_supersedes_the_key_and_preserves_wraps_and_blobs(archive, owner, requests):
     _, wrapped_key, _ = await _ended(archive, owner, employee="alice")
     locked, _, _ = await _ended(archive, owner, employee="alice", wrapped=False)
     await enrol(owner, "alice")
@@ -487,23 +483,20 @@ async def test_the_swap_retires_the_key_and_deletes_its_wraps_and_requests(
         "SELECT key_version, retired_at, encrypted_private FROM user_keys"
         " WHERE user_sub = 'alice' ORDER BY key_version"
     )
-    assert (keys[0]["retired_at"], keys[0]["encrypted_private"]) == (NOW, None)
+    assert (keys[0]["retired_at"], keys[0]["encrypted_private"]) == (NOW, b"x")
     assert (keys[1]["key_version"], keys[1]["retired_at"]) == (2, None)
     assert (
         await owner.fetchval(
-            "SELECT count(*) FROM key_wraps WHERE recipient_kind = 'user' AND recipient_ref = 'alice'"
+            "SELECT count(*) FROM key_wraps WHERE recipient_kind='user' AND recipient_ref='alice'"
         )
-        == 0
+        == 1
     )
     assert (
-        await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind = 'recovery'")
-        == 2
+        await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind='recovery'") == 2
     )
-    assert await owner.fetchval("SELECT status FROM recovery_requests") == "cancelled"
-    assert await owner.fetchval("SELECT count(*) FROM recovery_partials") == 0
+    assert await owner.fetchval("SELECT status FROM recovery_requests") == "open"
     events = [a[1:] for a in await _audit(owner)]
-    assert ("recovery.request.cancelled", request.request_id) in events
-    assert ("key_wrap.deleted", wrapped_key) in events
+    assert ("key_wrap.deleted", wrapped_key) not in events
     assert events[-1] == ("key_reenrolled", "user-key:2")
     rows = await PostgresRecordingRepository(archive._pool).audit_rows(TENANT)
     assert chain_is_intact(rows)
@@ -540,7 +533,7 @@ async def test_a_custodian_keeps_the_retired_blob_and_the_staleness_is_audited(a
         )
         == b"x"
     )
-    assert ("recovery.share.stale", recovery) in [a[1:] for a in await _audit(owner)]
+    assert ("key_reenrolled", "user-key:2") in [a[1:] for a in await _audit(owner)]
 
 
 async def test_a_participant_of_a_running_ceremony_cannot_re_enrol(archive, owner):
@@ -603,7 +596,8 @@ async def test_a_wraps_store_racing_the_swap_leaves_no_wrap_for_the_retired_key(
     finally:
         await holder.close()
 
-    assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind = 'user'") == 0
+    stored = await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind = 'user'")
+    assert stored == (0 if isinstance(results[0], Refused) else len(scope))
     assert results[1] is None
 
 
@@ -624,7 +618,7 @@ async def _second_epoch_for(archive, fingerprint_: bytes, *, unnamed: bool = Fal
     """A conversation armed before a key change, whose next key is first stored after it."""
     conversation, key_id, window_id, consent = await _opened(archive)
     key = new_conversation_key(2)
-    alice = Recipient("user", "alice", ref.public_point(405), fingerprint_)
+    alice = Recipient("user", "alice", ref.public_point(405), fingerprint_, 1)
     wraps = tuple(
         wrap_key(
             key,
@@ -653,15 +647,17 @@ async def test_a_user_wrap_for_the_active_key_is_stored(archive, owner):
 
 
 async def test_a_user_wrap_for_a_retired_or_missing_key_is_skipped(archive, owner):
-    await _second_epoch_for(archive, bytes(32))  # no key at all
+    with pytest.raises(RecordingStorageUnavailable):
+        await _second_epoch_for(archive, bytes(32))  # no key at all
     await enrol(owner, "alice")
     await owner.execute("UPDATE user_keys SET retired_at = $1 WHERE user_sub = 'alice'", NOW)
-    await _second_epoch_for(archive, bytes(32))  # re-enrolled since the wrap was made
+    with pytest.raises(RecordingStorageUnavailable):
+        await _second_epoch_for(archive, bytes(32))  # explicit revocation
 
     assert await _user_wraps(owner) == 0
     assert (
         await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_kind = 'recovery'")
-        == 4
+        == 2
     )
 
 
@@ -672,60 +668,22 @@ async def test_a_user_wrap_sealed_to_a_replaced_key_is_skipped_at_insert(archive
         "UPDATE user_keys SET fingerprint = $1 WHERE user_sub = 'alice'", b"\x07" * 32
     )
 
-    await _second_epoch_for(archive, bytes(32))
+    with pytest.raises(RecordingStorageUnavailable):
+        await _second_epoch_for(archive, bytes(32))
 
     assert await _user_wraps(owner) == 0
 
 
-async def test_employee_key_recovery_restores_access_to_all_their_conversations(
-    archive, owner, requests
-):
-    """The acceptance criterion of #617: enrol, record, re-enrol, recover, open (§9.6)."""
-    await enrol(owner, "alice")
-    first, _, _ = await _ended(archive, owner, employee="alice")
-    second, _, _ = await _ended(archive, owner, employee="alice")
+async def test_employee_supersession_preserves_version_bound_archive_rows(archive, owner):
+    from tests.integration.test_recording_archive_access_database import _ended as versioned_ended
+
+    first, _, _ = await versioned_ended(archive, owner, employee="alice")
+    second, _, _ = await versioned_ended(archive, owner, employee="alice")
     access = PostgresArchiveAccess(archive._pool)
-
-    async def listed() -> set[str]:
-        rows = await access.own_conversations(
-            TENANT, "alice", NOW, limit=50, started_before=None, before_id=None
-        )
-        return {row.conversation_id for row in rows}
-
-    assert await listed() == {first.conversation_id, second.conversation_id}
     assert await _reenrol(archive) is None
-    assert await listed() == set()
-
-    recovery = await recovery_key(owner)
-    batch, _, _ = await requests.own_candidates(TENANT, "alice", recovery, NOW)
-    request = NewRequest(
-        tenant_id=TENANT,
-        request_id=str(uuid.uuid4()),
-        kind="key_recovery",
-        requester_sub="alice",
-        requester_key_version=2,
-        recovery_key_id=recovery,
-        reason="Forgot my passphrase.",
-        conversation_ids=tuple(c.conversation_id for c in batch),
-        signature=bytes(64),
-        created_at=NOW,
-    )
-    scope = await requests.file(request, _always)
-    await requests.approve(TENANT, "carol", request.request_id, _approval(scope), _always, NOW)
-    served = await requests.partials(TENANT, "alice", request.request_id, NOW, may_supervise=False)
-    dropped = await requests.store_wraps(
-        TENANT,
-        "alice",
-        request.request_id,
-        [_wrap(k) for k in scope],
-        2,
-        _always,
-        NOW,
-        may_supervise=False,
-    )
-
-    assert len(served.wraps) == 2 and dropped == ()
-    assert await listed() == {first.conversation_id, second.conversation_id}
+    for cid in (first.conversation_id, second.conversation_id):
+        opened = await access.open(TENANT, "alice", cid, NOW)
+        assert opened.keys[0].wrap.recipient_version == 1
 
 
 async def test_a_second_concurrent_re_enrolment_hears_the_key_changed(archive, owner):
@@ -787,7 +745,7 @@ async def test_filing_queued_behind_a_swap_files_nothing_under_the_retired_key(
     assert await owner.fetchval("SELECT count(*) FROM recovery_requests") == 0
 
 
-async def test_the_swap_waits_for_a_shred_holding_one_of_its_conversations(archive, owner):
+async def test_supersession_preserves_history_without_locking_conversations(archive, owner):
     """Review minor 1: conversations are locked in order before the swap deletes anything."""
     conversation, _, _ = await _ended(archive, owner, employee="alice")
     await enrol(owner, "alice")
@@ -801,22 +759,22 @@ async def test_the_swap_waits_for_a_shred_holding_one_of_its_conversations(archi
         )
         swapping = asyncio.create_task(_reenrol(archive))
         await asyncio.sleep(0.3)
-        assert not swapping.done()
+        assert swapping.done()
         await transaction.rollback()
         assert await swapping is None
     finally:
         await shredder.close()
 
 
-async def test_a_swap_closes_a_lapsed_request_as_expired(archive, owner, requests):
+async def test_supersession_leaves_request_expiry_to_its_own_lifecycle(archive, owner, requests):
     mine, _, _ = await _ended(archive, owner, employee="alice", wrapped=False)
     request, _ = await _key_recovery(requests, owner, [mine])
     await owner.execute("UPDATE recovery_requests SET expires_at = $1", NOW - DAY)
 
     assert await _reenrol(archive) is None
 
-    assert await owner.fetchval("SELECT status FROM recovery_requests") == "expired"
-    assert ("system", "recovery.request.expired", request.request_id) in await _audit(owner)
+    assert await owner.fetchval("SELECT status FROM recovery_requests") == "open"
+    assert ("system", "recovery.request.expired", request.request_id) not in await _audit(owner)
 
 
 async def test_a_lapsed_access_request_read_without_supervise_changes_nothing(

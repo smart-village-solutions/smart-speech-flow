@@ -16,8 +16,10 @@ from ..clock import utc_now
 from ..studio_recording_directory_client import RecordingDirectory
 from .archive_access import ArchiveAccess, ArchiveAccessError
 from .crypto import tags
-from .crypto.ecies import Sealed, SealedPayloadError
-from .crypto.signatures import signed_digest, verify_fields, wrap_fields
+from .crypto.ecies import Sealed
+from .crypto.encoding import enc
+from .crypto.lifecycle import envelope_bytes
+from .crypto.signatures import signed_digest, verify_fields
 from .crypto.verification import notes_digest, verification_fields
 from .directory import review_snapshot
 from .permissions import REVIEW, REVIEW_SWORN
@@ -57,6 +59,8 @@ class VerificationStore(Protocol):
     async def excluded(
         self, tenant_id: str, conversation_id: str, subs: Sequence[str], now: datetime
     ) -> frozenset[str]: ...
+
+    async def usable_key(self, tenant_id: str, sub: str, version: int) -> KeyRow | None: ...
 
     async def active_keys(self, tenant_id: str, subs: Sequence[str]) -> dict[str, KeyRow]: ...
 
@@ -110,15 +114,6 @@ async def _stored(work: Awaitable[T]) -> T:
         raise VerificationError("unavailable") from None
 
 
-def _sealed_ephemeral(blob: str) -> bytes | None:
-    if len(blob) > MAX_SEALED_CHARACTERS:
-        return None
-    try:
-        return Sealed.from_json(blob, expected_type=tags.CK_WRAP).ephemeral
-    except SealedPayloadError:
-        return None
-
-
 def _envelope(data: bytes, limit: int) -> bool:
     return ENVELOPE_MIN <= len(data) <= limit and data[0] == 1
 
@@ -143,19 +138,26 @@ def wrap_signed(
     tenant_id: str, conversation_id: str, wrap: AssignWrap, signer: KeyRow, reviewer: KeyRow
 ) -> bool:
     """A browser-made grant: a `ck-wrap` for the reviewer's key, signed by the assigner (A.6)."""
-    ephemeral = _sealed_ephemeral(wrap.blob)
-    if ephemeral is None:
+    if len(wrap.blob) > MAX_SEALED_CHARACTERS:
         return False
-    fields = wrap_fields(
+    try:
+        sealed = Sealed.from_json(wrap.blob, expected_type=tags.CK_WRAP_V2)
+    except ValueError:
+        return False
+    if len(sealed.nonce) != 12 or len(sealed.ciphertext) != 48:
+        return False
+    context = enc(
         tenant_id,
         conversation_id,
         wrap.key_id,
-        ephemeral,
         "user",
         reviewer.sub,
+        reviewer.key_version,
         reviewer.fingerprint,
     )
-    return verify_fields(signer.sig_pub, wrap.signature, tags.WRAP_SIG, *fields)
+    return verify_fields(
+        signer.sig_pub, wrap.signature, tags.WRAP_SIG_V2, context, envelope_bytes(sealed)
+    )
 
 
 class Verifications:
@@ -350,8 +352,8 @@ class Verifications:
         if record.permission_snapshot != snapshot or record.reviewed_head is None:
             raise VerificationError("permissions_changed")
         check_notes(overall, notes)
-        key = (await _stored(self._store.active_keys(tenant_id, [sub]))).get(sub)
-        if key is None:
+        key = await _stored(self._store.usable_key(tenant_id, sub, record.reviewer_key_version))
+        if key is None or key.fingerprint != record.reviewer_fingerprint:
             raise VerificationError("key_changed")
         digest = notes_digest(overall, [(n.entry_id, n.key_id, n.ciphertext) for n in notes])
         fields = verification_fields(

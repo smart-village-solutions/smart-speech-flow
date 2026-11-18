@@ -45,6 +45,14 @@ class KeyUnreadableError(Exception):
 class KeyStore(Protocol):
     async def active_user_key(self, tenant_id: str, user_sub: str) -> UserKeyRecord | None: ...
 
+    async def user_key_versions(self, tenant_id: str, user_sub: str) -> list[UserKeyRecord]: ...
+
+    async def usable_user_key(
+        self, tenant_id: str, user_sub: str, version: int
+    ) -> UserKeyRecord | None: ...
+
+    async def gateway_keys(self) -> tuple[tuple[str, bytes], ...]: ...
+
     async def enrol_user_key(self, record: UserKeyRecord) -> int:
         """Inserts the user's next version, with its audit event; returns that version."""
         ...
@@ -68,6 +76,7 @@ class OwnKey:
     created_at: datetime
     # What a re-enrolment names as the key it replaces (§9.6).
     key_version: int = 1
+    state: str = "active"
 
 
 def _is_count(value: Any, minimum: int, maximum: int | None = None) -> bool:
@@ -194,8 +203,20 @@ class KeyEnrolmentService:
         await self._repository.enrol_user_key(record)
         return record.fingerprint
 
-    async def own_key(self, tenant_id: str, user_sub: str) -> OwnKey | None:
-        record = await self._repository.active_user_key(tenant_id, user_sub)
+    async def versions(self, tenant_id: str, user_sub: str) -> list[UserKeyRecord]:
+        return await self._repository.user_key_versions(tenant_id, user_sub)
+
+    async def gateway_keys(self) -> tuple[tuple[str, bytes], ...]:
+        return await self._repository.gateway_keys()
+
+    async def own_key(
+        self, tenant_id: str, user_sub: str, version: int | None = None
+    ) -> OwnKey | None:
+        record = (
+            await self._repository.active_user_key(tenant_id, user_sub)
+            if version is None
+            else await self._repository.usable_user_key(tenant_id, user_sub, version)
+        )
         if record is None or record.encrypted_private is None:
             return None
         try:
@@ -222,4 +243,5 @@ class KeyEnrolmentService:
             blob,
             record.created_at,
             record.key_version,
+            record.state,
         )

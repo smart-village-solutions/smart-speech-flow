@@ -55,17 +55,14 @@ def grant(
     tenant_id: str = TENANT,
 ) -> AssignWrap:
     context = ecies.ck_wrap_context(tenant_id, conversation_id, key_id, "user", reviewer.sub)
-    sealed = ecies.seal(tags.CK_WRAP, reviewer.key.enc_pub, os.urandom(32), context)
-    fields = wrap_fields(
-        tenant_id,
-        conversation_id,
-        key_id,
-        sealed.ephemeral,
-        "user",
-        reviewer.sub,
-        reviewer.key.fingerprint,
+    from services.api_gateway.recording.crypto.encoding import enc
+    from services.api_gateway.recording.crypto.lifecycle import envelope_bytes
+
+    context = (*context, reviewer.key.key_version, reviewer.key.fingerprint)
+    sealed = ecies.seal(tags.CK_WRAP_V2, reviewer.key.enc_pub, os.urandom(32), context)
+    signature = sign_fields(
+        ref.private_key(signer.sig_scalar), tags.WRAP_SIG_V2, enc(*context), envelope_bytes(sealed)
     )
-    signature = sign_fields(ref.private_key(signer.sig_scalar), tags.WRAP_SIG, *fields)
     return AssignWrap(key_id, sealed.to_json(), signature)
 
 

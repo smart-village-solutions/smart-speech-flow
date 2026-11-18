@@ -17,6 +17,7 @@ from typing import Any, Final, Self
 import asyncpg
 
 from .audit import GENESIS, AuditEvent, AuditRow, audit_hash
+from .permissions import coded
 
 COMMAND_TIMEOUT_SECONDS: Final[float] = 5.0
 DRIVER_FAILURE: Final = (
@@ -49,10 +50,20 @@ class UserKeyRecord:
     created_at: datetime
     # Where a re-enrolment of this key is confirmed (§9.9); None once retired.
     email: str | None = None
+    state: str = "active"
 
 
 async def bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
     await connection.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", tenant_id)
+    if (
+        await connection.fetchval(
+            "SELECT generation=1 FROM recording_protocol WHERE tenant_id=$1", tenant_id
+        )
+        is True
+    ):
+        raise coded(
+            409, "RECORDING_PROTOCOL_UPGRADE_REQUIRED", "Recording protocol upgrade required"
+        )
 
 
 async def append_audit(connection: asyncpg.Connection, event: AuditEvent) -> None:
@@ -133,6 +144,7 @@ def user_key_from_row(row: Any) -> UserKeyRecord:
         encrypted_private=None if encrypted is None else bytes(encrypted),
         created_at=row["created_at"],
         email=row.get("email"),
+        state=row.get("state", "active"),
     )
 
 
@@ -173,6 +185,34 @@ class PostgresRecordingRepository:
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
         return None if row is None else user_key_from_row(row)
+
+    async def user_key_versions(self, tenant_id: str, user_sub: str) -> list[UserKeyRecord]:
+        # The catalog query never fetches the server-layer envelope.
+        return await self._versions(tenant_id, user_sub, None)
+
+    async def usable_user_key(
+        self, tenant_id: str, user_sub: str, version: int
+    ) -> UserKeyRecord | None:
+        rows = await self._versions(tenant_id, user_sub, version)
+        return next(iter(rows), None)
+
+    async def _versions(
+        self, tenant_id: str, user_sub: str, version: int | None
+    ) -> list[UserKeyRecord]:
+        sql = (
+            "SELECT tenant_id,user_sub,key_version,enc_pub,sig_pub,fingerprint,created_at,state,"
+            " NULL AS encrypted_private FROM user_keys WHERE user_sub=$1 ORDER BY key_version DESC"
+            if version is None
+            else "SELECT * FROM user_keys WHERE user_sub=$1 AND key_version=$2 "
+            "AND state IN ('active','superseded')"
+        )
+        args = (user_sub,) if version is None else (user_sub, version)
+        try:
+            async with self._pool.acquire() as connection, connection.transaction():
+                await bind_tenant(connection, tenant_id)
+                return [user_key_from_row(row) for row in await connection.fetch(sql, *args)]
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
 
     async def enrol_user_key(self, record: UserKeyRecord) -> int:
         """Inserts `record` as the user's next version and returns it.

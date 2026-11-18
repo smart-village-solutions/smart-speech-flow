@@ -207,8 +207,8 @@ async def test_an_open_groups_stored_types_and_merges_wraps_by_key():
         {"head_seq": 2, "head_hash": b"\x02" * 32, "tsa_token": b"\x30\x00"},
     ]
     wraps = [
-        _wrap(KEY_2, 2, "recovery"),
-        _wrap(KEY_1, 1, "recovery"),
+        _wrap(KEY_2, 2, "organisation"),
+        _wrap(KEY_1, 1, "organisation"),
         _wrap(KEY_1, 1, "user", "alice"),
     ]
     repository, connection = access(
@@ -242,11 +242,12 @@ async def test_openable_says_whether_the_rule_holds():
     assert audited(connection) == 0
 
 
-async def test_the_supervisor_branch_requires_wraps_the_supervisor_made():
+async def test_archive_read_requires_a_usable_owner_or_transfer_grant():
     """A reviewer grant is assigner-made, so it never opens a recovered conversation (§10.7)."""
     repository, connection = access({})
     await repository.openable(TENANT, "sam", CONVERSATION, NOW, supervisor=True)
-    assert "w.creator_ref <> $1" in connection.calls[-1]
+    assert "g.reason IN ('owner','transfer')" in connection.calls[-1]
+    assert "g.key_version=w.recipient_version" in connection.calls[-1]
 
 
 async def test_an_object_is_located_by_its_listed_type():

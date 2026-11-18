@@ -1,8 +1,4 @@
-"""Supervisor routes of recording retention (spec §16, §16.1).
-
-Extensions and legal holds are decisions the database applies, each with a
-reason and an audit event; changes need a fresh MFA login (spec §2).
-"""
+"""Supervisors can extend retention and manage legal holds. Each decision records its reason and audit event."""
 
 from __future__ import annotations
 
@@ -15,7 +11,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from ..clock import utc_now
 from ..dependencies import optional_container
-from ..recording.permissions import SUPERVISE, coded, require_permission, require_step_up
+from ..recording.permissions import SUPERVISE, coded, require_permission
 from ..recording.repository import RecordingStorageUnavailable
 from ..recording.retention.decisions import (
     UNENDED_GRACE,
@@ -156,7 +152,7 @@ async def one_conversation(
     return (await _existing(decisions, context.tenant_id, claims["sub"], conversation_id)).public()
 
 
-@router.post("/{conversation_id}/retention", dependencies=[Depends(require_step_up)])
+@router.post("/{conversation_id}/retention")
 async def extend_retention(
     conversation_id: uuid.UUID,
     body: ExtensionBody,
@@ -174,7 +170,7 @@ async def extend_retention(
     return summary.public()
 
 
-@router.post("/{conversation_id}/legal-hold", dependencies=[Depends(require_step_up)])
+@router.post("/{conversation_id}/legal-hold")
 async def legal_hold(
     conversation_id: uuid.UUID,
     body: HoldBody,

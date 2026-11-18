@@ -317,7 +317,10 @@ async def test_a_decline_closes_releases_and_audits():
 def _deciding(**changes) -> dict[str, object]:
     return (
         {
-            "AND retired_at IS NULL FOR SHARE": {"key_version": 1, "fingerprint": bytes([1]) * 32},
+            "AND state IN ('active','superseded') FOR SHARE": {
+                "key_version": 1,
+                "fingerprint": bytes([1]) * 32,
+            },
             "SELECT entry_id, key_id, seq": [],
             "RETURNING *": verification_row(status="approved", outcome="approved"),
             "RETURNING w.key_id": [{"key_id": uuid.UUID(KEY_1)}],
@@ -356,7 +359,7 @@ async def test_a_decision_writes_notes_freezes_releases_and_audits_with_its_dige
 async def test_a_decision_is_refused_for_a_changed_key_a_waiting_record_or_bad_notes():
     from services.api_gateway.recording.verification_model import NotePost
 
-    other_key, _ = repository(_deciding(**{"AND retired_at IS NULL FOR SHARE": None}))
+    other_key, _ = repository(_deciding(**{"AND state IN ('active','superseded') FOR SHARE": None}))
     assert await other_key.decide(TENANT, "rita", VERIFICATION, _post(), NOW) == Refused(
         "key_changed"
     )

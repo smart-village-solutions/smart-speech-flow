@@ -7,7 +7,6 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.recording.ceremony import CeremonyService
 from services.api_gateway.recording.ceremony_model import (
@@ -30,6 +29,7 @@ from tests.recording_ceremony_actors import (
     gateway_secrets,
 )
 from tests.recording_fakes import FakeCeremonyRepository, FakeCustodianDirectory
+from tests.recording_legacy_http import app
 
 BASE = "/api/admin/recording/ceremony"
 MANAGE = "ssf.configuration.tenant.manage"
@@ -206,15 +206,15 @@ def test_each_route_requires_its_permission(http, method, path, permission):
     assert _code(response) == "PERMISSION_REQUIRED"
 
 
-def test_starting_dealing_and_confirming_need_a_fresh_mfa_login(http):
+def test_starting_dealing_and_confirming_use_the_authenticated_session(http):
     client, caller, _ = http
     caller.be(ORG_ADMIN, MANAGE, fresh=False)
     body = {"k": 2, "custodians": ["anna", "bernd", "carla"]}
-    assert _code(client.post(BASE, json=body)) == "STEP_UP_REQUIRED"
+    assert client.post(BASE, json=body).status_code == 201
     caller.be("anna", CUSTODIAN, fresh=False)
     some_id = "00000000-0000-4000-8000-000000000000"
-    assert _code(client.post(f"{BASE}/{some_id}/dealings", json={})) == "STEP_UP_REQUIRED"
-    assert _code(client.post(f"{BASE}/{some_id}/confirmations", json={})) == "STEP_UP_REQUIRED"
+    assert client.post(f"{BASE}/{some_id}/dealings", json={}).status_code == 422
+    assert client.post(f"{BASE}/{some_id}/confirmations", json={}).status_code == 422
 
 
 def test_a_custodian_can_abort_without_a_fresh_login(http):

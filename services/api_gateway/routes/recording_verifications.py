@@ -1,8 +1,4 @@
-"""Requesting verification of an archived conversation (spec §10.7).
-
-Whoever may open the conversation lists eligible reviewers and assigns one.
-Assigning hands content to another person, so it needs step-up.
-"""
+"""Authorized archive readers can list eligible reviewers and assign a conversation for verification."""
 
 from __future__ import annotations
 
@@ -21,7 +17,6 @@ from ..recording.permissions import (
     coded,
     permissions_of,
     require_permission,
-    require_step_up,
 )
 from ..recording.verification import VerificationError, Verifications
 from ..recording.verification_model import (
@@ -113,6 +108,8 @@ def record_body(row: VerificationRow) -> dict[str, Any]:
         "requested_by": row.requested_by,
         "requested_at": row.requested_at.isoformat(),
         "reviewer_sub": row.reviewer_sub,
+        "reviewerKeyVersion": row.reviewer_key_version,
+        "reviewerFingerprint": b64url(row.reviewer_fingerprint),
         "reviewer_key_version": row.reviewer_key_version,
         "reviewer_fingerprint": b64url(row.reviewer_fingerprint),
         "started_at": _time(row.started_at),
@@ -180,7 +177,6 @@ async def reviewers(
 @router.post(
     "/{conversation_id}/verifications",
     status_code=201,
-    dependencies=[Depends(require_step_up)],
 )
 async def assign(
     conversation_id: uuid.UUID,

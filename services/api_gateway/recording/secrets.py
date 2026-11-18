@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from .crypto import aead
 from .crypto.curve import point_from_public_key
+from .crypto.encoding import enc
 
 SIGNING_KEY_FILE_ENV: Final[str] = "SSF_RECORDING_SIGNING_KEY_FILE"
 BLOB_KEY_FILE_ENV: Final[str] = "SSF_RECORDING_BLOB_KEY_FILE"
@@ -48,6 +49,16 @@ class ServerLayer:
 
     def open(self, envelope: bytes, *, tenant_id: str, user_sub: str) -> bytes:
         return aead.open_(self._key, envelope, aead.server_layer_aad(tenant_id, user_sub))
+
+    def seal_nonce(self, nonce: bytes, tenant: str, preparation: str, purpose: str) -> bytes:
+        return aead.seal(
+            self._key, nonce, enc("SSF-PREPARATION-STORAGE-V1", tenant, preparation, purpose)
+        )
+
+    def open_nonce(self, envelope: bytes, tenant: str, preparation: str, purpose: str) -> bytes:
+        return aead.open_(
+            self._key, envelope, enc("SSF-PREPARATION-STORAGE-V1", tenant, preparation, purpose)
+        )
 
 
 def gateway_key_id(public_key: bytes) -> str:

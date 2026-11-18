@@ -30,9 +30,8 @@ from services.api_gateway.recording.reenrolment_repository import (
 from services.api_gateway.recording.repository import UserKeyRecord, bind_tenant
 from services.api_gateway.recording.resharing import ResharingService
 from services.api_gateway.recording.resharing_model import ResharingStart
-from services.api_gateway.recording.verification_sql import APPROVED as _APPROVED
 from tests import recording_crypto_reference as ref
-from tests.integration.test_recording_archive_access_database import _ended
+from tests.integration.test_recording_archive_access_database import _legacy_ended as _ended
 from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
     _ARCHIVE_TABLES,
     NOW,
@@ -59,6 +58,17 @@ from tests.recording_ceremony_actors import (
 )
 from tests.recording_fakes import FakeCustodianDirectory, ticking_clock
 from tests.recording_swap import swap_key
+
+_APPROVED = (
+    "(SELECT count(DISTINCT d.holder_index) FROM recovery_decisions d"
+    "  WHERE d.tenant_id = r.tenant_id AND d.request_id = r.request_id"
+    "  AND d.decision = 'approved' AND NOT EXISTS (SELECT 1 FROM recovery_rejections j"
+    "   WHERE j.tenant_id = d.tenant_id AND j.request_id = d.request_id"
+    "   AND j.holder_index = d.holder_index AND j.attempt = d.attempt))"
+    # The k of the holders it was filed under: a later resharing never revokes it (§9.7).
+    " >= (SELECT g.k FROM recovery_ceremonies g"
+    "  WHERE g.tenant_id = r.tenant_id AND g.ceremony_id = r.holders_ceremony_id)"
+)
 
 pytestmark = pytest.mark.integration
 

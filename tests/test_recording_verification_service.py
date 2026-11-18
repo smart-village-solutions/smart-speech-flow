@@ -57,6 +57,7 @@ class FakeAccess:
 class FakeStore:
     def __init__(self, *, keys=(ALICE, RITA, RALF), excluded=frozenset(), assigned=None) -> None:
         self.keys = {p.sub: p.key for p in keys}
+        self.history = {(p.sub, p.key.key_version): p.key for p in keys}
         self._excluded = excluded
         self.assigned = assigned
         self.assignments: list = []
@@ -99,6 +100,9 @@ class FakeStore:
         if self.down:
             raise RecordingStorageUnavailable("down")
         return frozenset(subs) & self._excluded
+
+    async def usable_key(self, tenant_id, sub, version):
+        return self.history.get((sub, version))
 
     async def active_keys(self, tenant_id, subs):
         return {sub: self.keys[sub] for sub in subs if sub in self.keys}
@@ -423,3 +427,11 @@ async def test_a_decision_without_an_active_key_or_with_bad_notes_is_refused():
     store.answer = Refused("key_changed")
     with pytest.raises(VerificationError, match="key_changed"):
         await service(store).decide(TENANT, "rita", "v-1", "approved", None, [], _signed(), "c")
+
+
+async def test_reviewer_completes_open_review_with_superseded_assigned_key():
+    store = FakeStore()
+    store.record = _in_review()
+    store.keys["rita"] = person("rita", 44, 2).key
+    await service(store).decide(TENANT, "rita", "v-1", "approved", None, [], _signed(), "c")
+    assert store.decisions[0].signer_key_version == 1

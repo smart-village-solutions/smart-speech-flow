@@ -16,7 +16,6 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from ..dependencies import optional_container
 from ..recording.archive_access import ArchiveAccess, ArchiveAccessError
 from ..recording.archive_access_repository import OpenedConversation
-from ..recording.ceremony_repository import PostgresCeremonyRepository
 from ..recording.crypto.encoding import b64url, from_b64url
 from ..recording.permissions import (
     RECORDING_PERMISSIONS,
@@ -26,13 +25,11 @@ from ..recording.permissions import (
     permissions_of,
     require_permission,
 )
-from ..recording.repository import RecordingStorageUnavailable
 from ..recording.storage.archive import OBJECT_TYPES
 from ..recording.verification_model import VerificationResult, summary
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
-from .recording_generations import trust_body
 from .recording_verifications import record_body
 
 router = APIRouter(
@@ -65,17 +62,7 @@ def get_archive_access(request: Request) -> ArchiveAccess:
     return service
 
 
-def get_trust_source(request: Request) -> PostgresCeremonyRepository:
-    repository: PostgresCeremonyRepository | None = getattr(
-        optional_container(request), "recording_repository", None
-    )
-    if repository is None:
-        raise coded(503, "RECORDING_UNAVAILABLE", "Recording is not available")
-    return repository
-
-
 Access = Annotated[ArchiveAccess, Depends(get_archive_access)]
-TrustSource = Annotated[PostgresCeremonyRepository, Depends(get_trust_source)]
 
 
 class AmendmentBody(BaseModel):
@@ -146,6 +133,9 @@ def opened_body(
 ) -> dict[str, Any]:
     known = names or {}
     return {
+        "requiredKeyVersions": sorted(
+            {k.wrap.recipient_version for k in opened.keys if k.wrap and k.wrap.recipient_version}
+        ),
         "verifications": [_result_body(result, known) for result in opened.verifications],
         "conversation": {
             "conversation_id": opened.conversation_id,
@@ -203,6 +193,12 @@ def opened_body(
                     if key.wrap is None
                     else {
                         "blob": key.wrap.blob,
+                        "recipient_version": key.wrap.recipient_version,
+                        "recipient_fingerprint": (
+                            b64url(key.wrap.recipient_fingerprint)
+                            if key.wrap.recipient_fingerprint
+                            else None
+                        ),
                         "creator_ref": key.wrap.creator_ref,
                         "creator_signature": b64url(key.wrap.creator_signature),
                     }
@@ -246,21 +242,7 @@ async def list_own(
     }
 
 
-@router.get("/trust")
-async def trust(
-    context: TenantContext, claims: RecordingUser, source: TrustSource
-) -> dict[str, Any]:
-    try:
-        key = await source.active_recovery_key(context.tenant_id)
-        chain = [] if key is None else await source.chain(context.tenant_id, key.key_id)
-    except RecordingStorageUnavailable:
-        raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
-    if key is None or not chain:
-        raise coded(404, "RECOVERY_KEY_MISSING", "No active recovery key")
-    return trust_body(key, chain)
-
-
-@router.get("/{conversation_id}")
+@router.get("/{conversation_id:uuid}")
 async def open_one(
     conversation_id: uuid.UUID,
     request: Request,

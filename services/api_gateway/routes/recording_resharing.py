@@ -1,10 +1,4 @@
-"""Staff routes of a resharing (spec §9.7).
-
-An org admin starts it, with step-up. A custodian dealer fetches its share and
-the key that opens it, then deals through the ceremony's dealing route. The
-ceremony device types in paper sheets and deals them here, without step-up: a
-redirect would wipe the typed sheets, as for the paper confirmation.
-"""
+"""Isolated legacy resharing routes for authorized administrators and custodians."""
 
 from __future__ import annotations
 
@@ -19,7 +13,7 @@ from ..recording.ceremony_model import CeremonyError, DealingSubmission
 from ..recording.crypto.encoding import b64url, scalar_from_bytes
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.keys import KeyUnreadableError
-from ..recording.permissions import coded, require_step_up
+from ..recording.permissions import coded
 from ..recording.repository import RecordingStorageUnavailable
 from ..recording.resharing import ResharingService
 from ..recording.resharing_model import ResharingStart
@@ -75,9 +69,7 @@ class PaperDealingBody(BaseModel):
     subshares: dict[int, str] = Field(min_length=1, max_length=15)
 
 
-@router.post(
-    "/resharing", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_step_up)]
-)
+@router.post("/resharing", status_code=status.HTTP_201_CREATED)
 async def start_resharing(
     body: ResharingBody,
     request: Request,

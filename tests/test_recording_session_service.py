@@ -157,7 +157,7 @@ async def test_a_request_announces_asking_to_both_and_asks_only_the_guest(h) -> 
             ),
             "RECORDING_DISABLED",
         ),
-        (lambda h: setattr(h, "recovery_key", False), "RECOVERY_KEY_MISSING"),
+        (lambda h: setattr(h, "recovery_key", False), "ORGANISATION_KEY_MISSING"),
         (lambda h: setattr(h.announcer, "guest_connected", False), "GUEST_NOT_CONNECTED"),
     ],
 )

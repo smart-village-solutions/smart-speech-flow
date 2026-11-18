@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.recording.crypto.encoding import b64url
 from services.api_gateway.recording.recovery_requests import (
@@ -31,6 +30,7 @@ from services.api_gateway.recording.recovery_requests_model import (
 )
 from services.api_gateway.routes.recording_recovery import _ANSWERS, get_recovery_requests
 from services.api_gateway.tenant_context import require_studio_tenant_context
+from tests.recording_legacy_http import app
 
 TENANT = "tenant-test"
 BASE = "/api/admin/recording/recovery"
@@ -303,18 +303,20 @@ def test_approver_routes_need_the_custodian_permission(client_for, method, path,
         (*APPROVER_ROUTES[3], CUSTODIAN),
     ],
 )
-def test_filing_approving_and_declining_need_a_fresh_step_up(
+def test_filing_approving_and_declining_use_the_authenticated_session(
     client_for, method, path, body, permission
 ):
     service = FakeService()
     client = client_for(_claims(permission, stepped_up=False), service)
     response = _send(client, method, path, body)
-    assert (response.status_code, _code(response)) == (403, "STEP_UP_REQUIRED")
-    assert service.calls == []
+    assert response.status_code in (200, 201, 204)
+    assert service.calls
 
 
 @pytest.mark.parametrize(("method", "path", "body"), REQUESTER_ROUTES[5:])
-def test_storing_cancelling_and_reporting_need_no_step_up(client_for, method, path, body):
+def test_storing_cancelling_and_reporting_use_the_authenticated_session(
+    client_for, method, path, body
+):
     client = client_for(_claims(SUPERVISE, stepped_up=False), FakeService())
     assert _send(client, method, path, body).status_code in {200, 204}
 

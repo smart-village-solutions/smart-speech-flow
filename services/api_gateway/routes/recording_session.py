@@ -43,7 +43,11 @@ router = APIRouter(tags=["recording"], route_class=ValueFreeValidationRoute)
 ADMIN = "/api/admin/session/{session_id}/recording"
 CUSTOMER = "/api/customer/session/{session_id}/recording"
 # Studio unreachable, or the archive failing to record a yes: refusals a retry may cure.
-_UNAVAILABLE_STATUS = {"RECORDING_POLICY_UNAVAILABLE": 503, "ARCHIVE_WRITE_FAILED": 503}
+_UNAVAILABLE_STATUS = {
+    "RECORDING_UNAVAILABLE": 503,
+    "RECORDING_POLICY_UNAVAILABLE": 503,
+    "ARCHIVE_WRITE_FAILED": 503,
+}
 
 Claims = Annotated[dict[str, Any], Depends(require_ssf_user)]
 AdminKey = Annotated[TenantSessionKey, Depends(require_admin_session_key)]
@@ -131,7 +135,7 @@ async def admin_recording_state(
         reason = "PERMISSION_REQUIRED"
     else:
         try:
-            policy = await sessions.check_available(key.tenant_id)
+            policy = await sessions.check_available(key.tenant_id, claims["sub"])
             id_check = policy.id_check
             release = staff_release(policy)
         except RecordingUnavailableError as error:

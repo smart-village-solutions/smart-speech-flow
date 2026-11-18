@@ -57,7 +57,10 @@ class RecordingDirectoryUser(BaseModel):
     @field_validator("permissions")
     @classmethod
     def validate_permissions(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not all(PERMISSION_PATTERN.fullmatch(item) for item in value):
+        if not all(
+            item == "ssf.configuration.tenant.manage" or PERMISSION_PATTERN.fullmatch(item)
+            for item in value
+        ):
             raise ValueError("permissions must be ssf.recording.* names")
         return value
 

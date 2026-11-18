@@ -25,7 +25,6 @@ from ..recording.permissions import (
     coded,
     permissions_of,
     require_permission,
-    require_step_up,
 )
 from ..recording.recovery_requests import ApprovalView, RecoveryRequestError, RecoveryRequests
 from ..recording.recovery_requests_model import (
@@ -52,7 +51,6 @@ Supervisor = Annotated[dict[str, Any], Depends(require_permission(SUPERVISE))]
 Requester = Annotated[dict[str, Any], Depends(require_permission(*RECORDING_PERMISSIONS))]
 Custodian = Annotated[dict[str, Any], Depends(require_permission(CUSTODIAN))]
 TenantContext = Annotated[StudioTenantContext, Depends(require_studio_tenant_context)]
-StepUp = [Depends(require_step_up)]
 _SIGNATURE = 86  # 64 bytes in unpadded base64url
 _SEALED = 1024
 
@@ -343,7 +341,7 @@ async def own_candidates(
     }
 
 
-@router.post("/requests", status_code=201, dependencies=StepUp)
+@router.post("/requests", status_code=201)
 async def file_request(
     body: FileBody, context: TenantContext, claims: Requester, service: Requests
 ) -> dict[str, Any]:
@@ -522,7 +520,7 @@ async def approval(
     return _approval_body(view)
 
 
-@router.post("/approvals/{request_id}", status_code=201, dependencies=StepUp)
+@router.post("/approvals/{request_id}", status_code=201)
 async def approve(
     request_id: uuid.UUID,
     body: ApproveBody,
@@ -544,7 +542,7 @@ async def approve(
     return Response(status_code=201)
 
 
-@router.post("/approvals/{request_id}/decline", status_code=204, dependencies=StepUp)
+@router.post("/approvals/{request_id}/decline", status_code=204)
 async def decline(
     request_id: uuid.UUID,
     body: ReasonBody,

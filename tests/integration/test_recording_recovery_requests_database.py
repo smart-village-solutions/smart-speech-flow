@@ -23,7 +23,7 @@ from services.api_gateway.recording.recovery_requests_repository import (
     PostgresRecoveryRequests,
 )
 from tests import recording_crypto_reference as ref
-from tests.integration.test_recording_archive_access_database import _ended
+from tests.integration.test_recording_archive_access_database import _legacy_ended as _ended
 from tests.integration.test_recording_archive_database import (  # noqa: F401 - fixtures
     NOW,
     TENANT,
@@ -952,7 +952,13 @@ async def test_storing_wraps_is_refused_while_the_requester_reviews_the_conversa
     await _under_review(owner, conversation)
 
     refused = await requests.store_wraps(
-        TENANT, "sam", request.request_id, [_wrap(k) for k in scope], 1, _always, NOW,
+        TENANT,
+        "sam",
+        request.request_id,
+        [_wrap(k) for k in scope],
+        1,
+        _always,
+        NOW,
         may_supervise=True,
     )
 

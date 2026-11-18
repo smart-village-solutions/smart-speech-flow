@@ -71,6 +71,14 @@ async def retire_key(
     await _retire(connection, sub, old["key_version"], custodian_of, now, left)
     events += await _cancel_pending(connection, tenant_id, sub, actor, now)
     events += await _withdraw_assignments(connection, tenant_id, sub, actor, now)
+    if left:
+        await connection.execute(
+            "UPDATE user_keys SET left_at=$2,encrypted_private=NULL,email=NULL "
+            "WHERE user_sub=$1 AND state='superseded'",
+            sub,
+            now,
+        )
+        await connection.execute("DELETE FROM key_grants WHERE user_sub=$1", sub)
     deleted = await _delete_user_wraps(connection, tenant_id, sub, actor, now)
     return Retired(events + deleted, custodian_of, len(deleted))
 
@@ -197,3 +205,51 @@ async def _withdraw_assignments(
         )
         for vid in ids
     ]
+
+
+async def revoke_personal_version(
+    db: asyncpg.Connection, tenant: str, actor: str, sub: str, version: int, now: datetime
+) -> None:
+    from .preparations import error
+    from .repository import append_audit
+
+    state = await db.fetchval(
+        "SELECT state FROM user_keys WHERE user_sub=$1 AND key_version=$2 FOR UPDATE", sub, version
+    )
+    if state is None:
+        raise error(404, "KEY_NOT_ENROLLED")
+    if state in ("revoked", "left"):
+        return
+    await db.execute(
+        "SELECT 1 FROM conversations c WHERE EXISTS (SELECT 1 FROM key_grants g JOIN conversation_keys k USING (tenant_id,key_id) "
+        "WHERE g.user_sub=$1 AND g.key_version=$2 AND k.conversation_id=c.conversation_id) ORDER BY c.conversation_id FOR UPDATE",
+        sub,
+        version,
+    )
+    records = await db.fetch(
+        "SELECT verification_id FROM verifications WHERE reviewer_sub=$1 AND reviewer_key_version=$2 "
+        "AND status IN ('awaiting','in_review') ORDER BY verification_id FOR UPDATE",
+        sub,
+        version,
+    )
+    await close_records(
+        db, [r["verification_id"] for r in records], "withdrawn", "key_retired", now
+    )
+    await db.execute(
+        "UPDATE user_keys SET retired_at=COALESCE(retired_at,$3),superseded_at=NULL,encrypted_private=NULL,email=NULL WHERE user_sub=$1 AND key_version=$2",
+        sub,
+        version,
+        now,
+    )
+    await db.execute(
+        "DELETE FROM user_key_reenrolments WHERE user_sub=$1 AND replaces_version=$2", sub, version
+    )
+    await db.execute("DELETE FROM key_grants WHERE user_sub=$1 AND key_version=$2", sub, version)
+    await db.execute(
+        "DELETE FROM key_wraps WHERE recipient_kind='user' AND recipient_ref=$1 AND recipient_version=$2",
+        sub,
+        version,
+    )
+    await append_audit(
+        db, AuditEvent(tenant, actor, "recording.key.revoked", reenrolment_ref(sub, version), now)
+    )

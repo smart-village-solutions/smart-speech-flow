@@ -1,9 +1,4 @@
-"""Staff routes of recording mode: personal keys (spec §8.3, §9.6).
-
-Any holder of an `ssf.recording.*` permission may hold keys. Enrolment and
-re-enrolment need a fresh MFA login, because whoever enrols decides which key
-future recordings are wrapped for.
-"""
+"""Personal key enrolment, confirmed replacement and historical version access for authenticated recording users."""
 
 from __future__ import annotations
 
@@ -17,11 +12,11 @@ from ..dependencies import get_studio_runtime_flow, optional_container
 from ..recording.crypto.encoding import b64url, from_b64url
 from ..recording.crypto.transcript import display_fingerprint
 from ..recording.keys import Enrolment, KeyEnrolmentService, KeyUnreadableError
+from ..recording.lifecycle_models import PersonalBlob, Signers, VersionCatalog
 from ..recording.permissions import (
     RECORDING_PERMISSIONS,
     coded,
     require_permission,
-    require_step_up,
     verified_email,
 )
 from ..recording.reenrolment import KeyReenrolment, ReenrolmentError
@@ -32,6 +27,7 @@ from ..studio_v1 import StudioV1ClientError
 from ..studio_v2 import StudioContractError
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
+from .recording_organisation_keys import router as organisation_router
 
 router = APIRouter(
     prefix="/api/admin/recording", tags=["recording"], route_class=ValueFreeValidationRoute
@@ -117,7 +113,6 @@ async def own_key(
 @router.post(
     "/keys",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_step_up)],
 )
 async def enrol_key(
     body: EnrolmentBody, context: TenantContext, claims: RecordingUser, service: KeyService
@@ -140,7 +135,6 @@ async def enrol_key(
 @router.post(
     "/keys/reenrolment",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_step_up)],
 )
 async def reenrol_key(
     body: ReenrolmentBody, context: TenantContext, claims: RecordingUser, service: Reenrolment
@@ -199,3 +193,57 @@ async def key_policy(
     return {
         "passphrase_file_enabled": policy is not None and policy.passphrase_file_enabled is True
     }
+
+
+def _version_metadata(record: Any) -> dict[str, Any]:
+    return {
+        "version": record.key_version,
+        "state": record.state,
+        "fingerprint": b64url(record.fingerprint),
+        "encPub": b64url(record.enc_pub),
+        "sigPub": b64url(record.sig_pub),
+        "createdAt": record.created_at.isoformat(),
+    }
+
+
+@router.get("/v2/keys/me", response_model=VersionCatalog)
+async def personal_key_versions(
+    context: TenantContext, claims: RecordingUser, service: KeyService
+) -> dict[str, Any]:
+    try:
+        versions = await service.versions(context.tenant_id, claims["sub"])
+    except RecordingStorageUnavailable:
+        raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
+    return {
+        "activeVersion": next((key.key_version for key in versions if key.state == "active"), None),
+        "versions": [_version_metadata(key) for key in versions],
+    }
+
+
+@router.get("/v2/keys/me/{version}", response_model=PersonalBlob)
+async def personal_version(
+    version: int, context: TenantContext, claims: RecordingUser, service: KeyService
+) -> dict[str, Any]:
+    try:
+        key = await service.own_key(context.tenant_id, claims["sub"], version)
+    except RecordingStorageUnavailable:
+        raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
+    except KeyUnreadableError:
+        raise coded(500, "KEY_UNREADABLE", "The stored key cannot be read") from None
+    if key is None:
+        raise coded(404, "KEY_NOT_ENROLLED", "No usable personal key was found")
+    return {**_version_metadata(key), "blob": key.blob}
+
+
+@router.get("/v2/gateway-signers", response_model=Signers)
+async def gateway_signers(
+    context: TenantContext, claims: RecordingUser, service: KeyService
+) -> dict[str, Any]:
+    try:
+        keys = await service.gateway_keys()
+    except RecordingStorageUnavailable:
+        raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
+    return {"keys": [{"keyId": key_id, "publicKey": b64url(key)} for key_id, key in keys]}
+
+
+router.include_router(organisation_router)

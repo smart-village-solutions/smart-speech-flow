@@ -38,7 +38,7 @@ from .verification_model import (
     verification_from_row,
 )
 from .verification_sql import openable as _openable
-from .verification_sql import readable, reviewing
+from .verification_sql import readable, reviewing, usable_grant
 
 
 def _own(sub: str, now: str) -> str:
@@ -192,7 +192,7 @@ def _keys(rows: list[Any], sub: str) -> tuple[KeyAccess, ...]:
     for row in rows:
         key_id = str(row["key_id"])
         item = by_key.setdefault(key_id, {"epoch": row["epoch"], "wrap": None, "recovery": False})
-        if row["recipient_kind"] == "recovery":
+        if row["recipient_kind"] == "organisation":
             item["recovery"] = True
         elif row["recipient_ref"] == sub:
             item["wrap"] = KeyWrap(
@@ -202,6 +202,8 @@ def _keys(rows: list[Any], sub: str) -> tuple[KeyAccess, ...]:
                 blob=row["blob"],
                 creator_ref=row["creator_ref"],
                 creator_signature=bytes(row["creator_signature"]),
+                recipient_version=row.get("recipient_version", 0),
+                recipient_fingerprint=row.get("recipient_fingerprint"),
             )
     return tuple(
         KeyAccess(key_id, item["epoch"], item["wrap"], item["recovery"])
@@ -322,7 +324,13 @@ class PostgresArchiveAccess:
                 f" WHERE e.conversation_id = $3 AND e.entry_id = $4"
                 f" AND ({_openable('$1', '$2', '$6')} OR {reviewing('$1', '$2', '$7')})"
                 " AND EXISTS (SELECT 1 FROM key_wraps w WHERE w.tenant_id = e.tenant_id"
-                "  AND w.key_id = e.key_id AND w.recipient_kind = 'user' AND w.recipient_ref = $1)",
+                "  AND w.key_id=e.key_id AND "
+                + usable_grant(
+                    "$1",
+                    "g.reason IN ('owner','transfer') OR ($7 AND g.reason='review' AND EXISTS (SELECT 1 FROM verifications v "
+                    "WHERE v.verification_id=g.grant_ref AND v.reviewer_sub=g.user_sub AND v.status IN ('awaiting','in_review')))",
+                )
+                + ")",
                 sub,
                 now,
                 conversation_id,
@@ -379,7 +387,9 @@ class PostgresArchiveAccess:
                 "SELECT count(DISTINCT w.recipient_kind) = 2 FROM key_wraps w"
                 " JOIN conversation_keys k ON k.tenant_id = w.tenant_id AND k.key_id = w.key_id"
                 " WHERE k.key_id = $1 AND k.conversation_id = $2"
-                " AND (w.recipient_kind = 'recovery' OR w.recipient_ref = $3)",
+                " AND (w.recipient_kind = 'organisation' OR "
+                + usable_grant("$3", "g.reason='owner'")
+                + ")",
                 key_id,
                 conversation_id,
                 sub,
@@ -482,7 +492,12 @@ async def read_records(
 
 
 async def read_conversation(
-    connection: asyncpg.Connection, row: Any, sub: str, *, with_records: bool = False
+    connection: asyncpg.Connection,
+    row: Any,
+    sub: str,
+    *,
+    with_records: bool = False,
+    review_id: str | None = None,
 ) -> OpenedConversation:
     conversation_id = row["conversation_id"]
     windows = await connection.fetch(
@@ -502,13 +517,19 @@ async def read_conversation(
         " ORDER BY head_seq",
         conversation_id,
     )
+    reason = (
+        "(($3::uuid IS NULL AND g.reason IN ('owner','transfer')) OR "
+        "(g.reason='review' AND g.grant_ref=$3))"
+    )
     wraps = await connection.fetch(
-        "SELECT k.key_id, k.epoch, w.recipient_kind, w.recipient_ref, w.blob, w.creator_ref,"
-        " w.creator_signature FROM conversation_keys k JOIN key_wraps w"
-        " ON w.tenant_id = k.tenant_id AND w.key_id = k.key_id"
-        " WHERE k.conversation_id = $1 AND (w.recipient_kind = 'recovery' OR w.recipient_ref = $2)",
+        "SELECT k.key_id,k.epoch,w.recipient_kind,w.recipient_ref,w.blob,w.creator_ref,"
+        "w.creator_signature,w.recipient_version,w.recipient_fingerprint FROM conversation_keys k JOIN key_wraps w "
+        "ON w.tenant_id=k.tenant_id AND w.key_id=k.key_id WHERE k.conversation_id=$1 "
+        f"AND (w.recipient_kind='organisation' OR {usable_grant('$2', reason)}) "
+        "ORDER BY k.epoch,w.recipient_version",
         conversation_id,
         sub,
+        review_id,
     )
     types: dict[str, set[str]] = {}
     for item in stored:

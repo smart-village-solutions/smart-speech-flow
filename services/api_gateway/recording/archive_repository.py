@@ -18,10 +18,11 @@ import asyncpg
 
 from .audit import AuditEvent
 from .chain import ChainEntry
-from .conversation_keys import KeyWrap
+from .conversation_keys import KeyWrap, Recipient
 from .repository import (
     COMMAND_TIMEOUT_SECONDS,
     DRIVER_FAILURE,
+    RecordingStorageUnavailable,
     append_audit,
     bind_tenant,
     storage_unavailable,
@@ -124,11 +125,20 @@ async def _insert_key(
         key.created_at,
     )
     for wrap in key.wraps:
-        if wrap.recipient_kind == "user" and not await _still_active(connection, wrap):
-            continue  # re-enrolled since the key was made: a key-recovery candidate now (§9.6)
+        if wrap.recipient_kind == "user":
+            if not wrap.recipient_version or wrap.recipient_fingerprint is None:
+                raise ValueError("a user wrap must name the key version and fingerprint")
+            valid = await connection.fetchval(
+                "SELECT fingerprint FROM user_keys WHERE user_sub=$1 AND key_version=$2 "
+                "AND state IN ('active','superseded') FOR SHARE",
+                wrap.recipient_ref,
+                wrap.recipient_version,
+            )
+            if valid != wrap.recipient_fingerprint:
+                raise RecordingStorageUnavailable("recipient key unavailable")
         await connection.execute(
-            "INSERT INTO key_wraps (tenant_id, key_id, recipient_kind, recipient_ref, blob,"
-            " creator_ref, creator_signature, granted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            "INSERT INTO key_wraps (tenant_id,key_id,recipient_kind,recipient_ref,blob,creator_ref,"
+            "creator_signature,granted_at,recipient_version,recipient_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
             tenant_id,
             wrap.key_id,
             wrap.recipient_kind,
@@ -137,18 +147,18 @@ async def _insert_key(
             wrap.creator_ref,
             wrap.creator_signature,
             key.created_at,
+            wrap.recipient_version,
+            wrap.recipient_fingerprint,
         )
-
-
-async def _still_active(connection: asyncpg.Connection, wrap: KeyWrap) -> bool:
-    """Shared, so a re-enrolment's swap waits for this insert or this insert sees it (§9.6)."""
-    if wrap.recipient_fingerprint is None:
-        raise ValueError("a user wrap must name the key it is sealed to")
-    current = await connection.fetchval(
-        "SELECT fingerprint FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL FOR SHARE",
-        wrap.recipient_ref,
-    )
-    return current is not None and bytes(current) == wrap.recipient_fingerprint
+        if wrap.recipient_kind == "user" and wrap.recipient_version:
+            await connection.execute(
+                "INSERT INTO key_grants VALUES ($1,$2,$3,$4,'owner',$5)",
+                tenant_id,
+                wrap.key_id,
+                wrap.recipient_ref,
+                wrap.recipient_version,
+                conversation_id,
+            )
 
 
 async def insert_entry(connection: asyncpg.Connection, entry: ChainEntry) -> None:
@@ -202,6 +212,23 @@ class PostgresArchiveRepository:
         conversation = opening.conversation
 
         async def work(connection: asyncpg.Connection) -> None:
+            if opening.key is not None:
+                for wrap in opening.key.wraps:
+                    if wrap.recipient_kind == "organisation" and not await connection.fetchval(
+                        "SELECT true FROM organisation_keys WHERE key_id=$1 AND state='active' FOR SHARE",
+                        wrap.recipient_ref,
+                    ):
+                        raise RecordingStorageUnavailable("organisation key changed")
+                    if (
+                        wrap.recipient_kind == "user"
+                        and wrap.recipient_version
+                        and not await connection.fetchval(
+                            "SELECT true FROM user_keys WHERE user_sub=$1 AND key_version=$2 AND state='active' FOR SHARE",
+                            wrap.recipient_ref,
+                            wrap.recipient_version,
+                        )
+                    ):
+                        raise RecordingStorageUnavailable("personal key changed")
             if opening.new_conversation:
                 await connection.execute(
                     "INSERT INTO conversations (tenant_id, conversation_id, session_ref,"
@@ -233,8 +260,54 @@ class PostgresArchiveRepository:
 
         await self._run(conversation.tenant_id, work)
 
+    async def pinned_recipients(
+        self, tenant_id: str, conversation_id: str, window_id: str | None
+    ) -> list[Recipient]:
+        """Restart epochs use the recipients of the already committed window consent."""
+
+        async def work(db: asyncpg.Connection) -> list[asyncpg.Record]:
+            return list(
+                await db.fetch(
+                    """
+                WITH pinned AS (SELECT key_id FROM chain_entries WHERE conversation_id=$1
+                    AND kind='consent' AND window_id IS NOT NULL AND ($2::uuid IS NULL OR window_id=$2)
+                    ORDER BY seq DESC LIMIT 1)
+                SELECT w.recipient_kind,w.recipient_ref,w.recipient_version,w.recipient_fingerprint,
+                    COALESCE(o.public_key,u.enc_pub) AS public_key
+                FROM pinned p JOIN key_wraps w ON w.key_id=p.key_id
+                LEFT JOIN organisation_keys o ON w.recipient_kind='organisation' AND o.key_id::text=w.recipient_ref
+                LEFT JOIN user_keys u ON w.recipient_kind='user' AND u.user_sub=w.recipient_ref
+                   AND u.key_version=w.recipient_version AND u.state IN ('active','superseded')
+                WHERE o.key_id IS NOT NULL OR (u.user_sub IS NOT NULL AND EXISTS
+                   (SELECT 1 FROM key_grants g WHERE g.key_id=w.key_id AND g.user_sub=u.user_sub AND
+                    g.key_version=u.key_version AND g.reason='owner'))
+                """,
+                    conversation_id,
+                    window_id,
+                )
+            )
+
+        return [
+            Recipient(
+                r["recipient_kind"],
+                r["recipient_ref"],
+                r["public_key"],
+                r["recipient_fingerprint"],
+                r["recipient_version"],
+            )
+            for r in await self._run(tenant_id, work)
+        ]
+
     async def append_entry(self, entry: ChainEntry, key: NewKey | None) -> None:
         async def work(connection: asyncpg.Connection) -> None:
+            if key is None:
+                usable = await connection.fetchval(
+                    "SELECT true FROM key_grants g JOIN user_keys u ON u.user_sub=g.user_sub "
+                    "AND u.key_version=g.key_version WHERE g.key_id=$1 AND g.reason='owner' AND u.state IN ('active','superseded') FOR SHARE OF u",
+                    entry.key_id,
+                )
+                if not usable:
+                    raise RecordingStorageUnavailable("pinned employee key unavailable")
             if key is not None:
                 await _insert_key(connection, entry.tenant_id, entry.conversation_id, key)
             await insert_entry(connection, entry)

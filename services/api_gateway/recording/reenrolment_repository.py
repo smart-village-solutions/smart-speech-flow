@@ -16,7 +16,7 @@ from typing import Any, TypeVar
 import asyncpg
 
 from .audit import AuditEvent
-from .key_retirement import CUSTODIAN_OF, IN_CEREMONY, retire_key
+from .key_retirement import CUSTODIAN_OF, IN_CEREMONY
 from .recovery_requests_model import Refused
 from .recovery_requests_sql import USABLE_SHARES
 from .repository import (
@@ -95,13 +95,14 @@ async def complete_swap(
     events: list[AuditEvent],
 ) -> None:
     """Retires `old` for `record` once the refusals passed; `events` go first in the audit."""
-    retired = await retire_key(
-        connection, record.tenant_id, record.user_sub, old, record.user_sub, now, left=False
+    await connection.execute(
+        "UPDATE user_keys SET retired_at = $3, superseded_at = $3, email = NULL "
+        "WHERE user_sub = $1 AND key_version = $2 AND retired_at IS NULL",
+        record.user_sub,
+        old["key_version"],
+        now,
     )
-    events = events + retired.events
     await insert_user_key(connection, record)
-    if retired.custodian_of is not None:
-        events.append(_event(record, "recovery.share.stale", str(retired.custodian_of), now))
     events.append(_event(record, "key_reenrolled", f"user-key:{record.key_version}", now))
     await append_audits(connection, events)
 

@@ -123,11 +123,7 @@ async def test_a_decision_racing_the_reviewers_reenrolment_leaves_no_access(
     decided = results[0] if decide_first else results[1]
     status = await owner.fetchval("SELECT status FROM verifications")
     assert await _open_for(owner, "rita") == (0, 0)
-    if decide_first:
-        assert status == "approved"
-    else:
-        assert decided in (Refused("key_changed"), Refused("verification_closed"))
-        assert status == "withdrawn"
+    assert status == "approved" and decided.signer_key_version == 1
 
 
 async def test_an_assignment_waiting_on_a_shred_is_refused(archive, owner, verifications):
@@ -162,52 +158,109 @@ async def test_an_assignment_waiting_on_a_shred_is_refused(archive, owner, verif
     assert await owner.fetchval("SELECT count(*) FROM verifications") == 0
 
 
-@pytest.mark.parametrize("assign_first", [True, False])
-async def test_an_assignment_racing_a_recovery_never_merges_their_wraps(
-    archive, owner, verifications, assign_first
-):
-    """M2: in either order the open request excludes the assignment, so the recovery's own
-    wraps are the only ones. A filing that slips past an assignment is refused at
-    store_wraps instead (test_storing_wraps_is_refused_while_the_requester_reviews_...)."""
-    from tests.integration.test_recording_recovery_requests_database import (
-        _approval,
-        _filed,
-        recovery_key,
-    )
+async def _transfer(archive, owner):
+    import hmac
+    import json
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from services.api_gateway.recording.access_transfer import AccessTransfer
+    from services.api_gateway.recording.crypto import ecies, tags
+    from services.api_gateway.recording.crypto.encoding import b64url, from_b64url
+    from services.api_gateway.recording.crypto.lifecycle import transfer_transcript, wraps_digest
+    from tests import recording_crypto_reference as ref
+    from tests.integration.test_recording_recovery_requests_database import enrol
+    from tests.recording_archive_fakes import gateway_secrets
 
     conversation, key_id, _ = await _ended(archive, owner)
     cid = conversation.conversation_id
-    await _key(owner, "alice")
-    requests = PostgresRecoveryRequests(archive._pool)
-    await recovery_key(owner)
-    request, scope = await _filed(requests, owner, [conversation])  # enrols sam as version 1
+    await enrol(owner, "sam")
 
-    await requests.approve(
-        TENANT, "carol", request.request_id, _approval(scope), lambda *_: True, NOW
+    class Directory:
+        async def snapshot(self, tenant, correlation):
+            return SimpleNamespace(
+                users=[SimpleNamespace(sub="sam")], holders_of=lambda _: {"admin": True}
+            )
+
+    transfer = AccessTransfer(archive._pool, gateway_secrets(), Directory(), lambda: NOW)
+    org = "00000000-0000-4000-8000-000000000031"
+
+    async def prepare():
+        p = await transfer.prepare(
+            TENANT, "admin", [cid], org, "sam", 1, b64url(bytes(32)), "review transfer"
+        )
+        pid, expiry = p["transferId"], p["expiresAt"]
+        challenge = ecies.Sealed.from_json(
+            json.dumps(p["challengeEnvelope"]), expected_type=tags.ORG_POSSESSION
+        )
+        nonce = ecies.open_with_private_key(
+            challenge, ref.private_key(31), (TENANT, "admin", pid, "transfer", org, 1, expiry)
+        )
+        source = ecies.Sealed.from_json(
+            json.dumps(p["keys"][0]["sourceWrap"]["envelope"]), expected_type=tags.CK_WRAP_V2
+        )
+        ck = ecies.open_with_private_key(
+            source,
+            ref.private_key(31),
+            (TENANT, cid, key_id, "organisation", org, 1, bytes([31]) * 32),
+        )
+        wraps = {
+            (cid, key_id): ecies.seal(
+                tags.CK_WRAP_V2,
+                from_b64url(p["targetKey"]["encPub"]),
+                ck,
+                (TENANT, cid, key_id, "user", "sam", 1, bytes(32)),
+            )
+        }
+        transcript = transfer_transcript(
+            TENANT,
+            "admin",
+            pid,
+            p["organisationKey"],
+            p["targetKey"],
+            from_b64url(p["scopeDigest"]),
+            "review transfer",
+            wraps_digest(wraps),
+            expiry,
+        )
+        return lambda: transfer.commit(
+            TENANT, "admin", pid, hmac.digest(nonce, transcript, "sha256"), wraps
+        )
+
+    return (
+        cid,
+        replace(_assignment(cid, [key_id], reviewer="sam"), reviewer_fingerprint=bytes(32)),
+        prepare,
     )
 
+
+@pytest.mark.parametrize("assign_first", [True, False])
+async def test_transfer_and_assignment_race_preserves_independent_grants(
+    archive, owner, verifications, assign_first
+):
+    cid, assignment, prepare = await _transfer(archive, owner)
+    commit = await prepare()
+
     def assign():
-        return verifications.assign(
-            _assignment(cid, [key_id], reviewer="sam"), NOW, supervisor=False
-        )
+        return verifications.assign(assignment, NOW, supervisor=False)
 
-    def store():
-        wraps = [NewWrap(k.conversation_id, k.key_id, "{}", bytes(64)) for k in scope]
-        return requests.store_wraps(
-            TENANT, "sam", request.request_id, wraps, 1, lambda *_: True, NOW, may_supervise=True
-        )
-
-    first, second = (assign, store) if assign_first else (store, assign)
-    lock = f"SELECT 1 FROM conversations WHERE conversation_id = '{cid}' FOR UPDATE"
-    results = await _race(owner, lock, first, second)
-
-    assigned, stored = results if assign_first else results[::-1]
-    creators = {
-        r["creator_ref"]
-        for r in await owner.fetch("SELECT creator_ref FROM key_wraps WHERE recipient_ref = 'sam'")
-    }
-    assert assigned == Refused("reviewer_not_eligible") and stored == ()
-    assert creators == {"sam"}
+    order = (assign, commit) if assign_first else (commit, assign)
+    results = await _race(
+        owner, f"SELECT 1 FROM conversations WHERE conversation_id='{cid}' FOR UPDATE", *order
+    )
+    assigned, receipt = results if assign_first else results[::-1]
+    assert receipt["status"] == "committed"
+    if assign_first:
+        assert sorted(
+            await owner.fetchval("SELECT array_agg(reason) FROM key_grants WHERE user_sub='sam'")
+        ) == ["review", "transfer"]
+        assert await verifications.decline(TENANT, "sam", assigned.verification_id, NOW) is None
+    else:
+        assert assigned == Refused("reviewer_not_eligible")
+    assert await owner.fetchval(
+        "SELECT array_agg(reason) FROM key_grants WHERE user_sub='sam'"
+    ) == ["transfer"]
+    assert await owner.fetchval("SELECT count(*) FROM key_wraps WHERE recipient_ref='sam'") == 1
 
 
 @pytest.mark.parametrize("decide_first", [True, False])
@@ -266,60 +319,23 @@ async def test_an_assignment_waits_for_a_recovery_holding_the_conversation(
     assert not isinstance(assigned, Refused)
 
 
-@pytest.mark.parametrize("assign_first", [True, False])
-async def test_filing_racing_an_assignment_never_leaves_both_open(
-    archive, owner, verifications, assign_first
+@pytest.mark.parametrize("prepare_first", [True, False])
+async def test_transfer_preview_racing_assignment_grants_nothing(
+    archive, owner, verifications, prepare_first
 ):
-    """Filing reads the conversation FOR SHARE, so it serialises with the assignment's FOR UPDATE."""
-    from services.api_gateway.recording.recovery_requests_model import NewRequest
-    from tests.integration.test_recording_recovery_requests_database import enrol, recovery_key
-
-    conversation, key_id, _ = await _ended(archive, owner)
-    cid = conversation.conversation_id
-    await _key(owner, "alice")
-    await enrol(owner, "sam")
-    requests = PostgresRecoveryRequests(archive._pool)
-    # Built before the race: the owner connection only polls the lock queue during it.
-    request = NewRequest(
-        tenant_id=TENANT,
-        request_id=str(uuid.uuid4()),
-        kind="access",
-        requester_sub="sam",
-        requester_key_version=1,
-        recovery_key_id=await recovery_key(owner),
-        reason="Employee left.",
-        conversation_ids=(cid,),
-        signature=bytes(64),
-        created_at=NOW,
-    )
+    cid, assignment, prepare = await _transfer(archive, owner)
 
     def assign():
-        return verifications.assign(
-            _assignment(cid, [key_id], reviewer="sam"), NOW, supervisor=False
-        )
+        return verifications.assign(assignment, NOW, supervisor=False)
 
-    def file():
-        return requests.file(request, lambda *_: True)
-
-    first, second = (assign, file) if assign_first else (file, assign)
-    lock = f"SELECT 1 FROM conversations WHERE conversation_id = '{cid}' FOR UPDATE"
-    assigned, filed = await _race(owner, lock, first, second)
-    if not assign_first:
-        assigned, filed = filed, assigned
-
-    open_requests = await owner.fetchval(
-        "SELECT count(*) FROM recovery_requests WHERE status = 'open'"
+    order = (prepare, assign) if prepare_first else (assign, prepare)
+    await _race(
+        owner, f"SELECT 1 FROM conversations WHERE conversation_id='{cid}' FOR UPDATE", *order
     )
-    open_reviews = await owner.fetchval(
-        "SELECT count(*) FROM verifications WHERE status IN ('awaiting', 'in_review')"
-    )
-    if assign_first:
-        assert filed == Refused("review_in_progress") and (open_requests, open_reviews) == (0, 1)
-    else:
-        assert assigned == Refused("reviewer_not_eligible") and (open_requests, open_reviews) == (
-            1,
-            0,
-        )
+    assert await owner.fetchval(
+        "SELECT array_agg(reason) FROM key_grants WHERE user_sub='sam'"
+    ) == ["review"]
+    assert await owner.fetchval("SELECT count(*) FROM verifications WHERE status='awaiting'") == 1
 
 
 @pytest.mark.parametrize("decline_first", [True, False])
@@ -336,14 +352,10 @@ async def test_a_decline_racing_the_reviewers_reenrolment_leaves_no_access(
         return swap_key(archive._pool, new_key, 1, NOW)
 
     first, second = (decline, swap) if decline_first else (swap, decline)
-    # Both take the conversation FOR SHARE; the record row is where they meet.
-    lock = f"SELECT 1 FROM verifications WHERE verification_id = '{row.verification_id}' FOR UPDATE"
-    await _race(owner, lock, first, second)
-
+    # Supersession acts only on the user's key. A decline still releases its own grant.
+    await asyncio.gather(first(), second())
     assert await _open_for(owner, "rita") == (0, 0)
-    assert await owner.fetchval("SELECT status FROM verifications") == (
-        "declined" if decline_first else "withdrawn"
-    )
+    assert await owner.fetchval("SELECT status FROM verifications") == "declined"
 
 
 @pytest.mark.parametrize("decide_first", [True, False])

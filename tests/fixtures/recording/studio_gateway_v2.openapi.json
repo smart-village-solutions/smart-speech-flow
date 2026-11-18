@@ -1,0 +1,1644 @@
+{
+  "components": {
+    "schemas": {
+      "Activate": {
+        "additionalProperties": false,
+        "properties": {
+          "proof": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Proof",
+            "type": "string"
+          },
+          "savedConfirmation": {
+            "title": "Savedconfirmation",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "proof",
+          "savedConfirmation"
+        ],
+        "title": "Activate",
+        "type": "object"
+      },
+      "Candidate": {
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "employeeSub": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Employeesub",
+            "type": "string"
+          },
+          "endedAt": {
+            "title": "Endedat",
+            "type": "string"
+          },
+          "keyIds": {
+            "items": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "title": "Keyids",
+            "type": "array"
+          },
+          "keyScopes": {
+            "items": {
+              "$ref": "#/components/schemas/KeyScope"
+            },
+            "title": "Keyscopes",
+            "type": "array"
+          },
+          "organisationKeyIds": {
+            "items": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "title": "Organisationkeyids",
+            "type": "array"
+          },
+          "startedAt": {
+            "title": "Startedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "employeeSub",
+          "startedAt",
+          "endedAt",
+          "keyIds",
+          "organisationKeyIds",
+          "keyScopes"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
+      "Candidates": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "Candidates",
+        "type": "object"
+      },
+      "Challenge": {
+        "additionalProperties": false,
+        "properties": {
+          "R": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "R",
+            "type": "string"
+          },
+          "ct": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Ct",
+            "type": "string"
+          },
+          "nonce": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Nonce",
+            "type": "string"
+          },
+          "t": {
+            "const": "SSF-ORG-POSSESSION-V1",
+            "title": "T",
+            "type": "string"
+          },
+          "v": {
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "V",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "v",
+          "R",
+          "nonce",
+          "ct",
+          "t"
+        ],
+        "title": "Challenge",
+        "type": "object"
+      },
+      "Commit": {
+        "additionalProperties": false,
+        "properties": {
+          "proof": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Proof",
+            "type": "string"
+          },
+          "wraps": {
+            "items": {
+              "$ref": "#/components/schemas/Submission"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Wraps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "proof",
+          "wraps"
+        ],
+        "title": "Commit",
+        "type": "object"
+      },
+      "Envelope": {
+        "additionalProperties": false,
+        "properties": {
+          "R": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "R",
+            "type": "string"
+          },
+          "ct": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Ct",
+            "type": "string"
+          },
+          "nonce": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Nonce",
+            "type": "string"
+          },
+          "t": {
+            "const": "SSF-CK-WRAP-V2",
+            "title": "T",
+            "type": "string"
+          },
+          "v": {
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "V",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "v",
+          "R",
+          "nonce",
+          "ct",
+          "t"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "title": "Error Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "KeyScope": {
+        "additionalProperties": false,
+        "properties": {
+          "keyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Keyid",
+            "type": "string"
+          },
+          "organisationKeyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Organisationkeyid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyId",
+          "organisationKeyId"
+        ],
+        "title": "KeyScope",
+        "type": "object"
+      },
+      "OrganisationKey": {
+        "additionalProperties": false,
+        "properties": {
+          "activatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activatedat"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "keyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Keyid",
+            "type": "string"
+          },
+          "publicKey": {
+            "title": "Publickey",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "prepared",
+              "active",
+              "superseded"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "keyId",
+          "version",
+          "publicKey",
+          "fingerprint",
+          "state",
+          "createdAt",
+          "activatedAt"
+        ],
+        "title": "OrganisationKey",
+        "type": "object"
+      },
+      "PrepareOrg": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedActiveKeyId": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedactivekeyid"
+          },
+          "publicKey": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "Publickey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publicKey",
+          "expectedActiveKeyId"
+        ],
+        "title": "PrepareOrg",
+        "type": "object"
+      },
+      "PrepareTransfer": {
+        "additionalProperties": false,
+        "properties": {
+          "conversationIds": {
+            "items": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Conversationids",
+            "type": "array"
+          },
+          "expectedTargetFingerprint": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Expectedtargetfingerprint",
+            "type": "string"
+          },
+          "expectedTargetKeyVersion": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 2147483647.0,
+            "title": "Expectedtargetkeyversion",
+            "type": "integer"
+          },
+          "organisationKeyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Organisationkeyid",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "targetUserSub": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Targetusersub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationIds",
+          "organisationKeyId",
+          "targetUserSub",
+          "expectedTargetKeyVersion",
+          "expectedTargetFingerprint",
+          "reason"
+        ],
+        "title": "PrepareTransfer",
+        "type": "object"
+      },
+      "PreparedKey": {
+        "additionalProperties": false,
+        "properties": {
+          "challengeEnvelope": {
+            "$ref": "#/components/schemas/Challenge"
+          },
+          "expiresAt": {
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "keyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Keyid",
+            "type": "string"
+          },
+          "preparationId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Preparationid",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "preparationId",
+          "keyId",
+          "version",
+          "fingerprint",
+          "expiresAt",
+          "challengeEnvelope"
+        ],
+        "title": "PreparedKey",
+        "type": "object"
+      },
+      "PreparedTransfer": {
+        "additionalProperties": false,
+        "properties": {
+          "challengeEnvelope": {
+            "$ref": "#/components/schemas/Challenge"
+          },
+          "expiresAt": {
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/SourceKey"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "organisationKey": {
+            "$ref": "#/components/schemas/OrganisationKey"
+          },
+          "scopeDigest": {
+            "title": "Scopedigest",
+            "type": "string"
+          },
+          "targetKey": {
+            "$ref": "#/components/schemas/TargetKey"
+          },
+          "transferId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Transferid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transferId",
+          "scopeDigest",
+          "expiresAt",
+          "organisationKey",
+          "targetKey",
+          "challengeEnvelope",
+          "keys"
+        ],
+        "title": "PreparedTransfer",
+        "type": "object"
+      },
+      "Registry": {
+        "additionalProperties": false,
+        "properties": {
+          "activeKeyId": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activekeyid"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/OrganisationKey"
+            },
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys",
+          "activeKeyId"
+        ],
+        "title": "Registry",
+        "type": "object"
+      },
+      "Signer": {
+        "additionalProperties": false,
+        "properties": {
+          "keyId": {
+            "title": "Keyid",
+            "type": "string"
+          },
+          "publicKey": {
+            "title": "Publickey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyId",
+          "publicKey"
+        ],
+        "title": "Signer",
+        "type": "object"
+      },
+      "SourceKey": {
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "epoch": {
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "keyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Keyid",
+            "type": "string"
+          },
+          "sourceSigner": {
+            "$ref": "#/components/schemas/Signer"
+          },
+          "sourceWrap": {
+            "$ref": "#/components/schemas/SourceWrap"
+          }
+        },
+        "required": [
+          "conversationId",
+          "keyId",
+          "epoch",
+          "sourceWrap",
+          "sourceSigner"
+        ],
+        "title": "SourceKey",
+        "type": "object"
+      },
+      "SourceWrap": {
+        "additionalProperties": false,
+        "properties": {
+          "envelope": {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "envelope",
+          "signature"
+        ],
+        "title": "SourceWrap",
+        "type": "object"
+      },
+      "Submission": {
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          "keyId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Keyid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "keyId",
+          "envelope"
+        ],
+        "title": "Submission",
+        "type": "object"
+      },
+      "TargetKey": {
+        "additionalProperties": false,
+        "properties": {
+          "encPub": {
+            "title": "Encpub",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "sigPub": {
+            "title": "Sigpub",
+            "type": "string"
+          },
+          "userSub": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Usersub",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "userSub",
+          "version",
+          "fingerprint",
+          "encPub",
+          "sigPub"
+        ],
+        "title": "TargetKey",
+        "type": "object"
+      },
+      "TransferReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "committedAt": {
+            "title": "Committedat",
+            "type": "string"
+          },
+          "grantedKeyIds": {
+            "items": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "title": "Grantedkeyids",
+            "type": "array"
+          },
+          "scopeDigest": {
+            "title": "Scopedigest",
+            "type": "string"
+          },
+          "status": {
+            "const": "committed",
+            "title": "Status",
+            "type": "string"
+          },
+          "targetKeyVersion": {
+            "title": "Targetkeyversion",
+            "type": "integer"
+          },
+          "targetUserSub": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Targetusersub",
+            "type": "string"
+          },
+          "transferId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Transferid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transferId",
+          "status",
+          "targetUserSub",
+          "targetKeyVersion",
+          "scopeDigest",
+          "grantedKeyIds",
+          "committedAt"
+        ],
+        "title": "TransferReceipt",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "SSF recording organisation keys and transfers",
+    "version": "2"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/admin/recording/v2/access-transfer/candidates": {
+      "get": {
+        "operationId": "candidates_api_admin_recording_v2_access_transfer_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "employeeSub",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Employeesub",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Candidates"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Candidates"
+      }
+    },
+    "/api/admin/recording/v2/access-transfer/preparations": {
+      "post": {
+        "operationId": "prepare_transfer_api_admin_recording_v2_access_transfer_preparations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareTransfer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedTransfer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Prepare Transfer"
+      }
+    },
+    "/api/admin/recording/v2/access-transfer/preparations/{pid}/commit": {
+      "post": {
+        "operationId": "transfer_commit_api_admin_recording_v2_access_transfer_preparations__pid__commit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Commit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Transfer Commit"
+      }
+    },
+    "/api/admin/recording/v2/access-transfer/targets/{sub}": {
+      "get": {
+        "operationId": "transfer_target_api_admin_recording_v2_access_transfer_targets__sub__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sub",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Sub",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Transfer Target"
+      }
+    },
+    "/api/admin/recording/v2/organisation-keys": {
+      "get": {
+        "operationId": "list_keys_api_admin_recording_v2_organisation_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Keys"
+      }
+    },
+    "/api/admin/recording/v2/organisation-keys/preparations": {
+      "post": {
+        "operationId": "prepare_key_api_admin_recording_v2_organisation_keys_preparations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareOrg"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Prepare Key"
+      }
+    },
+    "/api/admin/recording/v2/organisation-keys/preparations/{pid}": {
+      "delete": {
+        "operationId": "cancel_key_api_admin_recording_v2_organisation_keys_preparations__pid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Cancel Key"
+      }
+    },
+    "/api/admin/recording/v2/organisation-keys/preparations/{pid}/activate": {
+      "post": {
+        "operationId": "activate_key_api_admin_recording_v2_organisation_keys_preparations__pid__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Activate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganisationKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Activate Key"
+      }
+    },
+    "/api/admin/recording/v2/users/{sub}/keys/{version}": {
+      "delete": {
+        "operationId": "revoke_personal_key_api_admin_recording_v2_users__sub__keys__version__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sub",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Sub",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Revoke Personal Key"
+      }
+    }
+  }
+}

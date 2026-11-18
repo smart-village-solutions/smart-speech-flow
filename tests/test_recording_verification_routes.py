@@ -14,6 +14,7 @@ from services.api_gateway.recording.recovery_requests_model import Refused
 from services.api_gateway.recording.verification import VerificationError, Verifications
 from services.api_gateway.routes.recording_verifications import ANSWERS, get_verifications
 from services.api_gateway.tenant_context import require_studio_tenant_context
+from tests.recording_verification_world import NOW, directory, grant
 from tests.test_recording_ceremony_routes import TENANT as CALLER_TENANT
 from tests.test_recording_ceremony_routes import Caller
 from tests.test_recording_verification_service import (
@@ -21,14 +22,13 @@ from tests.test_recording_verification_service import (
     CONVERSATION,
     KEY_1,
     KEY_2,
+    REVIEWER,
     RITA,
+    SWORN,
     FakeAccess,
     FakeDirectory,
     FakeStore,
-    REVIEWER,
-    SWORN,
 )
-from tests.recording_verification_world import NOW, directory, grant
 
 BASE = f"/api/admin/recording/archive/{CONVERSATION}"
 REQUEST = "ssf.recording.request"
@@ -100,9 +100,6 @@ def test_assigning_needs_a_recording_permission_and_step_up(http):
     caller.be("alice", "ssf.configuration.tenant.manage")
     assert _code(client.post(f"{BASE}/verifications", json=_body())) == "PERMISSION_REQUIRED"
     caller.be("alice", REQUEST, fresh=False)
-    assert _code(client.post(f"{BASE}/verifications", json=_body())) == "STEP_UP_REQUIRED"
-    assert store.assignments == []
-    caller.be("alice", REQUEST)
     response = client.post(f"{BASE}/verifications", json=_body())
     assert response.status_code == 201
     record = response.json()

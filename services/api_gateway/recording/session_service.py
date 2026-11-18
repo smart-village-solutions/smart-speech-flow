@@ -40,6 +40,7 @@ from .consent_evidence import ConsentEvidenceError, GuestAnswer, evidence
 from .consent_text import ConsentText, consent_text, staff_release
 from .consent_voice import ConsentVoice
 from .records import PlaybackEvent
+from .repository import RecordingStorageUnavailable
 from .session_state import ConsentKind, Phase, Reason, RecordingState, Snapshot
 from .session_store import RecordingStateStore
 
@@ -134,7 +135,7 @@ class RecordingSessions:
     async def state(self, key: TenantSessionKey) -> RecordingState:
         return await self._store.load(key)
 
-    async def check_available(self, tenant_id: str) -> RecordingPolicy:
+    async def check_available(self, tenant_id: str, employee: str | None = None) -> RecordingPolicy:
         """The tenant's policy, unless it may not record now: a live, fail-closed read (§14)."""
         if self._archive is None or not self._archive.can_record(tenant_id):
             raise RecordingUnavailableError("ARCHIVE_UNAVAILABLE")
@@ -144,8 +145,15 @@ class RecordingSessions:
             raise RecordingUnavailableError("RECORDING_POLICY_UNAVAILABLE") from None
         if policy is None or not policy.enabled:
             raise RecordingUnavailableError("RECORDING_DISABLED")
-        if not await self._recovery_key_ready(tenant_id):
-            raise RecordingUnavailableError("RECOVERY_KEY_MISSING")
+        try:
+            if not await self._recovery_key_ready(tenant_id):
+                raise RecordingUnavailableError("ORGANISATION_KEY_MISSING")
+            if employee is not None and not await self._archive.employee_enrolled(
+                tenant_id, employee
+            ):
+                raise RecordingUnavailableError("PERSONAL_KEY_MISSING")
+        except RecordingStorageUnavailable:
+            raise RecordingUnavailableError("RECORDING_UNAVAILABLE") from None
         return policy
 
     async def request(
@@ -162,7 +170,7 @@ class RecordingSessions:
         if current.request_id == request_id:
             return current  # a replay: the checks were made when it was new
         self._require_guest(key)
-        policy = await self.check_available(key.tenant_id)
+        policy = await self.check_available(key.tenant_id, requested_by)
         release = staff_release(policy)
         if release is not None and not hmac.compare_digest(
             release.sha256, staff_release_sha256 or ""

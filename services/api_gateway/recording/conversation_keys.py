@@ -17,9 +17,11 @@ from typing import Final, Literal
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from .crypto import aead, ecies, tags
+from .crypto.encoding import enc
+from .crypto.lifecycle import envelope_bytes
 from .crypto.signatures import sign_fields, wrap_fields
 
-RecipientKind = Literal["user", "recovery"]
+RecipientKind = Literal["user", "recovery", "organisation"]
 _KEY_BYTES: Final[int] = 32
 
 
@@ -38,6 +40,7 @@ class Recipient:
     public_key: bytes
     # A user's key fingerprint, or the transcript hash that certifies a recovery key.
     fingerprint: bytes
+    version: int = 0
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,7 @@ class KeyWrap:
     creator_signature: bytes
     # The user key the wrap is sealed to; checked again when the wrap is stored (§9.6).
     recipient_fingerprint: bytes | None = None
+    recipient_version: int = 0
 
 
 def new_conversation_key(epoch: int) -> ConversationKey:
@@ -68,6 +72,22 @@ def wrap_key(
     context = ecies.ck_wrap_context(
         tenant_id, conversation_id, key.key_id, recipient.kind, recipient.ref
     )
+    if recipient.version:
+        context = (*context, recipient.version, recipient.fingerprint)
+        sealed = ecies.seal(tags.CK_WRAP_V2, recipient.public_key, key.secret, context)
+        signature = sign_fields(
+            signing_key, tags.WRAP_SIG_V2, enc(*context), envelope_bytes(sealed)
+        )
+        return KeyWrap(
+            key.key_id,
+            recipient.kind,
+            recipient.ref,
+            sealed.to_json(),
+            signer_key_id,
+            signature,
+            recipient.fingerprint,
+            recipient.version,
+        )
     sealed = ecies.seal(tags.CK_WRAP, recipient.public_key, key.secret, context)
     signed = wrap_fields(
         tenant_id,

@@ -7,7 +7,6 @@ from dataclasses import replace
 import pytest
 from fastapi.testclient import TestClient
 
-from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.recording.crypto.encoding import b64url, scalar_to_bytes
 from services.api_gateway.routes.recording_ceremony import get_ceremony
@@ -23,13 +22,14 @@ from tests.recording_ceremony_actors import (
     reshare_dealing,
     share_proof,
 )
+from tests.recording_legacy_http import app
 from tests.test_recording_ceremony_routes import CUSTODIAN, MANAGE, Caller
-from tests.test_recording_resharing import (
+from tests.test_recording_resharing import (  # noqa: F401 - fixture
     FIRST_ID,
     RESHARING_ID,
     World,
     world,
-)  # noqa: F401 - fixture
+)
 
 BASE = "/api/admin/recording/ceremony"
 HOLDERS = {h.sub: h for h in (BERND, DORA, EMIL)}
@@ -143,7 +143,7 @@ async def test_a_whole_resharing_over_http(http):
     assert after["previous_had_paper"] is True
 
 
-def test_starting_needs_a_fresh_login(http):
+def test_starting_uses_the_authenticated_session(http):
     client, caller, _ = http
     caller.be(ORG_ADMIN, MANAGE, fresh=False)
     response = client.post(
@@ -155,7 +155,7 @@ def test_starting_needs_a_fresh_login(http):
             "holders_ceremony_id": FIRST_ID,
         },
     )
-    assert (response.status_code, _code(response)) == (403, "STEP_UP_REQUIRED")
+    assert response.status_code == 201
 
 
 @pytest.mark.parametrize(

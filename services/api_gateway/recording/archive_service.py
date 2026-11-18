@@ -31,7 +31,6 @@ from .archive_repository import (
     WindowOpening,
 )
 from .audit import GUEST_ACTOR, AuditEvent
-from .ceremony_model import RecoveryKeyRecord
 from .chain import ChainEntry, ChainObject, EntryKind, seal_entry
 from .consent_text import ConsentText
 from .conversation_keys import (
@@ -66,6 +65,10 @@ class ArchiveUnavailableError(Exception):
 
 class ArchiveRepository(Protocol):
     async def open_window(self, opening: WindowOpening) -> None: ...
+
+    async def pinned_recipients(
+        self, tenant_id: str, conversation_id: str, window_id: str | None
+    ) -> list[Recipient]: ...
 
     async def append_entry(self, entry: ChainEntry, key: NewKey | None) -> None: ...
 
@@ -163,7 +166,7 @@ class ConversationArchive:
         repository: ArchiveRepository,
         spools: TenantSpools,
         secrets: RecordingSecrets,
-        recovery_key: Callable[[str], Awaitable[RecoveryKeyRecord | None]],
+        organisation_key: Callable[[str], Awaitable[Recipient | None]],
         user_key: Callable[[str, str], Awaitable[UserKeyRecord | None]],
         session_ref: Callable[[str], str],
         tenant_ready: Callable[[str], bool] = lambda _tenant_id: True,
@@ -173,7 +176,7 @@ class ConversationArchive:
         self._repository = repository
         self._spools = spools
         self._secrets = secrets
-        self._recovery_key = recovery_key
+        self._organisation_key = organisation_key
         self._user_key = user_key
         self._session_ref = session_ref
         self._tenant_ready = tenant_ready
@@ -193,6 +196,9 @@ class ConversationArchive:
         self._pending_ends: dict[tuple[str, str], datetime] = {}
         # Spool steps of committed entries still running after their caller gave up.
         self._tails: set[asyncio.Task[None]] = set()
+
+    async def employee_enrolled(self, tenant_id: str, sub: str) -> bool:
+        return await self._user_key(tenant_id, sub) is not None
 
     def can_record(self, tenant_id: str) -> bool:
         """Whether this tenant's objects can leave the gateway at all: it has a writer credential."""
@@ -247,6 +253,7 @@ class ConversationArchive:
             {"consent.json": records.encode(consent)},
             now,
             fresh=fresh,
+            opening=True,
         )
         opening = WindowOpening(
             conversation=conversation,
@@ -516,10 +523,11 @@ class ConversationArchive:
         now: datetime,
         *,
         fresh: bool = False,
+        opening: bool = False,
     ) -> _Sealed:
         tenant_id, conversation_id = conversation.tenant_id, conversation.conversation_id
         head, epoch = await self._head(tenant_id, conversation_id, fresh=fresh)
-        key, new_key = await self._key(conversation, epoch, now)
+        key, new_key = await self._key(conversation, epoch, now, window_id, opening)
         entry_id = str(uuid.uuid4())
         objects, blobs = [], []
         for object_type, plaintext in sorted(plaintexts.items()):
@@ -572,13 +580,25 @@ class ConversationArchive:
         return _Head(seq, head_hash), epoch
 
     async def _key(
-        self, conversation: ConversationRecord, epoch: int, now: datetime
+        self,
+        conversation: ConversationRecord,
+        epoch: int,
+        now: datetime,
+        window_id: str | None,
+        opening: bool,
     ) -> tuple[ConversationKey, NewKey | None]:
         known = self._keys.get((conversation.tenant_id, conversation.conversation_id))
-        if known is not None:
+        if known is not None and not opening:
             return known, None
         key = new_conversation_key(epoch + 1)
-        recipients = await self._recipients(conversation)
+        if opening or not epoch:
+            recipients = await self._recipients(conversation)
+        else:
+            recipients = await self._repository.pinned_recipients(
+                conversation.tenant_id, conversation.conversation_id, window_id
+            )
+            if len(recipients) != 2:
+                raise ArchiveUnavailableError("key_revoked")
         wraps = tuple(
             wrap_key(
                 key,
@@ -593,24 +613,25 @@ class ConversationArchive:
         return key, NewKey(key.key_id, key.epoch, now, wraps)
 
     async def _recipients(self, conversation: ConversationRecord) -> list[Recipient]:
-        """The recovery key always; the employee too once enrolled (§8.1)."""
         try:
-            recovery = await self._recovery_key(conversation.tenant_id)
+            org = await self._organisation_key(conversation.tenant_id)
             employee = await self._user_key(conversation.tenant_id, conversation.employee_sub)
         except RecordingStorageUnavailable:
             raise ArchiveUnavailableError("database") from None
-        if recovery is None:
-            raise ArchiveUnavailableError("recovery_key_missing")
-        recipients = [
+        if org is None:
+            raise ArchiveUnavailableError("organisation_key_missing")
+        if employee is None:
+            raise ArchiveUnavailableError("personal_key_missing")
+        return [
+            org,
             Recipient(
-                "recovery", recovery.key_id, recovery.recovery_public_key, recovery.transcript_hash
-            )
+                "user",
+                employee.user_sub,
+                employee.enc_pub,
+                employee.fingerprint,
+                employee.key_version,
+            ),
         ]
-        if employee is not None:
-            recipients.append(
-                Recipient("user", employee.user_sub, employee.enc_pub, employee.fingerprint)
-            )
-        return recipients
 
     async def _commit(self, sealed: _Sealed, write: Awaitable[None]) -> None:
         entry = sealed.entry

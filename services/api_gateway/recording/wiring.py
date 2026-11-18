@@ -22,12 +22,11 @@ from ..session_models import ClientType, SessionStatus
 from ..studio_recording_directory_client import StudioRecordingDirectoryClient
 from ..studio_settings import studio_base_url
 from ..studio_v2 import RecordingPolicy, RuntimeRead
+from .access_transfer import AccessTransfer
 from .archive_access import ArchiveAccess
 from .archive_access_repository import PostgresArchiveAccess
 from .archive_repository import PostgresArchiveRepository
 from .archive_service import ChainStamper, ConversationArchive, stored_recorder
-from .ceremony import CeremonyService
-from .ceremony_repository import PostgresCeremonyRepository
 from .decision_stamps import DecisionStamper
 from .directory import StudioCustodianDirectory
 from .key_confirmation import KeyConfirmations
@@ -36,12 +35,11 @@ from .keys import KeyEnrolmentService
 from .leavers import Leavers
 from .leavers_repository import PostgresLeavers
 from .mail import Mailer, SmtpMailer, SmtpSettingsError, smtp_settings
-from .recovery_requests import RecoveryRequests
-from .recovery_requests_repository import PostgresRecoveryRequests
+from .organisation_keys import OrganisationKeys
 from .reenrolment import KeyReenrolment
 from .reenrolment_email import EmailConfirmation
 from .reenrolment_repository import PostgresKeyReenrolment
-from .resharing import ResharingService
+from .repository import PostgresRecordingRepository
 from .retention.decisions_repository import PostgresRetentionDecisions
 from .retention.metrics import SITES as RETENTION_SITES
 from .revocation import RevocationCheck
@@ -140,7 +138,7 @@ def _policy_reader(state: Any) -> Any:
 
 
 def _connect_archive(
-    state: Any, repository: PostgresCeremonyRepository, secrets: RecordingSecrets
+    state: Any, repository: PostgresRecordingRepository, secrets: RecordingSecrets
 ) -> ConversationArchive | None:
     """The archive, its spools and its stamper; None while this host has no archive store."""
     try:
@@ -162,7 +160,7 @@ def _connect_archive(
         repository=archive_repository,
         spools=spools,
         secrets=secrets,
-        recovery_key=repository.active_recovery_key,
+        organisation_key=state.recording_organisation_keys.active_recipient,
         user_key=repository.active_user_key,
         session_ref=state.session_manager.pseudonymizer.recording_reference,
         # A tenant without a writer credential would spool forever: it cannot record.
@@ -207,10 +205,10 @@ async def _live_sessions(state: Any, tenant_id: str) -> list[str]:
 
 
 def _recording_sessions(
-    state: Any, repository: PostgresCeremonyRepository, archive: ConversationArchive | None
+    state: Any, repository: PostgresRecordingRepository, archive: ConversationArchive | None
 ) -> RecordingSessions:
     async def recovery_key_ready(tenant_id: str) -> bool:
-        return await repository.active_recovery_key(tenant_id) is not None
+        return await state.recording_organisation_keys.active_recipient(tenant_id) is not None
 
     return RecordingSessions(
         store=state.recording_state_store,
@@ -248,10 +246,12 @@ async def recording_stamp_task(state: Any) -> None:
     """Timestamp chain heads whose entries have all reached the archive store (§11.2)."""
     while True:
         await asyncio.sleep(STAMP_INTERVAL_SECONDS)
-        if state.recording_stamper is None:
-            continue
         try:
-            await stamp_once(state)
+            registry = state.recording_organisation_keys
+            if registry is not None:
+                await registry.expire_secrets()
+            if state.recording_stamper is not None:
+                await stamp_once(state)
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -305,7 +305,7 @@ async def connect_recording(state: Any, dsn: str) -> bool:
         sys.stderr.write(f"Recording disabled: {error}\n")
         return True
     try:
-        repository = await PostgresCeremonyRepository.create(dsn=dsn, password=_password())
+        repository = await PostgresRecordingRepository.create(dsn=dsn, password=_password())
     except Exception as error:
         sys.stderr.write(f"Recording storage unavailable ({type(error).__name__}); retrying\n")
         return False
@@ -318,6 +318,10 @@ async def connect_recording(state: Any, dsn: str) -> bool:
         sys.stderr.write(f"Recording key registration failed ({type(error).__name__})\n")
         return False
     state.recording_repository = repository
+    state.recording_organisation_keys = OrganisationKeys(repository.pool, secrets.server_layer)
+    state.recording_access_transfer = AccessTransfer(
+        repository.pool, secrets, _custodian_directory(state)
+    )
     state.recording_secrets = secrets
     state.recording_keys = KeyEnrolmentService(
         repository=repository, server_layer=secrets.server_layer
@@ -329,23 +333,10 @@ async def connect_recording(state: Any, dsn: str) -> bool:
         confirmation=_confirmation(confirmations),
     )
     state.recording_key_confirmations = KeyConfirmations(store=confirmations)
-    state.recording_ceremony = CeremonyService(
-        repository=repository, directory=_custodian_directory(state), secrets=secrets
-    )
-    state.recording_resharing = ResharingService(
-        repository=repository,
-        directory=_custodian_directory(state),
-        server_layer=secrets.server_layer,
-    )
     state.recording_leavers = Leavers(
         store=PostgresLeavers(repository.pool), directory=_custodian_directory(state)
     )
     state.recording_retention = PostgresRetentionDecisions(repository.pool)
-    state.recording_recovery_requests = RecoveryRequests(
-        repository=PostgresRecoveryRequests(repository.pool),
-        keys=repository,
-        names=_custodian_directory(state),
-    )
     archive = _connect_archive(state, repository, secrets)
     _attach_sessions(state, _recording_sessions(state, repository, archive))
     sys.stderr.write("Recording keys ready\n")
@@ -371,6 +362,8 @@ async def recording_connect_task(state: Any, dsn: str) -> None:
 
 async def close_recording(dependencies: GatewayDependencies) -> None:
     repository = dependencies.recording_repository
+    dependencies.recording_organisation_keys = None
+    dependencies.recording_access_transfer = None
     dependencies.recording_repository = None
     dependencies.recording_keys = None
     dependencies.recording_ceremony = None
