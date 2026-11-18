@@ -20,13 +20,13 @@ export function SystemLoadCard({ copy }: Readonly<SystemLoadCardProps>) {
   const level: SystemLoadLevel = isError ? 'unknown' : (data?.level ?? 'unknown');
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5 md:basis-1/3">
-      <p className="text-thanks font-semibold text-fg-strong">{copy.headline}</p>
+    <div className="flex flex-col gap-1.5 self-start rounded-xl border border-border-card bg-surface-card px-4 py-3 md:w-56">
+      <p className="text-label font-semibold text-fg-strong">{copy.headline}</p>
 
-      <div className="flex flex-1 items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <span
           aria-hidden
-          className={cn('size-4 shrink-0 rounded-pill transition-colors', LAMP[level])}
+          className={cn('size-2.5 shrink-0 rounded-pill transition-colors', LAMP[level])}
         />
         <p className="text-label leading-snug text-fg-muted">{copy.levels[level]}</p>
       </div>

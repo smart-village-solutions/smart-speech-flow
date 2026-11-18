@@ -52,21 +52,11 @@ export function AdminDashboardScreen({
         onOpenKeys={onOpenKeys}
       />
 
-      <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
+      <div className="flex flex-col gap-5 px-5 pb-12 pt-content-top">
         {navigation}
         {conversationView && (
           <>
-            <div className="flex flex-col gap-4 md:flex-row">
-              <div className="rounded-2xl border border-border-card bg-surface-card p-5 md:basis-2/3">
-                <p className="mb-1.5 text-thanks font-semibold text-fg-strong">{copy.headline}</p>
-                <div className="flex flex-col gap-2 text-note leading-chat text-fg-muted">
-                  <RichText html={copy.introHtml} />
-                </div>
-              </div>
-
-              <SystemLoadCard copy={copy.load} />
-            </div>
-
+            <h1 className="text-title font-semibold text-fg-strong">{copy.headline}</h1>
             <AdminNewSessionButton
               liveSessionId={ownLiveSessionId}
               callToAction={copy.callToAction}
@@ -76,7 +66,17 @@ export function AdminDashboardScreen({
           </>
         )}
         {children}
-        {conversationView && <ConversationUsageCard />}
+        {conversationView && (
+          <>
+            <ConversationUsageCard />
+            <div className="flex flex-col gap-4 md:flex-row md:items-start">
+              <div className="flex min-w-0 flex-1 flex-col gap-2 text-note leading-chat text-fg-muted">
+                <RichText html={copy.introHtml} />
+              </div>
+              <SystemLoadCard copy={copy.load} />
+            </div>
+          </>
+        )}
       </div>
       <SiteLegalLinks className="mt-auto px-5 pt-4 pb-legal-end" />
     </ScreenShell>

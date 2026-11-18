@@ -14,7 +14,7 @@ import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import { KeysScreen } from '@/features/keys/KeysScreen';
 import { INBOX_QUERY, REVIEW_PERMISSION } from '@/features/review/useReviews';
 import { initialFilters, OVERVIEW } from './filterRows';
-import { actionStyle } from './TaskTable';
+import { cn } from '@/lib/cn';
 import { ConversationTable, ReviewTable, type TaskTarget } from './TaskLists';
 import { MetadataDetail, ProtectedDetail } from './TaskDetail';
 
@@ -58,6 +58,35 @@ function restore(raw: string | null, owner: string) {
   };
 }
 
+type TaskTab = 'conversations' | 'reviews';
+
+function TaskNavigation({
+  tab,
+  onChange,
+}: Readonly<{ tab: TaskTab; onChange: (tab: TaskTab) => void }>) {
+  const { t } = useTranslation();
+  return (
+    <nav
+      aria-label={t('admin.tasks.views')}
+      className="flex w-fit max-w-full flex-wrap gap-1 rounded-2xl border border-border-card bg-surface-card p-1"
+    >
+      {(['conversations', 'reviews'] as const).map((key) => (
+        <button
+          key={key}
+          className={cn(
+            'focus-ring min-h-11 rounded-xl px-3 text-label font-semibold sm:px-4',
+            tab === key ? 'bg-accent text-accent-on' : 'text-fg-muted hover:bg-surface-row-hover'
+          )}
+          aria-pressed={tab === key}
+          onClick={() => onChange(key)}
+        >
+          {t(`admin.tasks.${key}`)}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 export function TaskWorkspace({
   onSignOut,
   studioUrl,
@@ -68,13 +97,12 @@ export function TaskWorkspace({
   onLocationChange?: (location: string) => void;
 }>) {
   const { resume } = useServices();
-  const { t } = useTranslation();
   const client = useQueryClient();
   const owner = JSON.stringify(getAdminIdentity());
   const [start] = useState(() => restore(owner === 'null' ? null : resume.take(), owner));
   const [target, setTarget] = useState<TaskTarget | null>(start.target);
   const [account, setAccount] = useState(start.account);
-  const [tab, setTab] = useState<'reviews' | 'conversations'>(start.tab);
+  const [tab, setTab] = useState<TaskTab>(start.tab);
   const [conversations, setConversations] = useState(start.conversations);
   const [reviews, setReviews] = useState(start.reviews);
   const canReview = useSyncExternalStore(subscribeToKeycloakAuthorization, () =>
@@ -141,22 +169,7 @@ export function TaskWorkspace({
         {...nav}
         onEnterSession={(id) => setTarget({ kind: 'session', id })}
         conversationView={!showReviews}
-        navigation={
-          canReview && (
-            <nav aria-label={t('admin.tasks.views')} className="flex flex-wrap gap-2">
-              {(['conversations', 'reviews'] as const).map((key) => (
-                <button
-                  key={key}
-                  className={actionStyle}
-                  aria-pressed={tab === key}
-                  onClick={() => setTab(key)}
-                >
-                  {t(`admin.tasks.${key}`)}
-                </button>
-              ))}
-            </nav>
-          )
-        }
+        navigation={canReview && <TaskNavigation tab={tab} onChange={setTab} />}
       >
         {showReviews ? (
           <ReviewTable filters={reviews} onChange={setReviews} open={setTarget} />

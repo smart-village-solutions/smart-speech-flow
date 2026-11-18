@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { ArrowUpRight, ChevronDown } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { useTranslation } from 'react-i18next';
 import type { KeyOwner, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
+import type { KeyInventory } from '@/domain/recording/keyVersions';
 import type { OwnKey } from '@/domain/recording/recording.types';
 import { getAdminIdentity } from '@/app/auth/keycloak';
 import { useFeedback } from '@/app/providers/feedback';
@@ -86,26 +88,15 @@ function KeysContent({
   return (
     <>
       {inventory.data.versions.length > 0 && (
-        <label>
-          {t('admin.tasks.keyVersion')}{' '}
-          <select
-            aria-label={t('admin.tasks.keyVersion')}
-            value={selected ?? ''}
-            disabled={requestedVersion !== undefined}
-            onChange={(event) => {
-              setChosen(Number(event.target.value));
-              setBackup(null);
-            }}
-          >
-            {inventory.data.versions
-              .filter((k) => k.state === 'active' || k.state === 'superseded')
-              .map((k) => (
-                <option key={k.version} value={k.version}>
-                  {k.version} · {t(`admin.tasks.${k.state}`)}
-                </option>
-              ))}
-          </select>
-        </label>
+        <KeyVersionSelect
+          versions={inventory.data.versions}
+          selected={selected ?? ''}
+          disabled={requestedVersion !== undefined}
+          onChange={(version) => {
+            setChosen(version);
+            setBackup(null);
+          }}
+        />
       )}
       <KeyActions
         key={selected ?? 'new'}
@@ -123,6 +114,46 @@ function KeysContent({
         <PassphraseBackup passphrase={backup} onClose={() => setBackup(null)} />
       )}
     </>
+  );
+}
+
+function KeyVersionSelect({
+  versions,
+  selected,
+  disabled,
+  onChange,
+}: Readonly<{
+  versions: KeyInventory['versions'];
+  selected: number | '';
+  disabled: boolean;
+  onChange: (version: number) => void;
+}>) {
+  const { t } = useTranslation();
+  return (
+    <label className="flex w-fit max-w-full flex-col gap-1.5 text-label font-medium text-fg-muted">
+      {t('admin.tasks.keyVersion')}
+      <span className="relative">
+        <select
+          className="focus-ring min-h-11 w-full appearance-none rounded-lg border border-border-field bg-surface-field py-2 ps-3 pe-9 text-note text-fg-strong"
+          aria-label={t('admin.tasks.keyVersion')}
+          value={selected}
+          disabled={disabled}
+          onChange={(event) => onChange(Number(event.target.value))}
+        >
+          {versions
+            .filter((k) => k.state === 'active' || k.state === 'superseded')
+            .map((k) => (
+              <option key={k.version} value={k.version}>
+                {k.version} · {t(`admin.tasks.${k.state}`)}
+              </option>
+            ))}
+        </select>
+        <ChevronDown
+          aria-hidden
+          className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2"
+        />
+      </span>
+    </label>
   );
 }
 
@@ -144,11 +175,16 @@ function KeyActions({
   active,
 }: Readonly<KeyActionsProps>) {
   if (ownKey === null) {
-    if (unlocked !== null) return <FingerprintCard keys={unlocked} />;
+    if (unlocked !== null)
+      return (
+        <div className="rounded-2xl border border-border-card bg-surface-card p-5">
+          <FingerprintCard keys={unlocked} />
+        </div>
+      );
     return <EnrolForm owner={owner} onPassphraseEntered={onPassphraseEntered} />;
   }
   return (
-    <>
+    <div className="rounded-2xl border border-border-card bg-surface-card p-5">
       {unlocked === null ? (
         <UnlockForm
           owner={owner}
@@ -160,9 +196,11 @@ function KeyActions({
         <FingerprintCard keys={unlocked} />
       )}
       {active && (
-        <ReenrolPanel owner={owner} ownKey={ownKey} onPassphraseEntered={onPassphraseEntered} />
+        <div className="mt-3 border-t border-border-divider pt-3">
+          <ReenrolPanel owner={owner} ownKey={ownKey} onPassphraseEntered={onPassphraseEntered} />
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -202,22 +240,32 @@ export function KeysScreen({
         accountUrl={accountUrl}
         studioUrl={studioUrl}
       />
-      <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
-        <div className="rounded-2xl border border-border-card bg-surface-card p-5">
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="mb-1.5 text-thanks font-semibold text-fg-strong"
-          >
-            {t('admin.tasks.account')}
-          </h1>
-          <p className="text-note leading-chat text-fg-muted">{t('admin.tasks.keyIntro')}</p>
+      <div className="flex flex-col gap-4 px-5 pb-16 pt-content-top">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+          <div className="min-w-0">
+            <h1
+              ref={heading}
+              tabIndex={-1}
+              className="mb-1.5 text-title font-semibold text-fg-strong"
+            >
+              {t('admin.tasks.account')}
+            </h1>
+            <p className="max-w-lg text-note leading-chat text-fg-muted">
+              {t('admin.tasks.keyIntro')}
+            </p>
+          </div>
+          {accountUrl && (
+            <a
+              className="focus-ring inline-flex min-h-11 shrink-0 items-center gap-2 self-start rounded-pill border border-border-card bg-surface-card px-4 text-label font-medium text-fg-strong hover:bg-surface-row-hover"
+              href={accountUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('admin.menu.accountSettings')}
+              <ArrowUpRight aria-hidden className="size-4" />
+            </a>
+          )}
         </div>
-        {accountUrl && (
-          <a className="underline" href={accountUrl} target="_blank" rel="noreferrer">
-            {t('admin.menu.accountSettings')}
-          </a>
-        )}
         {children}
         <KeysPanel requestedVersion={requestedVersion} onUnlocked={onUnlocked} />
       </div>

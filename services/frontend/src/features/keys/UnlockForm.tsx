@@ -5,6 +5,7 @@ import type { KeyOwner } from '@/core/crypto/archive-crypto.port';
 import type { OwnKey } from '@/domain/recording/recording.types';
 import { Button } from '@/ui/primitives/Button';
 import { TextField } from '@/ui/primitives/TextField';
+import { KeyDetails } from './KeyDetails';
 import { PassphraseImport } from './PassphraseImport';
 import { useUnlock } from './useUnlock';
 
@@ -36,14 +37,8 @@ export function UnlockForm({
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5"
-    >
-      <h2 className="text-body font-semibold text-fg-strong">{t('admin.keys.unlockTitle')}</h2>
-      <p className="text-note leading-chat text-fg-muted">
-        {t('admin.keys.fingerprintLabel')} <code>{ownKey.fingerprintDisplay}</code>
-      </p>
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <h2 className="text-thanks font-semibold text-fg-strong">{t('admin.keys.unlockTitle')}</h2>
       <TextField
         type="password"
         disabled={pending}
@@ -53,15 +48,18 @@ export function UnlockForm({
         onChange={(event) => setPassphrase(event.target.value)}
         error={failed ? t('admin.keys.unlockFailed') : null}
       />
-      {fileEnabled && <PassphraseImport onLoad={setPassphrase} disabled={pending} />}
-      <Button
-        type="submit"
-        variant="compact"
-        className="self-start bg-accent text-accent-on"
-        disabled={pending}
-      >
-        {t(pending ? 'admin.keys.unlockPending' : 'admin.keys.unlockAction')}
-      </Button>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <Button
+          type="submit"
+          variant="compact"
+          className="min-h-11 bg-accent text-accent-on"
+          disabled={pending}
+        >
+          {t(pending ? 'admin.keys.unlockPending' : 'admin.keys.unlockAction')}
+        </Button>
+        {fileEnabled && <PassphraseImport onLoad={setPassphrase} disabled={pending} />}
+      </div>
+      <KeyDetails fingerprint={ownKey.fingerprintDisplay} />
     </form>
   );
 }

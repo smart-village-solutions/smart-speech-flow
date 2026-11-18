@@ -115,11 +115,17 @@ describe('KeysScreen', () => {
     expect(archiveCrypto.createKeys).not.toHaveBeenCalled();
   });
 
-  it('enrols, holds the keys unlocked and shows the fingerprint', async () => {
+  it('enrols, holds the keys unlocked and reveals the fingerprint on request', async () => {
     const { recordingKeys, keyVault } = render();
     await typePassphrase('Zugangsschlüssel (Passphrase)', STRONG);
     await typePassphrase('Passphrase wiederholen', STRONG);
     await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }));
+    const details = await screen.findByText('Schlüsseldetails anzeigen');
+    expect(details.closest('details')).not.toHaveAttribute('open');
+    details.focus();
+    expect(details).toHaveFocus();
+    await userEvent.click(details);
+    expect(details.closest('details')).toHaveAttribute('open');
     expect(
       await screen.findByText('abab abab abab abab abab abab abab abab abab abab')
     ).toBeInTheDocument();
