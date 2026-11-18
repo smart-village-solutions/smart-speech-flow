@@ -10,6 +10,10 @@
 
 **Spec:** `openspec/changes/add-task-oriented-ssf-dashboard/` and `openspec/changes/update-recording-key-lifecycle/`; Studio companion `/root/projects/studio-key-convenience/openspec/changes/add-ssf-organisation-key-management/`.
 
+## Additional approved scope
+
+The user requested implementing `remove-sensitive-action-reauthentication` alongside this work. Its spec is authoritative over earlier action-specific fresh-MFA text. Gateway, SSF and Studio workers own their respective code/tests; the coordinator reconciles documentation. Keep login policy MFA, verified authentication, session expiry, effective rights, local passphrase unlock, email-confirmed key replacement and possession preparation expiry.
+
 ## Global Constraints
 
 - User approved all three proposals in this conversation on 2026-11-18.

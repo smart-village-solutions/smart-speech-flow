@@ -14,6 +14,7 @@ change, since it alters what appears in existing operational logs.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import logging
@@ -102,6 +103,16 @@ class SessionPseudonymizer:
         configured = (os.environ.get(SESSION_KEY_ENV) or "").strip()
         if configured:
             return cls(key=configured.encode("utf-8"))
+
+        # Reuse the existing deployment secret through an independent domain,
+        # so recording references remain stable when no telemetry key is set.
+        encoded = os.environ.get("SSF_FEEDBACK_ENCRYPTION_KEY", "")
+        try:
+            feedback_key = base64.b64decode(encoded, validate=True)
+        except ValueError:
+            feedback_key = b""
+        if len(feedback_key) == 32:
+            return cls(key=hmac.digest(feedback_key, b"SSF-SESSION-PSEUDONYM-V1", "sha256"))
 
         logger.warning(
             "%s is not set; session references will be keyed per process, so "

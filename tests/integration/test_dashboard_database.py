@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import asyncpg
 import pytest
 
-from services.api_gateway.dashboard import Dashboard
+from services.api_gateway.dashboard import Dashboard, DashboardCursor
 from services.api_gateway.dashboard_repository import DashboardRecords
 from services.api_gateway.recording.repository import bind_tenant
 from services.api_gateway.session_models import Session, SessionStatus
@@ -56,6 +56,32 @@ async def conversation(conn, tenant, sub, ref, start):
     return str(cid)
 
 
+async def grant_archive(conn, tenant, cid):
+    kid = uuid.uuid4()
+    await conn.execute(
+        "INSERT INTO user_keys(tenant_id,user_sub,key_version,enc_pub,sig_pub,fingerprint,encrypted_private,created_at) VALUES($1,'alice',1,$2,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+        tenant,
+        bytes(65),
+        bytes(32),
+        bytes(48),
+        NOW,
+    )
+    await conn.execute(
+        "INSERT INTO conversation_keys VALUES($1,$2,$3,1,$4)", tenant, kid, uuid.UUID(cid), NOW
+    )
+    await conn.execute(
+        "INSERT INTO key_wraps(tenant_id,key_id,recipient_kind,recipient_ref,blob,creator_ref,creator_signature,granted_at,recipient_version,recipient_fingerprint) VALUES($1,$2,'user','alice','{}','gateway',$3,$4,1,$5)",
+        tenant,
+        kid,
+        bytes(64),
+        NOW,
+        bytes(32),
+    )
+    await conn.execute(
+        "INSERT INTO key_grants VALUES($1,$2,'alice',1,'owner',$3)", tenant, kid, uuid.uuid4()
+    )
+
+
 async def test_sql_combines_owned_sessions_and_recordings_without_duplicates_on_next_page(db):
     conn, records = db
     tenant = str(uuid.uuid4())
@@ -78,9 +104,10 @@ async def test_sql_combines_owned_sessions_and_recordings_without_duplicates_on_
         terminated_at=NOW,
     )
     cid = await conversation(conn, tenant, "alice", pseudo.recording_reference("NEW"), NOW)
+    await grant_archive(conn, tenant, cid)
     await conversation(conn, tenant, "colleague", "foreign", NOW)
     await conversation(conn, "other-" + tenant, "alice", "other-tenant", NOW)
-    service = Dashboard(Sessions([newer, older]), records, pseudo)
+    service = Dashboard(Sessions([newer, older]), records, pseudo, DashboardCursor(bytes(32)))
     first = await service.conversations(
         tenant, "alice", "owner", frozenset({"ssf.recording.request"}), 1, None
     )
@@ -163,7 +190,7 @@ async def test_recorded_language_stays_hidden_when_recording_permission_is_remov
         customer_language="en",
     )
     await conversation(conn, tenant, "alice", pseudo.recording_reference("RETAINED"), NOW)
-    service = Dashboard(Sessions([owned]), records, pseudo)
+    service = Dashboard(Sessions([owned]), records, pseudo, DashboardCursor(bytes(32)))
     page = await service.conversations(tenant, "alice", "owner", frozenset(), 50, None)
     assert len(page["items"]) == 1
     assert page["items"][0]["language_visibility"] == "encrypted"
@@ -202,7 +229,7 @@ async def test_transfer_grant_is_listable_but_revoked_key_and_missing_permission
         "INSERT INTO key_grants VALUES($1,$2,'alice',1,'transfer',$3)", tenant, kid, uuid.uuid4()
     )
     pseudo = SessionPseudonymizer(key=b"transfer-test")
-    service = Dashboard(Sessions([]), records, pseudo)
+    service = Dashboard(Sessions([]), records, pseudo, DashboardCursor(bytes(32)))
     allowed = await service.conversations(
         tenant, "alice", "owner", frozenset({"ssf.recording.request"}), 50, None
     )
@@ -215,3 +242,84 @@ async def test_transfer_grant_is_listable_but_revoked_key_and_missing_permission
         tenant, "alice", "owner", frozenset({"ssf.recording.request"}), 50, None
     )
     assert revoked["items"] == []
+
+
+@pytest.mark.parametrize("shredded", [False, True])
+async def test_expired_or_shredded_recorded_session_is_still_private_after_restart(db, shredded):
+    conn, records = db
+    tenant = str(uuid.uuid4())
+    pseudo = SessionPseudonymizer(key=b"persisted-recorded-marker")
+    retained = Session(
+        id="KEPT",
+        tenant_id=tenant,
+        owner_ref="owner",
+        created_at=NOW,
+        status=SessionStatus.TERMINATED,
+        terminated_at=NOW,
+        customer_language="en",
+    )
+    cid = await conversation(conn, tenant, "alice", pseudo.recording_reference("KEPT"), NOW)
+    if shredded:
+        await conn.execute(
+            "UPDATE conversations SET shredded_at=$2 WHERE conversation_id=$1", uuid.UUID(cid), NOW
+        )
+    else:
+        await conn.execute(
+            "UPDATE conversations SET retention_until=$2 WHERE conversation_id=$1",
+            uuid.UUID(cid),
+            NOW - timedelta(seconds=1),
+        )
+    # A restarted process has not seen mark_recorded, but the server-private
+    # conversation marker still covers its retained session independently of grants.
+    service = Dashboard(
+        Sessions([retained]),
+        records,
+        SessionPseudonymizer(key=b"persisted-recorded-marker"),
+        DashboardCursor(bytes(32)),
+    )
+    result = await service.conversations(tenant, "alice", "owner", frozenset(), 50, None)
+    assert len(result["items"]) == 1
+    item = result["items"][0]
+    assert item["customer_language"] is None
+    assert item["recording_status"] == "unavailable"
+    assert item["recording_id"] is None
+    assert item["verification"] is None
+    assert item["actions"] == []
+
+
+async def test_equal_time_recorded_rows_do_not_reappear_as_private_markers_between_pages(db):
+    conn, records = db
+    tenant = str(uuid.uuid4())
+    pseudo = SessionPseudonymizer(key=b"pagination")
+    sessions = []
+    ids = set()
+    for n in range(3):
+        sid = f"SAME{n}"
+        sessions.append(
+            Session(
+                id=sid,
+                tenant_id=tenant,
+                owner_ref="owner",
+                created_at=NOW,
+                status=SessionStatus.TERMINATED,
+                terminated_at=NOW,
+            )
+        )
+        cid = await conversation(conn, tenant, "alice", pseudo.recording_reference(sid), NOW)
+        await grant_archive(conn, tenant, cid)
+        ids.add(cid)
+    service = Dashboard(Sessions(sessions), records, pseudo, DashboardCursor(bytes(32)))
+    cursor = None
+    found = []
+    for _ in range(4):
+        page = await service.conversations(
+            tenant, "alice", "owner", frozenset({"ssf.recording.request"}), 1, cursor
+        )
+        for row in page["items"]:
+            assert row["recording_id"] in ids
+            found.append(row["recording_id"])
+        cursor = page["next_cursor"]
+        if not cursor:
+            break
+    assert set(found) == ids
+    assert len(found) == 3

@@ -77,7 +77,7 @@ async def test_joined_recording_hides_language_and_deduplicates():
     assert len(result["items"]) == 1
     item = result["items"][0]
     assert item["session_id"] == "OWN"
-    assert item["recording_id"] is not None
+    assert item["recording_id"] is None
     assert item["customer_language"] is None
     assert item["language_visibility"] == "encrypted"
     assert pseudo.recording_reference("OWN") not in repr(result)
@@ -171,3 +171,42 @@ async def test_losing_recording_permission_does_not_expose_recorded_language():
     result = await service.conversations("tenant-a", "alice", "owner", frozenset(), 50, None)
     assert result["items"][0]["customer_language"] is None
     assert "open_recording" not in result["items"][0]["actions"]
+
+
+async def test_inaccessible_archive_only_metadata_is_not_listed():
+    row = {
+        "conversation_id": "00000000-0000-0000-0000-000000000004",
+        "session_ref": "expired-session",
+        "employee_sub": "alice",
+        "started_at": NOW,
+        "ended_at": NOW,
+        "incomplete": False,
+        "can_open": False,
+        "verification_statuses": ["approved"],
+    }
+    service, _ = dashboard([], Recordings([row]))
+    page = await service.conversations(
+        "tenant-a", "alice", "owner", frozenset({"ssf.recording.request"}), 50, None
+    )
+    assert page["items"] == []
+
+
+def test_cursor_and_session_reference_are_stable_across_instances(monkeypatch):
+    import base64
+
+    monkeypatch.delenv("SSF_QUALITY_TELEMETRY_SESSION_KEY", raising=False)
+    monkeypatch.setenv("SSF_FEEDBACK_ENCRYPTION_KEY", base64.b64encode(bytes(range(32))).decode())
+    first, second = DashboardCursor.from_environment(), DashboardCursor.from_environment()
+    token = first.encode("t", "u", (NOW.isoformat(), "row"))
+    assert second.decode("t", "u", token) == (NOW.isoformat(), "row")
+    assert first.row_id("t", "session") == second.row_id("t", "session")
+    assert SessionPseudonymizer.from_environment().recording_reference(
+        "session"
+    ) == SessionPseudonymizer.from_environment().recording_reference("session")
+
+
+def test_cursor_configuration_never_silently_falls_back_to_process_random(monkeypatch):
+    monkeypatch.delenv("SSF_QUALITY_TELEMETRY_SESSION_KEY", raising=False)
+    monkeypatch.delenv("SSF_FEEDBACK_ENCRYPTION_KEY", raising=False)
+    with pytest.raises(ValueError):
+        DashboardCursor.from_environment()

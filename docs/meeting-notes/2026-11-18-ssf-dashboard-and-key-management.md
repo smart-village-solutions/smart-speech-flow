@@ -134,6 +134,15 @@ old key envelopes. This decision does not execute or authorize immediate data
 deletion. Recordings created after cutover must retain access across subsequent
 personal and organisation key changes as described above.
 
+### Valid-session action continuity
+
+The additional user-approved `remove-sensitive-action-reauthentication` proposal
+supersedes action-specific MFA/password challenges. Optional/required MFA remains
+at tenant login. A valid session and the correct local passphrase suffice to
+unlock active and usable historical personal keys, including after lock or reload.
+Keep permission/tenant/token checks, normal refresh/session expiry, key-replacement
+email confirmation and actual cryptographic preparation expiration.
+
 ## Actions
 
 - Prepare SSF and Studio implementation proposals covering navigation, personal

@@ -18,7 +18,9 @@ storage/spool targets. Record the backup and rollback decision before proceeding
 Deploy compatible Gateway, SSF, Studio and the Keycloak exchange-assurance mapper
 through their established deployment processes. Studio's server client and user
 session must belong to the target tenant realm, with allowed exchange audience,
-permissions and original MFA context. Test the actual exchange before enabling
+permissions and truthful optional authentication context. Actions do not require
+fresh MFA, a maximum `auth_time` age or mandatory MFA under an optional login
+policy. Test the actual exchange before enabling
 organisation administration; client credentials are not a fallback.
 
 The reset CLI uses `SSF_RECORDING_OWNER_DATABASE_URL` and its separate
@@ -27,6 +29,18 @@ mechanism; never include passwords in shell arguments, saved output or tickets.
 It requires the offline database operator role. Database name is checked against
 the live connection. Audit history and gateway signing public keys are preserved.
 Feedback, usage, ordinary conversation metadata and other tenants are untouched.
+
+## Stable dashboard and recording references
+
+Configure `SSF_QUALITY_TELEMETRY_SESSION_KEY` consistently across Gateway
+instances, or provide the existing valid 32-byte Base64
+`SSF_FEEDBACK_ENCRYPTION_KEY`. With no explicit telemetry key, a domain-separated
+key derived from the existing feedback secret stabilizes session/archive joins;
+cursors use their own domain. Dashboard construction refuses missing shared
+configuration rather than issuing per-process cursors. Configure this before
+creating v2 records. Keep the derivation stable while retained sessions depend
+on its joins. Do not treat deleting or shredding a recording as evidence that
+its retained session was never recorded: its private database marker remains.
 
 ## Review the inventory
 

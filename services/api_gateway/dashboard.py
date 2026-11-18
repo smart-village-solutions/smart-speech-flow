@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -20,8 +21,6 @@ from .recording.verification_model import summary
 from .session_models import Session, SessionStatus
 from .session_pseudonym import SessionPseudonymizer
 from .session_store import SessionStoreConsistencyError
-
-_CURSOR_KEY = secrets.token_bytes(32)
 
 
 class DashboardUnavailableError(Exception):
@@ -47,8 +46,23 @@ class RecordingSource(Protocol):
 class DashboardCursor:
     """Opaque authenticated keyset boundaries, scoped to the user and tenant."""
 
-    def __init__(self, key: bytes = _CURSOR_KEY) -> None:
+    def __init__(self, key: bytes) -> None:
+        if len(key) != 32:
+            raise ValueError("Dashboard key must contain 32 bytes")
         self._key = key
+
+    @classmethod
+    def from_environment(cls) -> "DashboardCursor":
+        configured = (os.environ.get("SSF_QUALITY_TELEMETRY_SESSION_KEY") or "").strip()
+        if configured:
+            master = configured.encode()
+        else:
+            master = base64.b64decode(
+                os.environ.get("SSF_FEEDBACK_ENCRYPTION_KEY", ""), validate=True
+            )
+            if len(master) != 32:
+                raise ValueError("A shared deployment secret is required for dashboard cursors")
+        return cls(hmac.digest(master, b"SSF-DASHBOARD-CURSOR-V1", "sha256"))
 
     def row_id(self, tenant: str, session_id: str) -> str:
         message = json.dumps(["dashboard-row", tenant, session_id]).encode()
@@ -91,7 +105,7 @@ class Dashboard:
         self.sessions = sessions
         self.recordings = recordings
         self.pseudonymizer = pseudonymizer
-        self.cursor = cursor or DashboardCursor()
+        self.cursor = cursor or DashboardCursor.from_environment()
 
     async def conversations(
         self,
@@ -132,12 +146,20 @@ class Dashboard:
         items: dict[str, dict[str, Any]] = {}
         linked: set[str] = set()
         for record in records:
-            if not has_archive_permission and record["employee_sub"] != sub:
-                continue
-            record = {**record, "can_open": has_archive_permission and record["can_open"]}
             source = by_ref.get(record["session_ref"])
+            if record.get("private_recorded") or not (
+                has_archive_permission and record["can_open"]
+            ):
+                if source is not None:
+                    linked.add(source.id)
+                    if record.get("archive_accessible") and has_archive_permission:
+                        continue
+                    item = self._session(tenant, source, recorded=True)
+                    items[item["id"]] = item
+                continue
             if source is not None:
                 linked.add(source.id)
+                items.pop(self.cursor.row_id(tenant, source.id), None)
             item = self._recording(record, sub, source)
             items[item["id"]] = item
         for source in sessions:
@@ -157,9 +179,9 @@ class Dashboard:
         )
         return {"items": page, "next_cursor": cursor}
 
-    def _session(self, tenant: str, row: Session) -> dict[str, Any]:
+    def _session(self, tenant: str, row: Session, *, recorded: bool = False) -> dict[str, Any]:
         ended = row.status == SessionStatus.TERMINATED
-        recorded = self.pseudonymizer.is_recorded(row.id)
+        recorded = recorded or self.pseudonymizer.is_recorded(row.id)
         return {
             "id": self.cursor.row_id(tenant, row.id),
             "session_id": row.id,

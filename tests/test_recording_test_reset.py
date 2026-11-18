@@ -39,3 +39,17 @@ def test_dependent_rows_are_deleted_before_their_parent():
         deletion_order({"keys", "wraps"}, [("keys", "wraps"), ("wraps", "keys")])
     with pytest.raises(ResetRefusedError):
         deletion_order({"keys"}, [("unknown_table", "keys")])
+
+
+def test_invalid_operator_dsn_does_not_echo_secret(monkeypatch, capsys):
+    from services.api_gateway.recording.reset_legacy_test_data import main
+
+    monkeypatch.setenv("SSF_RECORDING_OWNER_DATABASE_URL", "PRIVATE_MARKER://not-postgres")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["reset", "--database", "test", "--tenant", "t", "--storage-target", "test://empty"],
+    )
+    with pytest.raises(SystemExit) as refused:
+        main()
+    assert refused.value.code == 2
+    assert "PRIVATE_MARKER" not in capsys.readouterr().err

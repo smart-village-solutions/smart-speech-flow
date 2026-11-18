@@ -55,3 +55,7 @@ its deletion. Reset remains a separate, explicit operator action.
 ## Approval
 
 Approved by the user in the development conversation on 2026-11-18. Implementation is authorized; deployment and test-data reset remain separate operator actions.
+
+## Subsequent authentication policy
+
+The additionally approved `remove-sensitive-action-reauthentication` change supersedes all action-specific fresh-MFA requirements in this proposal and its design/tasks. A valid authenticated user session is sufficient regardless of optional MFA claims or original login age. Identity, tenant, permissions, session expiry, local key passphrases, replacement email confirmation and actual cryptographic preparation expiry remain enforced. Historical acceptance evidence is not rewritten.

@@ -23,8 +23,9 @@ differs should stop the rollout rather than be repeated.
   change only through `retention_decisions` rows, which a trigger applies. A
   date is never moved earlier, and a shredded conversation takes no decision,
   key wrap or chain entry. Supervisors decide through the gateway's routes
-  (`/api/admin/recording/conversations`), with `ssf.recording.supervise` and a
-  fresh MFA login.
+  (`/api/admin/recording/conversations`), with `ssf.recording.supervise` and a valid
+  authenticated user session. Login MFA is the tenant policy; actions do not
+  require a second identity challenge.
 - **One worker per archive site.** Each holds only its own site's `retention`
   pair, and reaches `ssf_recording` over the link.
 
@@ -280,8 +281,10 @@ be gone from every backup.
 
 ## Step 8 — Supervisors
 
-Supervisors need `ssf.recording.supervise` in Studio and the step-up MFA of
-recording-keys-deployment.md, Step 6. The routes are API only for now; the
+Supervisors need `ssf.recording.supervise` in Studio and a valid authenticated
+user session, as described in recording-keys-deployment.md, Step 6. Optional
+login MFA does not become mandatory for a retention action, and old `auth_time`
+alone must not block it. The routes are API only for now; the
 screens are a separate issue.
 
 ## Step 9 — Turning recording on

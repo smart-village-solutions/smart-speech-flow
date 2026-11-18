@@ -1,10 +1,24 @@
 # Recording Keys Deployment Runbook
 
-## Scope
+## Current policy and historical rollout scope
+
+The approved `remove-sensitive-action-reauthentication` change supersedes earlier
+action-specific step-up requirements. A valid user session suffices for
+otherwise authorized actions; optional login MFA permits password-only sessions,
+and mandatory MFA is enforced at login. Personal current/historical key unlock
+requires only the matching local passphrase. Replacement email confirmation and
+cryptographic preparation expiry remain separate safeguards.
+
+The original threshold-recovery rollout below is historical after protocol v2.
+For the current organisation-key setup/cutover use
+[Recording protocol v2 test cutover](recording-key-v2-test-cutover.md).
+Do not run the retired recovery ceremony against a v2 installation.
+
+## Original scope
 
 This runbook brings the first part of recording mode (#614) into production:
 the `ssf_recording` database, the gateway's two recording secrets, personal key
-enrolment for staff, step-up MFA in the tenant realms, and each tenant's
+enrolment for staff, login MFA policy in the tenant realms, and each tenant's
 recovery-key ceremony. Nothing is recorded yet; that arrives with #615.
 
 Everything here is optional per host. Until `SSF_RECORDING_APP_PASSWORD` is set
@@ -127,48 +141,30 @@ piece: the password, or a secret file the gateway cannot read (Step 1's
 ownership). `Recording storage unavailable` means the database is not reachable
 yet; the gateway retries on its own with backoff up to 60 s.
 
-## Step 6 — Step-up MFA in each tenant realm
+## Step 6 — Tenant login MFA and personal access
 
-Enrolment, and later the recovery ceremony and approvals, require a fresh login
-with a second factor. The gateway accepts a token whose `acr` is `mfa` and
-whose `auth_time` is at most 300 seconds old; both values are fixed in the
-gateway and the frontend. Each tenant realm must therefore map `mfa` to a
-level of authentication that demands OTP.
+Studio owns the tenant's optional/required ordinary-login MFA policy and its
+Keycloak provisioning. Keep optional when a password-only login is intended;
+choose required when every initial login must present the configured factor.
+Wait for the verified applied tenant login policy. Do not add action-specific
+ACR level overrides, `max_age=0` or repeat password/OTP challenges.
 
-Studio provisions this in every tenant realm: the levels `pwd` → `1` and
-`mfa` → `2`, login flows whose level 2 always asks for the OTP code, and the
-`acr` claim in `ssf-frontend` tokens. Its Keycloak provisioning run applies them
-together with the tenant's ordinary-login MFA setting, which is optional by
-default. Do not configure the realm by hand: Studio refuses to replace a browser
-flow it did not create (`LOGIN_MFA_BINDING_CONFLICT`), so the tenant's MFA
-setting would never take effect.
+Within a valid session, key enrolment, replacement and other authorized actions
+must not depend on `acr=mfa` or `auth_time` age. The Gateway still validates the
+user token, tenant, permissions and expiry. A real expired session follows normal
+refresh/login. An expired possession preparation needs a new preparation, not a
+new login. Email confirmation remains required for activating a replacement.
 
-1. In Studio, open the tenant's instance. Under **Ordinary login MFA** (**MFA
-   bei normaler Anmeldung**) keep **optional**, or choose **required** to ask
-   for the code at every sign-in. Step-up asks for it either way.
-2. Wait until the instance's Keycloak status shows **Tenant login MFA
-   verified**. A pending or failed run means the realm is not ready yet; the
-   run's diagnostic names the cause.
-3. Staff who will hold keys need OTP set up: **Users → (user) → Required user
-   actions → Configure OTP** in Keycloak, or they set it up at their next
-   step-up.
+Verify both a password-only optional-MFA login and a tenant-required MFA login:
 
-**A realm configured by hand** with the earlier version of this step: in its
-Keycloak admin console, **Authentication → Flows → browser → Action → Bind flow
-→ Browser flow**, then delete the `ssf step-up browser` flow, and save the MFA
-setting in Studio again to retry its run. Enrolled OTP codes stay.
+1. Open **Mein Konto** and set up personal access without an additional login.
+2. Unlock with the local **Zugangsschlüssel**, distinct from the account password.
+3. Lock and unlock again, and repeat after reload; no password/OTP or email
+   confirmation should be requested for unlock. A wrong passphrase stays local.
+4. An older valid login must continue to work after 300 seconds. Invalid tokens,
+   wrong tenants and missing permissions must still be refused.
 
-Verify with a staff account that holds an `ssf.recording.*` permission:
-
-1. Open the tenant login page, then **user menu → Archivschlüssel**.
-2. **Erneut anmelden** must ask for the password and the OTP code, then return
-   to the same screen.
-3. Create keys with a strong passphrase. The screen shows a fingerprint of ten
-   groups of four characters.
-4. Sign out, sign in, open the keys screen again, and unlock with the
-   passphrase. The fingerprint must match.
-
-## Step 7 — The recovery-key ceremony, per tenant
+## Step 7 — Historical recovery-key ceremony (retired in protocol v2)
 
 Each tenant needs a recovery key before #615 can let it record. No device ever
 holds that key: custodians each deal a share of it in their own browsers, and

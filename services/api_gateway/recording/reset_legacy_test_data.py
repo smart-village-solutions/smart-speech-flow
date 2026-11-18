@@ -252,7 +252,7 @@ def main() -> int:
     try:
         print(json.dumps(asyncio.run(_run(args)), sort_keys=True))
         return 0
-    except (ResetRefusedError, asyncpg.PostgresError, OSError, TimeoutError):
+    except (ValueError, asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError):
         parser.exit(
             2,
             "Reset refused; check targets, operator access, unchanged inventory and offline prerequisites.\n",

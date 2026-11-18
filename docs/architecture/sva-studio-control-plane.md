@@ -220,8 +220,16 @@ follow automatically from configuration-administration rights.
 Ordinary-login MFA is optional unless the tenant requires it. Studio Core/IAM
 owns the tenant authentication policy, its desired and verified applied state,
 and reconciliation into Keycloak. Users enroll their factor in Keycloak.
-Sensitive recording-key actions still require a fresh MFA step-up, independently
-of whether the ordinary tenant login requires MFA.
+The additionally approved authenticated-action-continuity policy reuses that
+valid user session for sensitive recording-key and administrative actions.
+Neither password-only optional-MFA sessions, missing optional `acr`/`auth_time`,
+nor login age alone require action-specific reauthentication. Normal token
+validation, refresh/expiry, permissions and tenant isolation remain enforced.
+Own current/historical key unlock uses only the local matching passphrase;
+replacement email confirmation and actual possession-challenge expiry remain
+independent. Studio forwards verified user authority; a service credential is
+not a substitute. Exchanged authentication context is truthful, not a new MFA
+freshness policy.
 
 See the [recording administration change](../../openspec/changes/add-studio-recording-administration/design.md)
 for the implementation boundaries and acceptance criteria. These target rules

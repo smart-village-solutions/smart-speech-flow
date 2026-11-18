@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..auth import require_ssf_user
-from ..dashboard import Dashboard, DashboardUnavailableError
+from ..dashboard import Dashboard, DashboardCursor, DashboardUnavailableError
 from ..dashboard_repository import DashboardRecords
 from ..dependencies import optional_container
 from ..recording.permissions import REVIEW, coded, permissions_of, require_permission
@@ -26,10 +26,15 @@ def get_dashboard(request: Request) -> Dashboard:
     if dependencies is None:
         raise coded(503, "DASHBOARD_UNAVAILABLE", "Dashboard is not available")
     repository = dependencies.recording_repository
+    try:
+        cursor = DashboardCursor.from_environment()
+    except ValueError:
+        raise coded(503, "DASHBOARD_UNAVAILABLE", "A shared dashboard secret is required") from None
     return Dashboard(
         dependencies.session_manager.store,
         DashboardRecords(repository.pool) if repository is not None else None,
         dependencies.pseudonymizer,
+        cursor,
     )
 
 

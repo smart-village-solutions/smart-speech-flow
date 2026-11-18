@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from services.api_gateway.auth import require_ssf_user
-from services.api_gateway.dashboard import Dashboard
+from services.api_gateway.dashboard import Dashboard, DashboardCursor
 from services.api_gateway.routes.dashboard import get_dashboard, get_dashboard_records, router
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from tests.test_dashboard_overview import Sessions, session
@@ -23,7 +23,7 @@ def client():
         "ssf_permissions": [],
     }
     app.dependency_overrides[get_dashboard] = lambda: Dashboard(
-        Sessions([session()]), None, SessionPseudonymizer(key=b"test")
+        Sessions([session()]), None, SessionPseudonymizer(key=b"test"), DashboardCursor(bytes(32))
     )
     return app, TestClient(app)
 
