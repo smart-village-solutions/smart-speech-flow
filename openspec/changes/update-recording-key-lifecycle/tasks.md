@@ -7,14 +7,14 @@
 ## 2. Versioned persistence and personal lifecycle
 
 - [ ] 2.1 Add the next recording Postgres migration for protocol generation, personal key states, versioned recipients/grants, standalone organisation keys, encrypted short-lived preparation secrets and committed receipts. Preserve RLS, one-active-key invariants and existing audit integrity.
-- [ ] 2.2 Update `recording/{repository,keys,reenrolment_repository,key_retirement,key_confirmation_repository}.py` and `routes/recording.py` to distinguish supersession from revocation/leaving and expose the versioned personal-key list/blob APIs. Keep MFA, verified E-Mail and delayed activation.
+- [ ] 2.2 Update `recording/{repository,keys,reenrolment_repository,key_retirement,key_confirmation_repository}.py` and `routes/recording.py` to distinguish supersession from revocation/leaving and expose the versioned personal-key list/blob APIs. Keep verified user authentication, verified E-Mail and delayed activation; action-specific MFA is superseded by authenticated action continuity.
 - [ ] 2.3 Add lifecycle unit and real Postgres tests: replacement preserves old encrypted blobs/wraps/assignments, new grants use active version, revoked/left versions are denied, concurrent confirmations cannot create two active versions, blob reads remain audited.
 
 ## 3. Organisation lifecycle and actor authorization
 
 - [ ] 3.1 Create focused `recording/organisation_keys.py`, its repository, strict models and `routes/recording_organisation_keys.py` for list/preparation/activation/cancel; wire using existing dependency/container conventions.
-- [ ] 3.2 Enforce tenant-manager permission and fresh MFA at preparation/activation; implement public-key point checks, encrypted nonce storage, fingerprint computation, expected-active CAS, secret-free errors and receipt retries.
-- [ ] 3.3 Coordinate Studio's scoped session-token capability and RFC 8693 adapter with explicit tenant Keycloak audience/claim/exchange-policy configuration. Add integration tests proving original sub/tenant/MFA preservation and rejection of client credentials, raw actor headers, wrong audience, stale MFA and missing effective permissions.
+- [ ] 3.2 Enforce tenant-manager permission and a valid authenticated session at preparation/activation; implement public-key point checks, encrypted nonce storage, fingerprint computation, expected-active CAS, secret-free errors and receipt retries.
+- [ ] 3.3 Coordinate Studio's scoped session-token capability and RFC 8693 adapter with explicit tenant Keycloak audience/claim/exchange-policy configuration. Add integration tests proving original sub/tenant/MFA preservation and rejection of client credentials, raw actor headers, wrong audience and missing effective permissions; accept authorized password-only, older-MFA and missing optional freshness claims.
 - [ ] 3.4 Add tests for first setup, abandoned replacement, old-key metadata retention, expired/changing/replayed activation and concurrent activation.
 
 ## 4. Exact-scope organisation transfer
@@ -40,4 +40,4 @@
 - [ ] 6.2 Prepare an operator-only reset tool and English runbook with explicit target, dry-run inventory, confirmation, recording-object/database dependencies and preservation of unrelated data. Do not execute reset under this proposal or infer deletion authorization from disposable data.
 - [ ] 6.3 Complete two-tenant Studio/Gateway/SSF acceptance using isolated new test stores: setup/export, activation, recording prerequisites, old/new personal versions, organisation replacement, transfer, recording viewing, review completion and permission revocation.
 - [ ] 6.4 Remove user-facing legacy threshold ceremony/recovery entry points and public routes only after replacement acceptance. Verify no old UI links or missing recovery services remain; preserve required historical audit/verifier material.
-- [ ] 6.5 Run focused Gateway pytest, Postgres integration and SSF frontend suites plus shared vectors; record evidence and coordinated release ordering. Keep this proposal pending until approved.
+- [ ] 6.5 Run focused Gateway pytest, Postgres integration and SSF frontend suites plus shared vectors; record evidence and coordinated release ordering. Record user approval and verified implementation evidence; deployment and destructive cutover remain separate operator actions.

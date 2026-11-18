@@ -48,7 +48,7 @@ private key. Personal private keys remain encrypted in server-side blobs.
 
 ## Status
 
-Proposed; approval is required before implementation. The user confirmed that
+Approved by the user on 2026-11-18; implementation is tracked in this change. The user confirmed that
 existing recording/recovery data is disposable test data and did not authorize
 its deletion. Reset remains a separate, explicit operator action.
 

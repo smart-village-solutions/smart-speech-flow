@@ -42,8 +42,7 @@ these tasks around a table and keeps organisation administration in Studio.
 - Existing recordings and assignments are disposable test data. Historical data
   migration is not a delivery requirement; this statement does not authorize any
   deletion or reset operation.
-- Status: proposed; runtime implementation requires approval under
-  `openspec/AGENTS.md`.
+- Status: approved by the user on 2026-11-18; implementation is tracked in this change.
 
 ## Sources
 

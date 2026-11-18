@@ -17,7 +17,7 @@
 - [ ] 3.3 Add independent local filters and sorting, explicit loaded-subset counts, unknown/encrypted language handling, load-more and resettable empty/error states.
 - [ ] 3.4 Integrate existing live sessions and recording viewers; add metadata-only unrecorded details without content/reconstruction actions.
 - [ ] 3.5 Integrate existing review inbox/editor and the completed-result summary; invalidate relevant lists after decisions, returned assignments and ended conversations.
-- [ ] 3.6 Preserve originating table/view/filter state and the exact permitted detail target through account unlock, cancellation and step-up returns.
+- [ ] 3.6 Preserve originating table/view/filter state and the exact permitted detail target through account unlock, cancellation and normal login returns after actual session expiry.
 - [ ] 3.7 Keep existing rolling thirty-day conversation-minute reporting and optional language breakdown available in the conversation context.
 
 ## 4. Account and coordinated navigation
