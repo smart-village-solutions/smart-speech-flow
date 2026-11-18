@@ -7,7 +7,7 @@ export interface PlaybackContextValue {
   playingId: string | null;
   /** Progress of the playing clip, 0 to 1. Zero whenever nothing is playing. */
   progress: number;
-  /** True while the listener has paused the clip named by `playingId`. */
+  /** True while paused by the listener or waiting for browser audio permission. */
   paused: boolean;
   /** Clips heard through to the end; their waveforms stay solid. */
   completedIds: ReadonlySet<string>;

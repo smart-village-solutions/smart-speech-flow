@@ -1,6 +1,6 @@
 {
   "current": {
-    "commit": "0b15321b17137eb122d4c0c4460cbe5cb9f06abc",
+    "commit": "d0199c03da4388a439bc9b779d86a746b80cb819",
     "csp": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: https://api.dialog.kassel.de wss://api.dialog.kassel.de https://auth.dialog.kassel.de; media-src 'self' blob:; frame-src https://auth.dialog.kassel.de; worker-src 'none'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
     "cspHeader": "Content-Security-Policy-Report-Only",
     "files": {
@@ -19,7 +19,7 @@
       "assets/dist-B72SMmQL.js": "7ec02525f6bd8221972ca4f2ed4f5ef58bddbd58712d38b1c8fd9d94299739cf",
       "assets/dist-DUoORJZU.js": "79a37f69d4baf1a6deb84d6c7b102708a53badfe4b8b28949e9c4aed32d70f3f",
       "assets/dist-Das1M7fa.js": "a4414723676314f32957d00f7cf9dda927773fad56fef9284a397857a7a26b81",
-      "assets/index-BL31RdZ3.js": "c1acc636ded1e1f4cab19a7361f91d24a76adcf771f07873a1779ecde7489a7b",
+      "assets/index-0fCDsusr.js": "2897a8a017c6bd1f7c1584d730e4c39531ec78d8fdca65a18ca4706caa9883fe",
       "assets/index-CDe-CyJ9.css": "16b0559e7e615abadc3f9061667607edd917bd9cac88b7ceea32a7735f937610",
       "favicon-16x16.png": "11bf180ed68b2c16f8f9a21e2ac1514cef72b30b9cbba21dd70c530cc510835b",
       "favicon-200x200.png": "a5ee6cba012e8d6e37423900f56014ab7cb4507369488c2e025551d6c1591b97",
@@ -46,12 +46,12 @@
       "flags/tr.png": "b6e2a52640a4660e853995e2900d6349679aace2add82ce389b54aecab141b4c",
       "flags/ua.png": "b23a5033c063a1564993cfb7961444fab4966daae0185718eeca190f3c8c2304",
       "fonts/Inter-Variable.woff2": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
-      "index.html": "8bdc625d092a65bed8c0159b8dfdaf3d3f084367cc95e88f539f4440144a852f",
+      "index.html": "c17dbdfe74ac8e9298babe7f89eb9271a0b32dcb991812887d8e4cfeba1f61db",
       "theme-init.js": "8cfb63ee44ba739741f064a96adbfbbf7f79ddea92d2ab421edae38f2b36958a",
       "vite.svg": "4a748afd443918bb16591c834c401dae33e87861ab5dbad0811c3a3b4a9214fb"
     },
-    "image": "ssf-backend-frontend:prod-autoplay-0b15321b",
-    "recordedAt": "2026-11-18T15:25:56Z"
+    "image": "ssf-backend-frontend:prod-autoplay-d0199c03",
+    "recordedAt": "2026-11-18T15:39:58Z"
   },
   "previous": {
     "commit": "18c7645b6468fb9794c1aa21b5590b56cc28e1a5",
