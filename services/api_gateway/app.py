@@ -564,11 +564,8 @@ from .routes import (
     login,
     recording,
     recording_archive,
-    recording_ceremony,
     recording_key_confirmation,
     recording_leavers,
-    recording_recovery,
-    recording_resharing,
     recording_retention,
     recording_reviews,
     recording_session,
@@ -598,8 +595,6 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
     app.include_router(feedback.router, tags=["feedback"])
     app.include_router(recording.router)
-    app.include_router(recording_ceremony.router)
-    app.include_router(recording_resharing.router)
     app.include_router(recording_leavers.router)
     app.include_router(recording_verifications.router)
     app.include_router(recording_reviews.router)
@@ -607,7 +602,6 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(recording_session.router)
     app.include_router(recording_retention.router)
     app.include_router(recording_archive.router)
-    app.include_router(recording_recovery.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)
