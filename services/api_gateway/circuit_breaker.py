@@ -213,14 +213,16 @@ class CircuitBreaker:
     # machine `call()` drives; a second one would drift from it.
 
     @contextmanager
-    def guard(self) -> Iterator["CircuitBreaker"]:
+    def guard(self, *, allow_recovery: bool = True) -> Iterator["CircuitBreaker"]:
         """Admits one call, or raises ``CircuitBreakerOpenError`` without running it.
 
         Records nothing on its own: the caller decides whether the outcome was
         a success or a failure, because an HTTP reply can be both delivered and
         wrong. Pair every ``guard()`` with exactly one ``record_*`` call.
+        Set ``allow_recovery=False`` for background work that must leave the
+        exclusive recovery probe to live conversation inference.
         """
-        transition = self._admit()
+        transition = self._admit(allow_recovery=allow_recovery)
         context_token = self._probe_generation_context.set(self._active_inference_probe_generation)
         self._dispatch(transition)
         try:
@@ -296,7 +298,7 @@ class CircuitBreaker:
     # Each returns the transition it made, for the caller to announce once it
     # is no longer holding the lock.
 
-    def _admit(self) -> Optional[Transition]:
+    def _admit(self, *, allow_recovery: bool = True) -> Optional[Transition]:
         """Lets one call through, or refuses it.
 
         A half-open breaker is gated as tightly as an open one. It used to
@@ -308,7 +310,7 @@ class CircuitBreaker:
         with self._lock:
             if self.state is CircuitState.CLOSED:
                 return None
-            if not self._should_attempt_reset():
+            if not allow_recovery or not self._should_attempt_reset():
                 waiting = self._time_until_next_attempt()
                 raise CircuitBreakerOpenError(
                     f"Circuit Breaker '{self.name}' ist {self.state.value.upper()}. "
