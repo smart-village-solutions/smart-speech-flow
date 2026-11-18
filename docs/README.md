@@ -31,6 +31,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [ClickHouse Telemetry Probe Findings](operations/clickhouse-telemetry-probe-findings.md) - Observed behaviour from the issue #199 discovery task
 - [Keycloak Operations Runbook](operations/runbooks/keycloak-operations.md) - Identity-provider operations and recovery
 - [Feedback Database Deployment Runbook](operations/runbooks/feedback-database-deployment.md) - Bringing the feedback store into production from nothing
+- [Recording Protocol v2 Test Cutover](operations/runbooks/recording-key-v2-test-cutover.md) - Explicit operator reset for disposable legacy recording data
 - [Recording Keys Deployment Runbook](operations/runbooks/recording-keys-deployment.md) - The recording database, gateway secrets, personal keys and step-up MFA
 - [Archive Storage Deployment Runbook](operations/runbooks/archive-storage-deployment.md) - The SeaweedFS archive store, its off-site replica and tenant buckets
 - [Recording Mode Cutover Runbook](operations/runbooks/recording-mode-cutover.md) - Retiring `ask` storage: Redis without persistence, tmpfs audio and the purge

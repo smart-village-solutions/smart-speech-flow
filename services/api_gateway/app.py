@@ -559,6 +559,7 @@ from .routes import (
     circuit_breaker,
     content,
     customer,
+    dashboard,
     feedback,
     login,
     recording,
@@ -588,6 +589,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(session.router, prefix="/api", tags=["sessions"])
     app.include_router(login.router)
     app.include_router(admin.router, tags=["admin"])
+    app.include_router(dashboard.router)
     app.include_router(customer.router, tags=["customer"])
     app.include_router(content.router)
     app.include_router(websocket_monitoring_routes.router, tags=["websocket-monitoring"])
