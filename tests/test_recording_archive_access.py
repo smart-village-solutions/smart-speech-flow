@@ -23,8 +23,8 @@ from services.api_gateway.recording.archive_access_repository import (
 from services.api_gateway.recording.archive_service import stored_recorder
 from services.api_gateway.recording.chain import GENESIS
 from services.api_gateway.recording.repository import RecordingStorageUnavailable
-from services.api_gateway.recording.storage.spool import ArchiveSpool, SpoolFullError
 from services.api_gateway.recording.storage.filesystem import FilesystemArchiveStore
+from services.api_gateway.recording.storage.spool import ArchiveSpool, SpoolFullError
 from services.api_gateway.recording.storage.tenant_spools import TenantSpools
 from tests.recording_archive_fakes import MemoryArchiveRepository, gateway_secrets
 
@@ -48,7 +48,10 @@ class FakeAccess:
     def _ok(self, sub, conversation_id):
         return (sub, conversation_id) in self.openable_pairs
 
-    async def open(self, tenant_id, sub, conversation_id, now, *, supervisor=False):
+    async def open(
+        self, tenant_id, sub, conversation_id, now, *, supervisor=False, preferred_key_versions=()
+    ):
+        self.preferred_key_versions = preferred_key_versions
         if not self._ok(sub, conversation_id):
             self.audit.append((sub, "not_found", conversation_id))
             return None

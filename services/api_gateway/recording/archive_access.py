@@ -72,6 +72,7 @@ class AccessRepository(Protocol):
         now: datetime,
         *,
         supervisor: bool = False,
+        preferred_key_versions: tuple[int, ...] = (),
     ) -> OpenedConversation | None: ...
 
     async def openable(
@@ -194,11 +195,24 @@ class ArchiveAccess:
         return await self._names.names(tenant_id, correlation_id)
 
     async def open(
-        self, tenant_id: str, sub: str, conversation_id: str, *, supervisor: bool = False
+        self,
+        tenant_id: str,
+        sub: str,
+        conversation_id: str,
+        *,
+        supervisor: bool = False,
+        preferred_key_versions: tuple[int, ...] = (),
     ) -> OpenedConversation:
         now = self._clock()
         opened = await _guard(
-            self._repository.open(tenant_id, sub, conversation_id, now, supervisor=supervisor)
+            self._repository.open(
+                tenant_id,
+                sub,
+                conversation_id,
+                now,
+                supervisor=supervisor,
+                preferred_key_versions=preferred_key_versions,
+            )
         )
         if opened is None:
             raise ArchiveAccessError("not_found")

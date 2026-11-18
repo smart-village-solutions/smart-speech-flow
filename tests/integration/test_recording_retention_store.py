@@ -470,3 +470,70 @@ async def test_worker_keeps_legacy_mark_and_shreds_due_current_recording(
         )
     finally:
         await owner.execute("DELETE FROM recording_protocol WHERE tenant_id=$1", legacy)
+
+
+async def test_restore_acknowledgement_resumes_eligible_tenant_with_a_quarantined_legacy_mark(
+    archive, owner, stores, tmp_path
+):
+    from dataclasses import replace
+
+    from services.api_gateway.recording.audit import AuditEvent
+    from services.api_gateway.recording.repository import PostgresRecordingRepository
+    from services.api_gateway.recording.retention.__main__ import _acknowledge
+    from services.api_gateway.recording.retention.restore_guard import AuditHighWater, AuditMark
+    from tests.integration.test_recording_retention_expiry_database import _expired
+    from tests.test_recording_retention_worker import _worker
+
+    legacy = str(uuid.uuid4())
+    from services.api_gateway.recording.storage.filesystem import FilesystemArchiveStore
+
+    cid = await _expired(archive, owner)
+    filesystem = FilesystemArchiveStore(
+        tmp_path / "objects", timedelta(days=1), clock=lambda: NOW - timedelta(days=40)
+    )
+    entry_id = await owner.fetchval(
+        "SELECT entry_id FROM stored_objects WHERE tenant_id=$1", TENANT
+    )
+    object_key = f"{cid}/{entry_id}/record.json"
+    uploaded = await filesystem.put(TENANT, object_key, b"synthetic")
+    await filesystem.set_legal_hold(TENANT, object_key, uploaded.version_id, True)
+    await owner.execute(
+        "UPDATE stored_objects SET version_id=$1 WHERE entry_id=$2", uploaded.version_id, entry_id
+    )
+
+    await PostgresRecordingRepository(archive._pool).record_audit(
+        AuditEvent(legacy, "test", "fixture", "old mark", NOW)
+    )
+    store = stores["primary"]
+    mark = await store.audit_mark(legacy)
+    state_dir = tmp_path / "state"
+    settings = replace(_settings("primary"), state_dir=state_dir)
+    guard_file = AuditHighWater(state_dir)
+    with guard_file.locked() as guard:
+        guard.observe(False, False, {legacy: mark, TENANT: AuditMark(9000, "lost")}, advance=True)
+    await owner.execute("INSERT INTO recording_protocol VALUES ($1,1)", legacy)
+    try:
+        worker = _worker(tmp_path, store, archive=filesystem, at=NOW)
+        halted = await worker.run_once()
+        assert halted.halted and not halted.shredded
+        assert (
+            await owner.fetchval(
+                "SELECT checked_at FROM version_locks WHERE entry_id=$1 AND site='primary'",
+                entry_id,
+            )
+            == NOW
+        )
+        assert await _acknowledge(settings, "fixture-operator", False) == 1
+        assert any(
+            reason == "held_without_hold" for _, reason, _ in await store.restore_conflicts(TENANT)
+        )
+        await filesystem.set_legal_hold(TENANT, object_key, uploaded.version_id, False)
+        await store.recheck_all(TENANT, NOW)
+        assert (await worker.run_once()).halted
+        assert await _acknowledge(settings, "fixture-operator", False) == 0
+        with guard_file.locked() as guard:
+            assert not guard.halted and guard.marks[legacy] == mark
+        resumed = await worker.run_once()
+        assert not resumed.halted and resumed.shredded == 1
+    finally:
+        await owner.execute("DELETE FROM recording_protocol WHERE tenant_id=$1", legacy)

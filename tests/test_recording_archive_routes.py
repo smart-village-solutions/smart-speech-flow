@@ -65,7 +65,10 @@ class FakeService:
         self.calls.append(("names", tuple(sorted(subs))))
         return {"rita": "Rita Reviewer"}
 
-    async def open(self, tenant_id, sub, conversation_id, *, supervisor=False):
+    async def open(
+        self, tenant_id, sub, conversation_id, *, supervisor=False, preferred_key_versions=()
+    ):
+        self.preferred_key_versions = preferred_key_versions
         self._maybe_fail()
         self.calls.append(("open", sub, conversation_id))
         self.supervisor = supervisor
@@ -383,3 +386,30 @@ def test_an_open_serves_records_side_by_side_with_content_only_when_decided(clie
         "not_approved": 0,
     }
     assert ("names", ("ralf", "rita")) in service.calls
+
+
+def test_archive_open_passes_only_a_positive_preferred_version(client_for):
+    service = FakeService()
+    client = client_for(_claims(), service)
+    response = client.get(f"{BASE}/{CONVERSATION}", params={"preferred_key_version": 1})
+    assert response.status_code == 200
+    assert service.preferred_key_versions == (1,) and response.json()["availableKeyVersions"] == []
+    assert (
+        client.get(f"{BASE}/{CONVERSATION}", params={"preferred_key_version": 0}).status_code == 422
+    )
+
+
+def test_archive_open_preserves_preference_order_and_bounds_the_list(client_for):
+    service = FakeService()
+    client = client_for(_claims(), service)
+    response = client.get(
+        f"{BASE}/{CONVERSATION}",
+        params=[("preferred_key_version", 2), ("preferred_key_version", 1)],
+    )
+    assert response.status_code == 200 and service.preferred_key_versions == (2, 1)
+    assert (
+        client.get(
+            f"{BASE}/{CONVERSATION}", params=[("preferred_key_version", 1)] * 101
+        ).status_code
+        == 422
+    )

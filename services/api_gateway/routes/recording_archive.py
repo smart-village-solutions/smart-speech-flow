@@ -249,10 +249,18 @@ async def open_one(
     context: TenantContext,
     claims: RecordingUser,
     access: Access,
+    preferred_key_versions: Annotated[
+        list[Annotated[int, Field(gt=0, le=2147483647)]] | None,
+        Query(alias="preferred_key_version", max_length=100),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         opened = await access.open(
-            context.tenant_id, claims["sub"], str(conversation_id), supervisor=_supervisor(claims)
+            context.tenant_id,
+            claims["sub"],
+            str(conversation_id),
+            supervisor=_supervisor(claims),
+            preferred_key_versions=tuple(preferred_key_versions or ()),
         )
     except ArchiveAccessError as error:
         raise _answer(error) from None
@@ -260,7 +268,9 @@ async def open_one(
     names = await access.names_of(
         context.tenant_id, reviewers, correlation_id_from_request(request)
     )
-    return opened_body(opened, names)
+    return opened_body(opened, names) | {
+        "availableKeyVersions": list(opened.available_key_versions)
+    }
 
 
 @router.get("/{conversation_id}/objects/{entry_id}/{object_type}")

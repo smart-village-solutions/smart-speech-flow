@@ -93,14 +93,23 @@ async def _acknowledge(settings: WorkerSettings, operator: str, accept_conflicts
     try:
         tenants = await store.tenants()
         with AuditHighWater(settings.state_dir).locked() as guard:
-            if guard.recheck:
+            # Keep every tenant's audit marks. Only generations eligible for destructive
+            # retention can resume after this acknowledgement. An unknown recheck
+            # (including the restore sentinel) still blocks acknowledgement.
+            incompatible = {
+                tenant for tenant in tenants if not await store.supports_retention(tenant)
+            }
+            pending = guard.recheck - incompatible
+            if pending:
                 print(
-                    f"retention: {len(guard.recheck)} tenants not yet re-read from the store;"
+                    f"retention: {len(pending)} tenants not yet re-read from the store;"
                     " run again after the worker's next pass",
                     file=sys.stderr,
                 )
                 return 1
-            conflicts = await _conflicts(store, tenants)
+            conflicts = await _conflicts(
+                store, [tenant for tenant in tenants if tenant not in incompatible]
+            )
             if conflicts and not accept_conflicts:
                 print("\n".join(conflicts), file=sys.stderr)
                 print(

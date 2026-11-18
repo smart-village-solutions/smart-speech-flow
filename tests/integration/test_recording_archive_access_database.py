@@ -496,3 +496,154 @@ async def test_a_completed_request_without_k_approvals_opens_nothing(archive, ow
     await _recovered(owner, conversation, key_id, approved=False)
     cid = conversation.conversation_id
     assert await access.open(TENANT, "sam", cid, NOW, supervisor=True) is None
+
+
+async def test_archive_can_select_usable_historical_wraps_without_changing_reviewer_version(
+    archive, owner, access
+):
+    from services.api_gateway.recording.organisation_keys import OrganisationKeys
+    from services.api_gateway.recording.secrets import ServerLayer
+    from services.api_gateway.recording.verification_repository import PostgresVerifications
+    from services.api_gateway.routes.recording_archive import opened_body
+    from tests.integration.test_recording_verification_database import _assigned, _key
+
+    reviews = PostgresVerifications(archive._pool)
+    cid, key, assignment = await _assigned(archive, owner, reviews)
+    for sub in ("alice", "rita"):
+        await owner.execute(
+            "UPDATE user_keys SET retired_at=$2,superseded_at=$2 WHERE user_sub=$1", sub, NOW
+        )
+        await _key(owner, sub, 2)
+        await owner.execute(
+            "INSERT INTO key_wraps(tenant_id,key_id,recipient_kind,recipient_ref,blob,creator_ref,creator_signature,granted_at,recipient_version,recipient_fingerprint) SELECT tenant_id,key_id,'user',recipient_ref,blob,creator_ref,creator_signature,granted_at,2,$3 FROM key_wraps WHERE key_id=$1 AND recipient_ref=$2 AND recipient_version=1",
+            key,
+            sub,
+            bytes([2]) * 32,
+        )
+        await owner.execute(
+            "INSERT INTO key_grants VALUES($1,$2,$3,2,'transfer',$4)",
+            TENANT,
+            key,
+            sub,
+            uuid.uuid4(),
+        )
+    for version in (1, 2, None):
+        opened = await access.open(
+            TENANT,
+            "alice",
+            cid,
+            NOW,
+            preferred_key_versions=(version,) if version is not None else (),
+        )
+        assert opened.keys[0].wrap.recipient_version == (version or 2)
+        assert opened.available_key_versions == (1, 2)
+    review = await reviews.open_review(
+        TENANT, "rita", assignment.verification_id, NOW, reviewer=True
+    )
+    assert review.conversation.keys[0].wrap.recipient_version == 1
+    assert review.conversation.keys[0].wrap.recipient_fingerprint == assignment.reviewer_fingerprint
+    await OrganisationKeys(archive._pool, ServerLayer(bytes(32))).revoke(
+        TENANT, "manager", "alice", 1
+    )
+    reopened = await access.open(TENANT, "alice", cid, NOW, preferred_key_versions=(1,))
+    assert reopened.keys[0].wrap.recipient_version == 2 and reopened.available_key_versions == (2,)
+    assert opened_body(reopened)["requiredKeyVersions"] == [2]
+
+
+async def test_two_historical_owner_versions_still_decrypt_all_epochs_after_transfer_to_v3(
+    archive, owner, access
+):
+    from services.api_gateway.recording.conversation_keys import (
+        ConversationKey,
+        Recipient,
+        new_conversation_key,
+        wrap_key,
+    )
+    from services.api_gateway.recording.crypto import ecies, tags
+    from tests import recording_crypto_reference as ref
+
+    conversation, first_key, _ = await _ended(archive, owner)
+    cid = conversation.conversation_id
+    scalars = {1: 32, 2: 42, 3: 43}
+
+    def decrypt(wrap):
+        sub, version = wrap.recipient_ref, wrap.recipient_version
+        context = (TENANT, cid, wrap.key_id, "user", sub, version, wrap.recipient_fingerprint)
+        return ecies.open_with_private_key(
+            ecies.Sealed.from_json(wrap.blob, expected_type=tags.CK_WRAP_V2),
+            ref.private_key(scalars[version]),
+            context,
+        )
+
+    async def rotate(version):
+        await owner.execute(
+            "UPDATE user_keys SET superseded_at=$1,retired_at=$1 WHERE user_sub='alice' AND retired_at IS NULL",
+            NOW,
+        )
+        await owner.execute(
+            "INSERT INTO user_keys(tenant_id,user_sub,key_version,enc_pub,sig_pub,fingerprint,created_at) VALUES($1,'alice',$2,$3,$4,$5,$6)",
+            TENANT,
+            version,
+            ref.public_point(scalars[version]),
+            ref.public_point(100 + version),
+            bytes([version]) * 32,
+            NOW,
+        )
+
+    async def grant(key, version, reason):
+        recipient = Recipient(
+            "user", "alice", ref.public_point(scalars[version]), bytes([version]) * 32, version
+        )
+        wrap = wrap_key(
+            key,
+            recipient,
+            tenant_id=TENANT,
+            conversation_id=cid,
+            signing_key=GATEWAY,
+            signer_key_id=GATEWAY_ID,
+        )
+        await owner.execute(
+            "INSERT INTO key_wraps(tenant_id,key_id,recipient_kind,recipient_ref,blob,creator_ref,creator_signature,granted_at,recipient_version,recipient_fingerprint) VALUES($1,$2,'user','alice',$3,$4,$5,$6,$7,$8)",
+            TENANT,
+            key.key_id,
+            wrap.blob,
+            wrap.creator_ref,
+            wrap.creator_signature,
+            NOW,
+            version,
+            recipient.fingerprint,
+        )
+        await owner.execute(
+            "INSERT INTO key_grants VALUES($1,$2,'alice',$3,$4,$5)",
+            TENANT,
+            key.key_id,
+            version,
+            reason,
+            uuid.uuid4(),
+        )
+
+    initial = await access.open(TENANT, "alice", cid, NOW)
+    first = ConversationKey(first_key, 1, decrypt(initial.keys[0].wrap))
+    second = new_conversation_key(2)
+    await rotate(2)
+    await owner.execute(
+        "INSERT INTO conversation_keys(tenant_id,key_id,conversation_id,epoch,created_at) VALUES($1,$2,$3,2,$4)",
+        TENANT,
+        second.key_id,
+        cid,
+        NOW,
+    )
+    await grant(second, 2, "owner")
+    await rotate(3)
+    await grant(first, 3, "transfer")
+    await grant(second, 3, "transfer")
+    for preference, expected in [
+        ((), [3, 3]),
+        ((1, 2), [1, 2]),
+        ((3, 1, 2), [3, 3]),
+        ((1,), [1, 3]),
+    ]:
+        opened = await access.open(TENANT, "alice", cid, NOW, preferred_key_versions=preference)
+        assert opened.available_key_versions == (1, 2, 3)
+        assert [key.wrap.recipient_version for key in opened.keys] == expected
+        assert [decrypt(key.wrap) for key in opened.keys] == [first.secret, second.secret]

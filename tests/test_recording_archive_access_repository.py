@@ -360,3 +360,31 @@ async def test_a_database_that_cannot_answer_is_storage_unavailable():
     repository = PostgresArchiveAccess(ScriptedPool(None))
     with pytest.raises(RecordingStorageUnavailable):
         await repository.openable(TENANT, "alice", CONVERSATION, NOW)
+
+
+def test_archive_prefers_the_requested_wrap_per_epoch_with_a_usable_fallback():
+    from services.api_gateway.recording.archive_access_repository import _keys
+
+    def row(key, epoch, version):
+        return {
+            "key_id": key,
+            "epoch": epoch,
+            "recipient_kind": "user",
+            "recipient_ref": "alice",
+            "blob": "wrap",
+            "creator_ref": "gateway",
+            "creator_signature": b"sig",
+            "recipient_version": version,
+            "recipient_fingerprint": bytes(32),
+        }
+
+    rows = [row("second", 2, 2), row("first", 1, 3), row("second", 2, 3), row("first", 1, 1)]
+    for preference, versions in [
+        ((), [3, 3]),
+        ((1,), [1, 3]),
+        ((2,), [3, 2]),
+        ((1, 2), [1, 2]),
+        ((3, 2, 1), [3, 3]),
+        ((8, 1, 2), [1, 2]),
+    ]:
+        assert [k.wrap.recipient_version for k in _keys(rows, "alice", preference)] == versions

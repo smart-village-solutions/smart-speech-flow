@@ -162,6 +162,7 @@ class OpenedConversation:
     stamps: tuple[StampRow, ...]
     keys: tuple[KeyAccess, ...]
     verifications: tuple[VerificationResult, ...] = ()
+    available_key_versions: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -187,14 +188,28 @@ def _window(row: Any) -> WindowRow:
     )
 
 
-def _keys(rows: list[Any], sub: str) -> tuple[KeyAccess, ...]:
+def _keys(
+    rows: list[Any], sub: str, preferred_key_versions: tuple[int, ...] = ()
+) -> tuple[KeyAccess, ...]:
+    # Earlier preferences win for each epoch. Unlisted usable versions fall back
+    # to the highest version. The caller can only rank wraps authorized by SQL.
+    priority = {
+        version: rank for rank, version in enumerate(reversed(preferred_key_versions), start=1)
+    }
     by_key: dict[str, dict[str, Any]] = {}
     for row in rows:
         key_id = str(row["key_id"])
-        item = by_key.setdefault(key_id, {"epoch": row["epoch"], "wrap": None, "recovery": False})
+        item = by_key.setdefault(
+            key_id, {"epoch": row["epoch"], "wrap": None, "recovery": False, "rank": (0, -1)}
+        )
         if row["recipient_kind"] == "organisation":
             item["recovery"] = True
         elif row["recipient_ref"] == sub:
+            version = row.get("recipient_version", 0)
+            rank = (priority.get(version, 0), version)
+            if rank <= item["rank"]:
+                continue
+            item["rank"] = rank
             item["wrap"] = KeyWrap(
                 key_id=key_id,
                 recipient_kind="user",
@@ -202,7 +217,7 @@ def _keys(rows: list[Any], sub: str) -> tuple[KeyAccess, ...]:
                 blob=row["blob"],
                 creator_ref=row["creator_ref"],
                 creator_signature=bytes(row["creator_signature"]),
-                recipient_version=row.get("recipient_version", 0),
+                recipient_version=version,
                 recipient_fingerprint=row.get("recipient_fingerprint"),
             )
     return tuple(
@@ -266,6 +281,7 @@ class PostgresArchiveAccess:
         now: datetime,
         *,
         supervisor: bool = False,
+        preferred_key_versions: tuple[int, ...] = (),
     ) -> OpenedConversation | None:
         async def work(connection: asyncpg.Connection) -> OpenedConversation | None:
             row = await connection.fetchrow(_ONE, sub, now, conversation_id, supervisor)
@@ -275,7 +291,13 @@ class PostgresArchiveAccess:
                     AuditEvent(tenant_id, sub, "recording.archive.not_found", conversation_id, now),
                 )
                 return None
-            opened = await read_conversation(connection, row, sub, with_records=True)
+            opened = await read_conversation(
+                connection,
+                row,
+                sub,
+                with_records=True,
+                preferred_key_versions=preferred_key_versions,
+            )
             await append_audit(
                 connection,
                 AuditEvent(tenant_id, sub, "recording.archive.opened", conversation_id, now),
@@ -498,6 +520,7 @@ async def read_conversation(
     *,
     with_records: bool = False,
     review_id: str | None = None,
+    preferred_key_versions: tuple[int, ...] = (),
 ) -> OpenedConversation:
     conversation_id = row["conversation_id"]
     windows = await connection.fetch(
@@ -554,6 +577,17 @@ async def read_conversation(
             )
             for item in stamps
         ),
-        keys=_keys(list(wraps), sub),
+        keys=_keys(list(wraps), sub, preferred_key_versions),
+        available_key_versions=tuple(
+            sorted(
+                {
+                    row["recipient_version"]
+                    for row in wraps
+                    if row["recipient_kind"] == "user"
+                    and row["recipient_ref"] == sub
+                    and row.get("recipient_version")
+                }
+            )
+        ),
         verifications=await read_records(connection, conversation_id) if with_records else (),
     )
