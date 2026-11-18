@@ -1,13 +1,9 @@
 import type { AxiosInstance } from 'axios';
+import { z } from 'zod';
 import type { PublicKeys } from '@/core/crypto/archive-crypto.port';
 import { toBase64Url } from '@/core/crypto/bytes';
 import { AppError } from '@/core/http/AppError';
-import {
-  toEnrolledKey,
-  toOwnKey,
-  toReenrolled,
-  toReenrolmentImpact,
-} from './recording.mapper';
+import { toEnrolledKey, toOwnKey, toReenrolled, toReenrolmentImpact } from './recording.mapper';
 import type { EnrolledKey, OwnKey, Reenrolled, ReenrolmentImpact } from './recording.types';
 
 const KEYS = '/api/admin/recording/keys';
@@ -16,6 +12,7 @@ const KEYS = '/api/admin/recording/keys';
 export const STEP_UP_REQUIRED = 'STEP_UP_REQUIRED';
 
 export interface RecordingKeysRepository {
+  passphraseFileEnabled(): Promise<boolean>;
   /** Null when the caller has not enrolled yet. */
   ownKey(): Promise<OwnKey | null>;
   enrol(keys: Readonly<PublicKeys>, blob: string): Promise<EnrolledKey>;
@@ -26,6 +23,11 @@ export interface RecordingKeysRepository {
 
 export function createRecordingKeysRepository(http: AxiosInstance): RecordingKeysRepository {
   return {
+    async passphraseFileEnabled() {
+      const response = await http.get<unknown>('/api/admin/recording/key-policy');
+      return z.object({ passphrase_file_enabled: z.boolean() }).parse(response.data)
+        .passphrase_file_enabled;
+    },
     async ownKey() {
       try {
         const response = await http.get<unknown>(`${KEYS}/me`);

@@ -35,17 +35,19 @@ export function subscribeToKeycloakExpiration(listener: () => void): () => void 
 }
 
 function expireSession(session: ActiveKeycloakSession): void {
+  if (active !== session) return;
+  // Clear the active marker first: clearToken may synchronously call onAuthLogout.
+  active = null;
+  expired = true;
   clearSession(session);
-  if (active === session) {
-    active = null;
-    expired = true;
-    for (const listener of expirationListeners) listener();
-  }
+  for (const listener of expirationListeners) listener();
 }
 
 function clearSession(session: ActiveKeycloakSession): void {
   // clearToken otherwise starts another login when init used login-required.
   session.client.loginRequired = false;
+  // Deliberate teardown is not an independently detected logout (e.g. a tenant switch).
+  session.client.onAuthLogout = undefined;
   session.client.clearToken();
   notifyAuthorizationChanged();
 }
@@ -78,6 +80,14 @@ export async function requireKeycloakLogin(
   const session = active;
   session.client.onAuthRefreshSuccess = () => {
     if (active === session) notifyAuthorizationChanged();
+  };
+  session.client.onAuthLogout = () => expireSession(session);
+  session.client.onAuthRefreshError = () => expireSession(session);
+  session.client.onTokenExpired = () => {
+    if (active !== session) return;
+    void getAdminAccessToken().catch(() => {
+      // The failed refresh has already published session expiration.
+    });
   };
   if (session.initialized) return session.client.authenticated === true;
   session.initialization ??= session.client.init({

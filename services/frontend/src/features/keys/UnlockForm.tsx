@@ -5,21 +5,34 @@ import type { KeyOwner } from '@/core/crypto/archive-crypto.port';
 import type { OwnKey } from '@/domain/recording/recording.types';
 import { Button } from '@/ui/primitives/Button';
 import { TextField } from '@/ui/primitives/TextField';
+import { PassphraseImport } from './PassphraseImport';
 import { useUnlock } from './useUnlock';
 
 interface UnlockFormProps {
   owner: KeyOwner;
   ownKey: OwnKey;
+  fileEnabled?: boolean;
+  onPassphraseEntered?: (passphrase: string) => void;
 }
 
-export function UnlockForm({ owner, ownKey }: Readonly<UnlockFormProps>) {
+export function UnlockForm({
+  owner,
+  ownKey,
+  fileEnabled = false,
+  onPassphraseEntered,
+}: Readonly<UnlockFormProps>) {
   const { t } = useTranslation();
   const { submit, failed, pending } = useUnlock(owner, ownKey);
   const [passphrase, setPassphrase] = useState('');
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void submit(passphrase);
+    void submit(passphrase).then((success) => {
+      if (success) {
+        onPassphraseEntered?.(passphrase);
+        setPassphrase('');
+      }
+    });
   };
 
   return (
@@ -33,13 +46,20 @@ export function UnlockForm({ owner, ownKey }: Readonly<UnlockFormProps>) {
       </p>
       <TextField
         type="password"
+        disabled={pending}
         autoComplete="current-password"
         label={t('admin.keys.passphrase')}
         value={passphrase}
         onChange={(event) => setPassphrase(event.target.value)}
         error={failed ? t('admin.keys.unlockFailed') : null}
       />
-      <Button type="submit" variant="compact" className="self-start bg-accent text-accent-on" disabled={pending}>
+      {fileEnabled && <PassphraseImport onLoad={setPassphrase} disabled={pending} />}
+      <Button
+        type="submit"
+        variant="compact"
+        className="self-start bg-accent text-accent-on"
+        disabled={pending}
+      >
         {t(pending ? 'admin.keys.unlockPending' : 'admin.keys.unlockAction')}
       </Button>
     </form>

@@ -4249,6 +4249,32 @@
         ]
       }
     },
+    "/api/admin/recording/key-policy": {
+      "get": {
+        "description": "Offer local passphrase files only when the current trusted policy enables them.",
+        "operationId": "key_policy_api_admin_recording_key_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Key Policy Api Admin Recording Key Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Key Policy",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
     "/api/admin/recording/keys": {
       "post": {
         "operationId": "enrol_key_api_admin_recording_keys_post",

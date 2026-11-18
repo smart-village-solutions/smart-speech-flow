@@ -252,6 +252,15 @@
       "backToDashboard": "Zurück zur Übersicht"
     },
     "keys": {
+      "files": {
+        "title": "Passphrase sichern",
+        "warning": "Die TXT-Datei enthält Ihre Passphrase unverschlüsselt. Bewahren Sie sie geschützt auf, zum Beispiel in einem Passwortmanager oder auf einem sicher verwahrten USB-Stick. Lassen Sie sie auf gemeinsam genutzten Rechnern nicht im Download-Ordner liegen. Die Datei sichert keine Schlüssel oder Aufnahmen.",
+        "download": "TXT-Datei herunterladen",
+        "skip": "Jetzt nicht",
+        "downloadFailed": "Die Datei konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut.",
+        "import": "Passphrase aus TXT-Datei laden",
+        "importFailed": "Diese Datei ist keine gültige Passphrase-Sicherung oder ist zu groß."
+      },
       "title": "Archivschlüssel",
       "intro": "Ihre persönlichen Schlüssel öffnen aufgezeichnete Gespräche. Sie sind durch eine Passphrase geschützt, die nur Sie kennen; SSF sieht sie nie und kann sie nicht zurücksetzen. Aufzeichnen funktioniert auch ohne Schlüssel.",
       "stepUpTitle": "Identität bestätigen",
