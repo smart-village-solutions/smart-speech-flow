@@ -35,7 +35,12 @@ def session(sid="OWN", **kwargs):
 
 def dashboard(rows, recordings=None):
     pseudonymizer = SessionPseudonymizer(key=b"test-key")
-    service = Dashboard(Sessions(rows), recordings, pseudonymizer, DashboardCursor(bytes(32)))
+    service = Dashboard(
+        Sessions(rows),
+        recordings if recordings is not None else Recordings(),
+        pseudonymizer,
+        DashboardCursor(bytes(32)),
+    )
     return service, pseudonymizer
 
 
@@ -210,3 +215,13 @@ def test_cursor_configuration_never_silently_falls_back_to_process_random(monkey
     monkeypatch.delenv("SSF_FEEDBACK_ENCRYPTION_KEY", raising=False)
     with pytest.raises(ValueError):
         DashboardCursor.from_environment()
+
+
+async def test_unavailable_recording_source_cannot_expose_language_after_permission_loss():
+    service, _ = dashboard([session(customer_language="en", status=SessionStatus.TERMINATED)])
+    service.recordings = None  # Configured storage is reconnecting after restart.
+    result = await service.conversations("tenant-a", "alice", "owner", frozenset(), 50, None)
+    item = result["items"][0]
+    assert item["customer_language"] is None
+    assert item["recording_status"] == "unavailable"
+    assert item["actions"] == []

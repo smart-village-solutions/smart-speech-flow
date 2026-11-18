@@ -182,6 +182,8 @@ class Dashboard:
     def _session(self, tenant: str, row: Session, *, recorded: bool = False) -> dict[str, Any]:
         ended = row.status == SessionStatus.TERMINATED
         recorded = recorded or self.pseudonymizer.is_recorded(row.id)
+        unknown = self.recordings is None and not recorded
+        hidden_language = recorded or unknown
         return {
             "id": self.cursor.row_id(tenant, row.id),
             "session_id": row.id,
@@ -190,14 +192,16 @@ class Dashboard:
             "started_at": row.created_at.isoformat(),
             "ended_at": row.terminated_at.isoformat() if row.terminated_at else None,
             "conversation_status": "ended" if ended else row.status.value,
-            "recording_status": "unavailable" if recorded else "none",
+            "recording_status": "unavailable" if hidden_language else "none",
             "recording_access": "none",
-            "customer_language": None if recorded else row.customer_language,
+            "customer_language": None if hidden_language else row.customer_language,
             "language_visibility": (
-                "encrypted" if recorded else "clear" if row.customer_language else "unknown"
+                "encrypted"
+                if recorded
+                else "unknown" if unknown else "clear" if row.customer_language else "unknown"
             ),
             "verification": None,
-            "actions": ([] if recorded else ["open_details"]) if ended else ["resume"],
+            "actions": ([] if hidden_language else ["open_details"]) if ended else ["resume"],
         }
 
     @staticmethod
