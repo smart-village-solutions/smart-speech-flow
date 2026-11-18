@@ -581,3 +581,61 @@ async def test_unreadable_uncertain_save_evicts_cache_and_blocks_usage_until_rec
     assert (await manager.conversation_usage_report("a", "alice")).personal.by_language == {
         "ar": 600
     }
+
+
+@pytest.mark.parametrize("operation", ["warning", "sweep"])
+async def test_queued_maintenance_reloads_an_evicted_proposed_session(setup_usage, operation):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from services.api_gateway.session_models import ClientType, SessionMessage
+
+    clock, usage, manager = setup_usage
+    session = await manager.create_admin_session("a", REVISION, owner_ref="alice")
+    original = manager.store
+    entered, release = asyncio.Event(), asyncio.Event()
+    saving = [True]
+    reading = [True]
+
+    class UncertainStore(MemoryTenantSessionStore):
+        async def save(self, value):
+            if saving[0]:
+                saving[0] = False
+                entered.set()
+                await release.wait()
+                raise OSError("save rejected")
+            await original.save(value)
+
+        async def load(self, key):
+            if reading[0]:
+                reading[0] = False
+                raise OSError("canonical read unavailable")
+            return await original.load(key)
+
+    manager.store = UncertainStore()
+    manager.websocket_manager = SimpleNamespace(broadcast_to_session=AsyncMock())
+    session.messages.append(
+        SessionMessage(
+            id="message",
+            sender=ClientType.ADMIN,
+            original_text="hello",
+            translated_text="hallo",
+            audio_base64=None,
+            source_lang="en",
+            target_lang="de",
+            timestamp=clock(),
+        )
+    )
+    activation = asyncio.create_task(manager.activate_session(session.key, "ar"))
+    await entered.wait()
+    action = (
+        manager._send_timeout_warning if operation == "warning" else manager._sweep_session_content
+    )
+    maintenance = asyncio.create_task(action(session))
+    clock.advance(minutes=10)
+    release.set()
+    with pytest.raises(OSError):
+        await activation
+    await maintenance
+    assert (await manager.conversation_usage_report("a", "alice")).personal.total_seconds == 0

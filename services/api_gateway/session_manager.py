@@ -346,10 +346,6 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self, session_id: TenantSessionKey, reason: str = "manual_termination"
     ) -> None:
         """End after any in-flight activation/language change has settled."""
-        await self._terminate_session(session_id, reason)
-
-    async def _terminate_session(self, session_id: TenantSessionKey, reason: str) -> None:
-        """Einzelne Session beenden mit WebSocket-Notifications"""
         async with self._lifecycle_locks.hold(session_id):
             session = await self.get_session(session_id)
             if not session:
@@ -585,7 +581,10 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
     async def _sweep_session_content(self, session: Session) -> int:
         async with self._lifecycle_locks.hold(session.key):
-            return await super()._sweep_session_content(session)
+            current = await self.get_session(session.key)
+            if current is None:
+                return 0
+            return await super()._sweep_session_content(current)
 
     async def _persist_swept_session(self, session: Session) -> None:
         await self.store.save(session)
@@ -780,7 +779,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
     async def _send_timeout_warning(self, session: Session) -> None:
         async with self._lifecycle_locks.hold(session.key):
-            await self._send_timeout_warning_locked(session)
+            current = await self.get_session(session.key)
+            if current is not None and current.status is not SessionStatus.TERMINATED:
+                await self._send_timeout_warning_locked(current)
 
     async def _send_timeout_warning_locked(self, session: Session) -> None:
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
