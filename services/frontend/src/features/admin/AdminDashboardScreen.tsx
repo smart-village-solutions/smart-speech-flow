@@ -9,6 +9,7 @@ import { RichText } from '@/ui/patterns/RichText';
 import { SystemLoadCard } from './SystemLoadCard';
 import { AdminNewSessionButton } from './AdminNewSessionButton';
 import { AdminSessionList } from './AdminSessionList';
+import { ConversationUsageCard } from './ConversationUsageCard';
 import { useAdminSessions, useOwnLiveSessionId } from './useAdminSessions';
 
 interface AdminDashboardScreenProps {
@@ -81,6 +82,8 @@ export function AdminDashboardScreen({
           invite={copy.invite}
           onEnter={onEnterSession}
         />
+
+        <ConversationUsageCard />
 
         <AdminSessionList sessions={sessions} isError={isError} onEnter={onEnterSession} />
       </div>

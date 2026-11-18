@@ -99,6 +99,15 @@ export function feedbackFormChanged() {
 }
 
 export const handlers = [
+  http.get('*/api/admin/usage', () => HttpResponse.json({
+    window_start: '2026-10-19T08:00:00Z',
+    window_end: '2026-11-18T08:00:00Z',
+    coverage_start: '2026-10-01T08:00:00Z',
+    complete: true,
+    personal: { total_seconds: 0, by_language: {} },
+    organisation: { total_seconds: 0, by_language: {} },
+    server: { total_seconds: 0, by_language: {} },
+  })),
   http.get('*/api/login/tenants', () =>
     HttpResponse.json({
       tenants: [

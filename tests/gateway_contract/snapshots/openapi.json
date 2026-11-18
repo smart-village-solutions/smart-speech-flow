@@ -2655,6 +2655,67 @@
         "title": "UnrecoverableItem",
         "type": "object"
       },
+      "UsageReport": {
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "coverage_start": {
+            "format": "date-time",
+            "title": "Coverage Start",
+            "type": "string"
+          },
+          "organisation": {
+            "$ref": "#/components/schemas/UsageScope"
+          },
+          "personal": {
+            "$ref": "#/components/schemas/UsageScope"
+          },
+          "server": {
+            "$ref": "#/components/schemas/UsageScope"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "coverage_start",
+          "complete",
+          "personal",
+          "organisation",
+          "server"
+        ],
+        "title": "UsageReport",
+        "type": "object"
+      },
+      "UsageScope": {
+        "properties": {
+          "by_language": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "By Language",
+            "type": "object"
+          },
+          "total_seconds": {
+            "default": 0,
+            "title": "Total Seconds",
+            "type": "number"
+          }
+        },
+        "title": "UsageScope",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -6364,6 +6425,31 @@
           }
         },
         "summary": "Emit one quality telemetry probe event",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/usage": {
+      "get": {
+        "operationId": "get_conversation_usage_api_admin_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "Conversation usage unavailable"
+          }
+        },
+        "summary": "Conversation minutes and language totals for the last thirty days",
         "tags": [
           "admin",
           "admin"

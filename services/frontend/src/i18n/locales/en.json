@@ -175,6 +175,23 @@
       "intro": "$t(app.name) provides a virtual real-time interpreter. Start a new conversation to speak with someone in another language straight away — no waiting and no prior setup.",
       "newSession": "Start a new conversation"
     },
+    "usage": {
+      "title": "Conversation minutes",
+      "period": "Last 30 days",
+      "personal": "Me",
+      "organisation": "Organisation",
+      "organisationShort": "Org.",
+      "server": "Server",
+      "total": "Total",
+      "language": "Language",
+      "showLanguages": "Show by language",
+      "hideLanguages": "Hide languages",
+      "definition": "Includes conversation pauses",
+      "coverage": "Complete measurement since {{date}} · Period not yet fully covered",
+      "loading": "Loading conversation minutes …",
+      "unavailable": "Conversation minutes are temporarily unavailable",
+      "empty": "No conversation minutes recorded yet"
+    },
     "load": {
       "title": "System load",
       "ok": "Sufficient capacity available",

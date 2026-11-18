@@ -399,7 +399,10 @@ async def test_a_change_waiting_behind_a_termination_is_refused(
     changing = asyncio.create_task(apply(manager, session.key))
     for _ in range(10):
         await asyncio.sleep(0)
-    entry = store._write_locks._entries[session.key]
+    # Activation now waits before mutating the session, on the lifecycle lock;
+    # other changes still queue at the persistence boundary.
+    locks = manager._lifecycle_locks if change == "activate_session" else store._write_locks
+    entry = locks._entries[session.key]
     assert entry.holders == 2, "the change must be waiting behind the termination"
     redis.release_termination.set()
 

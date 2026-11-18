@@ -339,3 +339,32 @@ PYTHONPATH=. pytest services/api_gateway/tests
 
 `tests/gateway_contract` pins the public REST, WebSocket, polling, OpenAPI and
 metrics behaviour of the gateway.
+
+## Dashboard conversation usage
+
+`GET /api/admin/usage` returns rolling thirty-day conversation time for the
+authenticated owner, their current organisation and the deployment, each with a
+customer-language breakdown. Time runs from first activation to termination,
+including pauses. Waiting before activation does not count; language changes
+split the elapsed interval. Responses contain aggregate seconds and coverage
+metadata only and use `Cache-Control: no-store`.
+
+Set `SSF_USAGE_DATABASE_PATH` to a writable SQLite file on persistent storage.
+Both Compose definitions mount the dedicated `conversation-usage` volume at
+`/var/lib/ssf-usage`; the gateway image initialises the directory for its app user.
+Keep this volume across gateway and Redis recreates. SQLite schema setup is
+automatic. Without a configured path, non-production processes use an in-memory
+ledger; production defaults to `/var/lib/ssf-usage/usage.sqlite3` and returns 503
+if it cannot be opened. There is no fallback from broken disk storage to memory.
+
+The ledger holds only internal attribution and timing/language metadata, never
+conversation content. Records expire when their end leaves the thirty-day
+window. This implementation supports the existing single-gateway deployment;
+multiple gateway replicas need a shared transactional store.
+
+Clean shutdown flushes usage before closing. Startup replays retained session
+metadata, including terminal sessions. After a crash or loss of canonical live
+state, uncertain open projections are discarded and continuous coverage restarts;
+known completed totals remain available. The dashboard explicitly marks the
+window incomplete until thirty days of complete measurement are available.
+Historical sessions without activation metadata cannot be backfilled reliably.

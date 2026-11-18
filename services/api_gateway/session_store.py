@@ -87,6 +87,9 @@ class SessionStoreConsistencyError(RuntimeError):
 
 
 class TenantSessionStore(Protocol):
+    async def list_retained(self) -> list[Session]:
+        raise NotImplementedError
+
     async def create(self, session: Session) -> bool:
         raise NotImplementedError
 
@@ -185,6 +188,13 @@ class MemoryTenantSessionStore:
         self._sessions.clear()
         self._joins.clear()
         self._expiries.clear()
+
+    async def list_retained(self) -> list[Session]:
+        return [
+            session
+            for key in tuple(self._sessions)
+            if (session := await self.load(key)) is not None
+        ]
 
     async def create(self, session: Session) -> bool:
         if session.id in self._joins:
@@ -441,6 +451,24 @@ class RedisTenantSessionStore:
                     else raw_session_id
                 )
                 sessions.append(await self._load_active_session(active_key, session_id))
+        return sessions
+
+    async def list_retained(self) -> list[Session]:
+        """Startup-only replay of retained metadata, including terminal records."""
+        from .session_models import Session
+
+        sessions: list[Session] = []
+        async for name in self.redis.scan_iter(match=f"{self.namespace}:v2:tenant:*:session:*"):
+            raw = await self.redis.get(name)
+            if raw is None:
+                continue
+            try:
+                session = Session.from_dict(json.loads(raw))
+            except (KeyError, TypeError, ValueError):
+                continue
+            verified = await self.load(session.key)
+            if verified is not None:
+                sessions.append(verified)
         return sessions
 
     async def _load_active_session(self, active_key: str, session_id: str) -> Session:

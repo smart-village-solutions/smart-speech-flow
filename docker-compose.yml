@@ -113,6 +113,8 @@ services:
     volumes:
       # Encrypted archive objects waiting for upload (#615): ciphertext only.
       - archive-spool:/data/archive-spool
+      # Content-free conversation usage survives Redis and gateway restarts.
+      - conversation-usage:/var/lib/ssf-usage
 
       # Starlette spools an upload over 1 MiB into /tmp: RAM only (spec §5.5).
       - type: tmpfs
@@ -136,6 +138,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_NAMESPACE=ssf
+      - SSF_USAGE_DATABASE_PATH=/var/lib/ssf-usage/usage.sqlite3
       - CLIENT_BASE_URL=https://translate.smart-village.solutions
       - SSF_AUDIO_BASE_DIR=/tmp/audio
       - ENABLE_PIPELINE_METADATA=true
@@ -639,6 +642,7 @@ volumes:
   ollama-data:
   vllm-models:
   archive-spool:
+  conversation-usage:
   clickhouse-data:
   keycloak-postgres-data:
   ssf-postgres-data:

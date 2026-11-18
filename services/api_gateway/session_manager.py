@@ -25,6 +25,7 @@ from typing import (
 )
 
 from .clock import utc_now
+from .conversation_usage import ConversationUsage, UsageReport, UsageSnapshot, UsageUnavailable
 from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
 from .realtime_protocol import customer_language_changed_frame, timeout_warning_frame
@@ -212,9 +213,17 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         pseudonymizer: Optional[SessionPseudonymizer] = None,
         clock: Callable[[], datetime] = utc_now,
         session_id_factory: Optional[Callable[[], str]] = None,
+        usage: ConversationUsage | None = None,
     ) -> None:
         super().__init__(clock=clock, pseudonymizer=pseudonymizer)
         self.store = store
+        self.usage = usage
+        self._usage_pending: dict[str, UsageSnapshot] = {}
+        self._usage_saved: dict[str, tuple[str, float | None, float]] = {}
+        self._usage_retry_at: datetime | None = None
+        self._usage_recovery_keys: set[str] | None = None
+        self._usage_projection_lock = asyncio.Lock()
+        self._lifecycle_locks: KeyedLocks[TenantSessionKey] = KeyedLocks()
         # Where termination and the content sweep delete a session's audio.
         self.audio_store = audio_store
         self.realtime_tickets = realtime_tickets
@@ -237,6 +246,83 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
     def _delete_session_audio(self, key: TenantSessionKey) -> None:
         self.audio_store.delete_session(key)
+
+    async def _record_usage(self, session: Session) -> bool:
+        if self.usage is None:
+            return True
+        snapshot = UsageSnapshot.of(session, self.clock())
+        if snapshot is None:
+            return True
+        return await self._project_usage(snapshot)
+
+    async def _project_usage(self, snapshot: UsageSnapshot) -> bool:
+        async with self._usage_projection_lock:
+            return await self._project_usage_locked(snapshot)
+
+    async def _project_usage_locked(self, snapshot: UsageSnapshot) -> bool:
+        if self.usage is None:
+            return True
+        state = (snapshot.changes, snapshot.ended_at, snapshot.deadline)
+        if self._usage_saved.get(snapshot.key) == state:
+            return True
+        if (
+            snapshot.ended_at is not None
+            and snapshot.ended_at < (self.clock() - timedelta(days=30)).timestamp()
+        ):
+            return True
+        self._usage_pending[snapshot.key] = snapshot
+        if self._usage_retry_at is not None and self.clock() < self._usage_retry_at:
+            return False
+        try:
+            await self.usage.record(snapshot)
+        except UsageUnavailable:
+            self._usage_retry_at = self.clock() + timedelta(seconds=30)
+            logger.warning("conversation_usage_write_unavailable")
+            return False
+        else:
+            if self._usage_pending.get(snapshot.key) is snapshot:
+                self._usage_pending.pop(snapshot.key, None)
+                self._usage_saved[snapshot.key] = state
+            return True
+
+    async def flush_conversation_usage(self) -> None:
+        """Retry pending snapshots once, failing promptly when storage is unavailable."""
+        if self.usage is None:
+            raise UsageUnavailable("Conversation usage unavailable")
+        async with self._usage_projection_lock:
+            self._usage_retry_at = None
+            for snapshot in tuple(self._usage_pending.values()):
+                await self.usage.record(snapshot)
+                if self._usage_pending.get(snapshot.key) is snapshot:
+                    self._usage_pending.pop(snapshot.key, None)
+                    self._usage_saved[snapshot.key] = (
+                        snapshot.changes,
+                        snapshot.ended_at,
+                        snapshot.deadline,
+                    )
+        await self._finish_usage_recovery()
+
+    async def _finish_usage_recovery(self) -> None:
+        async with self._usage_projection_lock:
+            await self._finish_usage_recovery_locked()
+
+    async def _finish_usage_recovery_locked(self) -> None:
+        if self.usage is None or self._usage_recovery_keys is None:
+            return
+        # Include successfully committed conversations created since recovery
+        # began. Their projections must not be mistaken for lost Redis state.
+        known_keys = self._usage_recovery_keys | self._usage_saved.keys()
+        await self.usage.finish_recovery(known_keys, self.clock())
+        self._usage_recovery_keys = None
+
+    async def conversation_usage_report(self, tenant_id: str, owner_ref: str) -> UsageReport:
+        """Reconcile retryable projections before exposing content-free aggregates."""
+        if self.usage is None:
+            raise UsageUnavailable("Conversation usage unavailable")
+        await self.flush_conversation_usage()
+        now = self.clock()
+        await self.usage.prune(now)
+        return await self.usage.report(tenant_id, owner_ref, now)
 
     async def _note_recording(self, key: TenantSessionKey) -> None:
         """Before the end event: after a restart only recording knows a session was recorded."""
@@ -269,6 +355,18 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         restart; an already disconnected administrator retains its original
         anchor so restarting cannot extend an expired session indefinitely.
         """
+        if self.usage is not None:
+            known_keys: set[str] = set()
+            for retained in await self.store.list_retained():
+                snapshot = UsageSnapshot.of(retained, self.clock())
+                if snapshot is not None:
+                    known_keys.add(snapshot.key)
+                await self._record_usage(retained)
+            self._usage_recovery_keys = known_keys
+            try:
+                await self._finish_usage_recovery()
+            except UsageUnavailable:
+                logger.warning("conversation_usage_recovery_unavailable")
         restored = await self.store.list_active()
         restarted_at = self.clock()
         for session in restored:
@@ -284,6 +382,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                 session.admin_disconnected_at = session.created_at
             await self.store.save(session)
             self.sessions[session.key] = session
+            await self._record_usage(session)
             self.active_admin_sessions.setdefault(session.key.tenant_id, set()).add(session.id)
 
     async def create_admin_session(
@@ -356,6 +455,11 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     async def terminate_session(
         self, session_id: TenantSessionKey, reason: str = "manual_termination"
     ) -> None:
+        """End after any in-flight activation/language change has settled."""
+        async with self._lifecycle_locks.hold(session_id):
+            await self._terminate_session(session_id, reason)
+
+    async def _terminate_session(self, session_id: TenantSessionKey, reason: str) -> None:
         """Einzelne Session beenden mit WebSocket-Notifications"""
         session = await self.get_session(session_id)
         if not session:
@@ -419,6 +523,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         # wrote it: delivery files outlive no conversation.
         if committed_terminal is None:
             committed_terminal = terminal_session
+        await self._record_usage(committed_terminal)
         self._delete_session_audio(session_id)
 
         # Preserve references held by handlers while replacing every
@@ -449,9 +554,12 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         copies the terminal record onto this object. The store accepts that
         unchanged record, so only the status shows that the change was lost.
         """
+        snapshot = UsageSnapshot.of(session, self.clock()) if self.usage is not None else None
         await self.store.save(session)
         if session.status == SessionStatus.TERMINATED:
             raise refusal
+        if snapshot is not None:
+            await self._project_usage(snapshot)
 
     async def get_session(self, session_id: TenantSessionKey) -> Optional[Session]:
         """The cached session, loading it from the store on a miss."""
@@ -524,7 +632,10 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         session.admin_connected = session.admin_connection_count > 0
         if session.admin_connection_count == 0:
             session.admin_disconnected_at = self.clock()
+        snapshot = UsageSnapshot.of(session, self.clock()) if self.usage is not None else None
         await self.store.save(session)
+        if snapshot is not None:
+            await self._project_usage(snapshot)
 
     async def customer_connected(self, key: TenantSessionKey) -> None:
         session = await self.get_session(key)
@@ -616,6 +727,11 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         return terminated_sessions[:limit]
 
     async def activate_session(self, session_id: TenantSessionKey, customer_language: str) -> None:
+        """Serialise activation/language changes with termination of this session."""
+        async with self._lifecycle_locks.hold(session_id):
+            await self._activate_session(session_id, customer_language)
+
+    async def _activate_session(self, session_id: TenantSessionKey, customer_language: str) -> None:
         """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
         await asyncio.sleep(0)
         session = await self.get_session(session_id)
@@ -627,6 +743,12 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         if session.status == SessionStatus.TERMINATED:
             raise ended
 
+        previous_language = session.customer_language
+        previous_changes = session.usage_language_changes
+        previous_status = session.status
+        previous_connected = session.customer_connected
+        proposed_changes = [dict(change) for change in previous_changes]
+        session.usage_language_changes = proposed_changes
         session.customer_language = customer_language
         # This method doubles as the language-update path, so the transition --
         # not the call -- is what counts. Emitting unconditionally would report
@@ -634,8 +756,27 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         activated = session.status == SessionStatus.PENDING
         if activated:
             session.status = SessionStatus.ACTIVE
+        if activated or session.usage_language_changes:
+            changes = session.usage_language_changes
+            if not changes or changes[-1]["language"] != customer_language:
+                changes.append(
+                    {"started_at": self.clock().isoformat(), "language": customer_language}
+                )
         session.customer_connected = True
-        await self._save_live(session, ended)
+        try:
+            await self._save_live(session, ended)
+        except Exception:
+            # Do not project uncommitted activation metadata later. A terminal
+            # snapshot or a newer language update must retain its own state.
+            if (
+                session.status != SessionStatus.TERMINATED
+                and session.usage_language_changes is proposed_changes
+            ):
+                session.customer_language = previous_language
+                session.usage_language_changes = previous_changes
+                session.status = previous_status
+                session.customer_connected = previous_connected
+            raise
 
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
@@ -688,6 +829,13 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                 await self._send_timeout_warning(session)
             if timeout_due:
                 await self.terminate_session(session.key, reason="session_timeout")
+
+        if self.usage is not None:
+            try:
+                await self.flush_conversation_usage()
+                await self.usage.prune(self.clock())
+            except UsageUnavailable:
+                logger.warning("conversation_usage_retention_unavailable")
 
     async def _prune_polling_presence(self) -> None:
         if self.polling_store is None:

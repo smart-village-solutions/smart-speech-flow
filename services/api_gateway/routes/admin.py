@@ -15,6 +15,7 @@ from ..auth import require_ssf_privileged_user, require_ssf_user
 from ..clock import utc_now
 from ..content_responses import StaffContentResponse, staff_content_response
 from ..conversation_service import ConversationService
+from ..conversation_usage import UsageReport, UsageUnavailable
 from ..dependencies import (
     get_conversation_service,
     get_polling_store,
@@ -107,6 +108,29 @@ class RealtimeTicketRequest(BaseModel):
 class RealtimeTicketResponse(BaseModel):
     ticket: str
     expires_at: str
+
+
+@router.get(
+    "/usage",
+    response_model=UsageReport,
+    summary="Conversation minutes and language totals for the last thirty days",
+    responses={503: {"description": "Conversation usage unavailable"}},
+)
+async def get_conversation_usage(
+    response: Response,
+    context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+) -> UsageReport:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await sessions.conversation_usage_report(context.tenant_id, owner_ref)
+    except UsageUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Conversation usage is temporarily unavailable",
+            headers={"Cache-Control": "no-store"},
+        ) from None
 
 
 def _connection_payload(

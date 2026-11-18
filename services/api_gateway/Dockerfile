@@ -69,8 +69,9 @@ RUN printf '%s%s\n' \
     # exist and belong to app -- otherwise the volume is created root:root and
     # the container, which runs as app, cannot write a single file into it.
     # The retention worker's state volume (#618) on the archive VMs likewise.
-    && mkdir -p /data/archive-spool /var/lib/ssf-retention \
-    && chown -R app:app /data /var/lib/ssf-retention
+    && mkdir -p /data/archive-spool /var/lib/ssf-retention /var/lib/ssf-usage \
+    && chown -R app:app /data /var/lib/ssf-retention /var/lib/ssf-usage \
+    && chmod 700 /var/lib/ssf-usage
 
 COPY services/api_gateway/ /app/services/api_gateway/
 COPY services/__init__.py /app/services/__init__.py
