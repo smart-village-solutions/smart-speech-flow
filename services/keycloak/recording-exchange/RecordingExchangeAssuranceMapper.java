@@ -57,8 +57,8 @@ public final class RecordingExchangeAssuranceMapper extends AbstractOIDCProtocol
                 || !client.getClientId().equals(original.getIssuedFor()) || !client.getClientId().equals(result.getIssuedFor())
                 || !userSession.getId().equals(verified.session().getId()) || !userSession.getId().equals(original.getSessionId())
                 || !userSession.getId().equals(result.getSessionId()) || !verified.user().getId().equals(result.getSubject())
-                || !verified.user().getId().equals(original.getSubject()) || !original.getIssuer().equals(result.getIssuer())
-                || original.getAcr() == null || original.getAuth_time() == null) throw invalidBinding();
+                || !verified.user().getId().equals(original.getSubject()) || !original.getIssuer().equals(result.getIssuer())) throw invalidBinding();
+        // Both claims are optional. Absence is preserved just like a password-only or older login.
         result.setAcr(original.getAcr());
         result.setAuth_time(original.getAuth_time());
         return result;
