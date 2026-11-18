@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { useTranslation } from 'react-i18next';
+import type { KeyOwner, UnlockedKeys } from '@/core/crypto/archive-crypto.port';
+import type { OwnKey } from '@/domain/recording/recording.types';
 import { getAdminIdentity, hasFreshStepUp } from '@/app/auth/keycloak';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
@@ -13,7 +15,7 @@ import { FingerprintCard } from './FingerprintCard';
 import { ReenrolPanel } from './ReenrolPanel';
 import { StepUpPrompt } from './StepUpPrompt';
 import { UnlockForm } from './UnlockForm';
-import { useOwnKey, useUnlockedKeys, useVaultFollowsOwnKey } from './useKeys';
+import { useOwnKey, useUnlockedKeys } from './useKeys';
 
 function KeysPanel({ onOpenKeyRecovery }: Readonly<{ onOpenKeyRecovery?: () => void }>) {
   const owner = getAdminIdentity();
@@ -50,7 +52,6 @@ function KeysContent({
   useEffect(() => keyVault.subscribe(() => setBackup(null)), [keyVault]);
   const ownKey = useOwnKey();
   const unlocked = useUnlockedKeys();
-  useVaultFollowsOwnKey(ownKey.data);
 
   if (owner === null || ownKey.isError) {
     return (
@@ -60,44 +61,66 @@ function KeysContent({
     );
   }
   if (ownKey.isPending) return null;
-  let content;
-  if (ownKey.data === null) {
-    content =
-      unlocked !== null ? (
-        <FingerprintCard keys={unlocked} />
-      ) : hasFreshStepUp() ? (
-        <EnrolForm owner={owner} onPassphraseEntered={offerBackup} />
-      ) : (
-        <StepUpPrompt />
-      );
-  } else {
-    content = (
-      <>
-        {unlocked === null ? (
-          <UnlockForm
-            owner={owner}
-            ownKey={ownKey.data}
-            fileEnabled={fileEnabled}
-            onPassphraseEntered={offerBackup}
-          />
-        ) : (
-          <FingerprintCard keys={unlocked} />
-        )}
-        <ReenrolPanel
-          owner={owner}
-          ownKey={ownKey.data}
-          onOpenKeyRecovery={onOpenKeyRecovery}
-          onPassphraseEntered={offerBackup}
-        />
-      </>
+  return (
+    <>
+      <KeyActions
+        owner={owner}
+        ownKey={ownKey.data}
+        unlocked={unlocked}
+        fileEnabled={fileEnabled}
+        onPassphraseEntered={offerBackup}
+        onOpenKeyRecovery={onOpenKeyRecovery}
+      />
+      {fileEnabled && backup !== null && (
+        <PassphraseBackup passphrase={backup} onClose={() => setBackup(null)} />
+      )}
+    </>
+  );
+}
+
+interface KeyActionsProps {
+  owner: KeyOwner;
+  ownKey: OwnKey | null;
+  unlocked: UnlockedKeys | null;
+  fileEnabled: boolean;
+  onPassphraseEntered: (passphrase: string) => void;
+  onOpenKeyRecovery?: () => void;
+}
+
+function KeyActions({
+  owner,
+  ownKey,
+  unlocked,
+  fileEnabled,
+  onPassphraseEntered,
+  onOpenKeyRecovery,
+}: Readonly<KeyActionsProps>) {
+  if (ownKey === null) {
+    if (unlocked !== null) return <FingerprintCard keys={unlocked} />;
+    return hasFreshStepUp() ? (
+      <EnrolForm owner={owner} onPassphraseEntered={onPassphraseEntered} />
+    ) : (
+      <StepUpPrompt />
     );
   }
   return (
     <>
-      {content}
-      {fileEnabled && backup !== null && (
-        <PassphraseBackup passphrase={backup} onClose={() => setBackup(null)} />
+      {unlocked === null ? (
+        <UnlockForm
+          owner={owner}
+          ownKey={ownKey}
+          fileEnabled={fileEnabled}
+          onPassphraseEntered={onPassphraseEntered}
+        />
+      ) : (
+        <FingerprintCard keys={unlocked} />
       )}
+      <ReenrolPanel
+        owner={owner}
+        ownKey={ownKey}
+        onOpenKeyRecovery={onOpenKeyRecovery}
+        onPassphraseEntered={onPassphraseEntered}
+      />
     </>
   );
 }

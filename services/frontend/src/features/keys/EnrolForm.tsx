@@ -27,11 +27,8 @@ export function EnrolForm({
       action={t('admin.keys.enrolAction')}
       pending={pending}
       error={error === null ? null : t(ERROR_KEYS[error])}
-      onSubmit={async (passphrase, confirmation) => {
-        const success = await submit(passphrase, confirmation);
-        if (success) onPassphraseEntered?.(passphrase);
-        return success;
-      }}
+      onSubmit={submit}
+      onPassphraseEntered={onPassphraseEntered}
     />
   );
 }

@@ -12,6 +12,7 @@ interface NewKeyFormProps {
   /** The translated error under the confirmation field, if any. */
   error: string | null;
   onSubmit: (passphrase: string, confirmation: string) => Promise<boolean>;
+  onPassphraseEntered?: (passphrase: string) => void;
 }
 
 /** The passphrase twice: shared by first enrolment and re-enrolment (spec §8.3, §9.6). */
@@ -22,6 +23,7 @@ export function NewKeyForm({
   pending,
   error,
   onSubmit,
+  onPassphraseEntered,
 }: Readonly<NewKeyFormProps>) {
   const { t } = useTranslation();
   const [passphrase, setPassphrase] = useState('');
@@ -31,6 +33,7 @@ export function NewKeyForm({
     event.preventDefault();
     void onSubmit(passphrase, confirmation).then((success) => {
       if (success) {
+        onPassphraseEntered?.(passphrase);
         setPassphrase('');
         setConfirmation('');
       }
