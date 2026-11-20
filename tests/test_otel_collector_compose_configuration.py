@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS
+from tests.collector_attributes import COLLECTOR_EVENT_NAME_KEY
 from tests.compose_documents import PRODUCTION_COMPOSE, load_compose, render_development_compose
 
 
@@ -254,6 +255,24 @@ def test_the_collector_allowlists_both_attribute_namespaces() -> None:
         "log.attributes": set(ALLOWED_ATTRIBUTE_KEYS),
         "resource.attributes": ALLOWED_RESOURCE_KEYS,
     }
+
+
+def test_the_collector_copies_the_event_name_after_the_allowlist() -> None:
+    """Migration 009 types events from this copy when EventName is empty.
+
+    Before keep_keys, the allowlist would strip it again; and a sender's own
+    value for the key must be overwritten, never kept.
+    """
+    statements = _collector_config()["processors"]["transform/allowlist"][
+        "log_statements"
+    ][0]["statements"]
+    copy = f'set(log.attributes["{COLLECTOR_EVENT_NAME_KEY}"], log.event_name)'
+
+    assert copy in statements
+    assert statements.index(copy) > statements.index(
+        next(s for s in statements if s.startswith("keep_keys(log.attributes"))
+    )
+    assert COLLECTOR_EVENT_NAME_KEY not in ALLOWED_ATTRIBUTE_KEYS
 
 
 def test_the_view_reads_only_allowlisted_attribute_keys() -> None:

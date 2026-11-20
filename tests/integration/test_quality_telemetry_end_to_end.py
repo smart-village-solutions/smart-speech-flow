@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS
+from tests.collector_attributes import COLLECTOR_DERIVED_KEYS
 
 pytestmark = pytest.mark.integration
 
@@ -190,8 +191,9 @@ def test_only_allowlisted_fields_survive_the_collector() -> None:
     landed = set(json.loads(log_keys.replace("'", '"')))
 
     assert body_length == "0"
-    assert landed <= set(ALLOWED_ATTRIBUTE_KEYS), landed - set(ALLOWED_ATTRIBUTE_KEYS)
-    assert landed == _PROBE_KEYS
+    allowed = set(ALLOWED_ATTRIBUTE_KEYS) | COLLECTOR_DERIVED_KEYS
+    assert landed <= allowed, landed - allowed
+    assert landed == _PROBE_KEYS | COLLECTOR_DERIVED_KEYS
     assert set(json.loads(resource_keys.replace("'", '"'))) == _ALLOWED_RESOURCE_KEYS
 
 
@@ -343,8 +345,9 @@ def test_the_collector_strips_content_a_rogue_sender_supplies() -> None:
     # namespace prefix. Only the collector's keep_keys stands between that and
     # a stored transcript, so name it rather than relying on the set equality.
     assert "ssf.quality.source_text" not in landed
-    assert landed <= set(ALLOWED_ATTRIBUTE_KEYS), landed - set(ALLOWED_ATTRIBUTE_KEYS)
-    assert landed == _PROBE_KEYS
+    allowed = set(ALLOWED_ATTRIBUTE_KEYS) | COLLECTOR_DERIVED_KEYS
+    assert landed <= allowed, landed - allowed
+    assert landed == _PROBE_KEYS | COLLECTOR_DERIVED_KEYS
     assert set(json.loads(resource_keys.replace("'", '"'))) == _ALLOWED_RESOURCE_KEYS
 
 

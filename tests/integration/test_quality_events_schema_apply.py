@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.collector_attributes import COLLECTOR_EVENT_NAME_KEY
+
 pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).parents[2]
@@ -927,6 +929,67 @@ def test_the_upgrade_copies_old_gold_once_and_survives_re_runs() -> None:
         assert retired == "0"
     finally:
         _client(f"DROP DATABASE IF EXISTS {upgrade_db};")
+
+
+def _event_type_of(db: str, event_id: str) -> str:
+    return _client(
+        f"SELECT event_type FROM quality_events FINAL WHERE event_id = toUUID('{event_id}')",
+        database=db,
+    )
+
+
+def _lifecycle_without_event_name(event_id: str, collector_copy: str) -> dict[str, str]:
+    return {
+        "ssf.quality.event_id": event_id,
+        "ssf.quality.schema_version": "1",
+        "ssf.quality.lifecycle_phase": "created",
+        COLLECTOR_EVENT_NAME_KEY: collector_copy,
+    }
+
+
+def test_an_event_is_typed_when_the_exporter_writes_no_event_name(
+    scratch_db: str,
+) -> None:
+    """What a collector that started before ClickHouse inserts: EventName ''.
+
+    Production stored four weeks of events with an empty event_type that way,
+    and every dashboard panel filters on it. 009 reads the collector's copy.
+    """
+    event_id = str(uuid.uuid4())
+    _insert_event(
+        scratch_db, "", _lifecycle_without_event_name(event_id, "session_lifecycle")
+    )
+
+    assert _event_type_of(scratch_db, event_id) == "session_lifecycle"
+
+
+def test_the_event_name_column_wins_over_the_collector_copy(scratch_db: str) -> None:
+    event_id = str(uuid.uuid4())
+    _insert_event(
+        scratch_db,
+        "session_lifecycle",
+        _lifecycle_without_event_name(event_id, "telemetry_probe"),
+    )
+
+    assert _event_type_of(scratch_db, event_id) == "session_lifecycle"
+
+
+def test_re_running_every_migration_keeps_the_event_name_fallback() -> None:
+    """apply.sh re-runs 008, whose MODIFY QUERY drops the fallback, before 009."""
+    rerun_db = f"{SCRATCH_DB}_event_name_rerun"
+    _client(f"DROP DATABASE IF EXISTS {rerun_db}; CREATE DATABASE {rerun_db};")
+    try:
+        for _ in range(2):
+            for path in MIGRATIONS:
+                _client(path.read_text(), database=rerun_db)
+        event_id = str(uuid.uuid4())
+        _insert_event(
+            rerun_db, "", _lifecycle_without_event_name(event_id, "session_lifecycle")
+        )
+
+        assert _event_type_of(rerun_db, event_id) == "session_lifecycle"
+    finally:
+        _client(f"DROP DATABASE IF EXISTS {rerun_db};")
 
 
 def _clickhouse_image() -> str:
