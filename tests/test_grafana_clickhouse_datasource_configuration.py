@@ -781,8 +781,16 @@ def test_the_untyped_rows_panel_covers_the_feedback_events() -> None:
 
 def test_the_untyped_rows_panel_counts_rows_that_lost_their_event_name() -> None:
     """A collector started before ClickHouse writes every row with an empty
-    EventName (schema detection fails once and is never retried), and those
-    rows match no event_type filter anywhere else on the dashboard."""
+    EventName (schema detection fails once and is never retried).
+
+    Since 009 the view types those rows from the collector's copy, so silver
+    alone no longer shows the degraded exporter; bronze still does. Silver
+    stays counted for a collector that runs without the copy.
+    """
     (sql,) = _queries("Rows Missing Typed Fields")
 
     assert "countIf(event_type = '')" in sql
+    assert (
+        "(SELECT countIf(EventName = '') FROM otel_logs WHERE $__timeFilter(Timestamp))"
+        in sql
+    )

@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTES, ALLOWED_ATTRIBUTE_KEYS, AttributeKind
+from tests.collector_attributes import COLLECTOR_DERIVED_KEYS, COLLECTOR_EVENT_NAME_KEY
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "deploy" / "clickhouse" / "migrations"
@@ -29,6 +30,7 @@ TENANT = MIGRATIONS / "005_tenant_reference.sql"
 FEEDBACK = MIGRATIONS / "006_feedback_submitted_fields.sql"
 TENANT_DIMENSION = MIGRATIONS / "007_feedback_tenant_dimension.sql"
 FEEDBACK_ANSWERS = MIGRATIONS / "008_feedback_answers_and_audience.sql"
+EVENT_NAME_FALLBACK = MIGRATIONS / "009_event_name_fallback.sql"
 
 # The envelope keys 001 already projects; everything else must arrive in a later
 # migration. Which one does not matter -- only that some migration gives the key
@@ -102,7 +104,11 @@ class TestEveryAllowlistedKeyReachesAColumn:
         assert not missing, f"allowlisted but never projected into a column: {missing}"
 
     def test_the_migrations_project_nothing_outside_the_allowlist(self):
-        extra = _projected_attribute_keys(_sql()) - set(ALLOWED_ATTRIBUTE_KEYS)
+        extra = (
+            _projected_attribute_keys(_sql())
+            - set(ALLOWED_ATTRIBUTE_KEYS)
+            - COLLECTOR_DERIVED_KEYS
+        )
         assert not extra, f"projected but not allowlisted: {extra}"
 
     @pytest.mark.parametrize("key", sorted(set(ALLOWED_ATTRIBUTE_KEYS) - ENVELOPE_KEYS))
@@ -197,6 +203,7 @@ def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
         FEEDBACK.name,
         TENANT_DIMENSION.name,
         FEEDBACK_ANSWERS.name,
+        EVENT_NAME_FALLBACK.name,
     }
 
 
@@ -331,6 +338,21 @@ class TestMigrationIsIdempotent:
         assert "DROP VIEW" not in sql
 
 
-def test_the_feedback_answer_migration_restates_the_silver_view() -> None:
-    """008 adds silver fields, so it must be the newest full projection."""
-    assert _latest_silver_view_migration() == FEEDBACK_ANSWERS
+def test_the_event_name_fallback_is_the_newest_silver_view() -> None:
+    """009 restates 008's projection, so it must be the newest full one."""
+    assert _latest_silver_view_migration() == EVENT_NAME_FALLBACK
+
+
+def test_the_newest_view_types_events_without_the_event_name_column() -> None:
+    """The exporter leaves EventName empty if it started before ClickHouse.
+
+    Production ran four weeks like that with every event untyped. The view must
+    fall back to the copy the collector puts in LogAttributes, and EventName
+    must still win, so the order the collector and migration deploy in does
+    not matter.
+    """
+    view = " ".join(_statements(_latest_silver_view_migration()).split())
+    assert (
+        f"if(EventName != '', EventName, LogAttributes['{COLLECTOR_EVENT_NAME_KEY}']) AS event_type"
+        in view
+    )

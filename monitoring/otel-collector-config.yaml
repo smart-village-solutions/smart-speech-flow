@@ -35,6 +35,12 @@ processors:
           - set(log.body, "")
           - keep_keys(log.attributes, ["ssf.quality.answer_count", "ssf.quality.answer_max", "ssf.quality.answer_min", "ssf.quality.answer_value", "ssf.quality.asr_duration_ms", "ssf.quality.audience", "ssf.quality.direction", "ssf.quality.error_code", "ssf.quality.event_id", "ssf.quality.failed_stage", "ssf.quality.feedback_form_version", "ssf.quality.feedback_locale", "ssf.quality.feedback_ref", "ssf.quality.form_source", "ssf.quality.input_mode", "ssf.quality.lifecycle_phase", "ssf.quality.message_count", "ssf.quality.model_ref", "ssf.quality.net_promoter_score", "ssf.quality.performance", "ssf.quality.question_id", "ssf.quality.question_type", "ssf.quality.refinement_changed", "ssf.quality.refinement_duration_ms", "ssf.quality.refinement_latency_ms", "ssf.quality.refinement_outcome", "ssf.quality.refiner_role", "ssf.quality.schema_version", "ssf.quality.session_duration_ms", "ssf.quality.session_ref", "ssf.quality.source_lang", "ssf.quality.target_lang", "ssf.quality.tenant_ref", "ssf.quality.terminal_outcome", "ssf.quality.termination_reason", "ssf.quality.total_duration_ms", "ssf.quality.translation_duration_ms", "ssf.quality.translation_quality", "ssf.quality.tts_duration_ms", "ssf.quality.usability"])
           - keep_keys(resource.attributes, ["service.name", "service.version", "deployment.environment.name"])
+          # The exporter fills its EventName column only if it saw that column
+          # at startup. A collector that starts before ClickHouse never does and
+          # writes every event untyped until restarted (production, 2026-10-23).
+          # This copy lands in LogAttributes regardless, and migration 009's view
+          # falls back to it. Set after keep_keys, so a sender cannot supply it.
+          - set(log.attributes["ssf.collector.event_name"], log.event_name)
   batch:
     timeout: 5s
     send_batch_size: 512

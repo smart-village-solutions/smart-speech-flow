@@ -1648,7 +1648,7 @@
           },
           "editorType": "sql",
           "format": 0,
-          "rawSql": "SELECT countIf(event_type = 'refinement_attempt' AND model_ref = '') + countIf(event_type = 'translation_message' AND session_ref = '') + countIf(event_type = 'session_lifecycle' AND lifecycle_phase = '') + countIf(event_type = 'feedback_submitted' AND feedback_ref = '') + countIf(event_type = 'feedback_answer' AND question_id = '') + countIf(event_type = '') AS untyped FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)",
+          "rawSql": "SELECT countIf(event_type = 'refinement_attempt' AND model_ref = '') + countIf(event_type = 'translation_message' AND session_ref = '') + countIf(event_type = 'session_lifecycle' AND lifecycle_phase = '') + countIf(event_type = 'feedback_submitted' AND feedback_ref = '') + countIf(event_type = 'feedback_answer' AND question_id = '') + countIf(event_type = '') + (SELECT countIf(EventName = '') FROM otel_logs WHERE $__timeFilter(Timestamp)) AS untyped FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)",
           "refId": "A"
         }
       ],
@@ -1677,7 +1677,7 @@
         },
         "textMode": "auto"
       },
-      "description": "Should be zero. Anything else means refinement events were written while migration 002 was not yet applied, so the view projected only the envelope. Apply the migrations before switching the mode to `enabled`. Feedback rows count too: an answer without its question id means 008 is unapplied or the collector still runs the old keep_keys and must be recreated. A row with no event type at all means the collector started before ClickHouse, its schema detection failed, and it writes no EventName until it is recreated."
+      "description": "Should be zero. Anything else means refinement events were written while migration 002 was not yet applied, so the view projected only the envelope. Apply the migrations before switching the mode to `enabled`. Feedback rows count too: an answer without its question id means 008 is unapplied or the collector still runs the old keep_keys and must be recreated. A bronze row without EventName means the collector started before ClickHouse, its schema detection failed, and it writes no EventName until it is recreated. Since migration 009 the view still types those events from the collector's ssf.collector.event_name copy, so nothing is lost, but recreate the collector. A silver row with no event type at all means that copy is missing too: check that 009 is applied and the collector runs the current config."
     },
     {
       "id": 40,

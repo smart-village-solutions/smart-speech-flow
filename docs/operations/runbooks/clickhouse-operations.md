@@ -414,7 +414,7 @@ the result — it should now list `otel-collector`.
 
 **11. Turn real pipeline events on (optional, and separate).** Steps 1-10 leave
 the gateway on `probe`, which emits no pipeline events. Before switching to
-`enabled`, confirm migrations `002`, `003`, `004`, `005`, `006`, `007` and `008` have been applied — they
+`enabled`, confirm migrations `002`, `003`, `004`, `005`, `006`, `007`, `008` and `009` have been applied — they
 are what give `quality_events` its typed columns and the feedback aggregates
 their tenant and audience dimensions, and `initdb` does **not**
 re-run on a volume that already has data:
@@ -607,6 +607,60 @@ port 13133 is the health signal; query it from another container on the network:
 `docker compose logs otel-collector` is the other signal. A mis-configured
 collector fails at startup and `restart: always` will loop it, so a container
 that keeps restarting means the config, not the pipeline.
+
+#### Events stored without a type
+
+The ClickHouse exporter reads the `otel_logs` columns once, at startup. If
+ClickHouse is not accepting connections yet, it logs
+`schema detection failed ... connection refused` and leaves `EventName` out of
+every insert until the collector restarts. Docker's restart policy ignores
+`depends_on`, so a Docker daemon restart can start the collector first. On
+production this left every event with `event_type = ''` from 2026-10-23 to
+2026-11-20, and every dashboard panel filters on `event_type`.
+
+Since migration `009`, the view falls back to the `ssf.collector.event_name`
+attribute the collector copies the event name into. Both halves must be live:
+apply the migrations, then recreate the collector so it loads the new config,
+and confirm the copy lands:
+
+    $PC exec -T clickhouse /docker-entrypoint-initdb.d/apply.sh
+    $PC up -d --no-deps --force-recreate otel-collector
+    $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT has(mapKeys(LogAttributes), '"'"'ssf.collector.event_name'"'"') FROM otel_logs ORDER BY Timestamp DESC LIMIT 1"'
+
+Expect `1` once an event has arrived. With the fallback live, a failed
+detection loses nothing, but the exporter stays degraded: the dashboard's
+*Rows Missing Typed Fields* panel counts bronze rows without `EventName`. Check
+after any daemon restart, and restart the collector if it is there:
+
+    $PC logs otel-collector 2>&1 | grep "schema detection failed"
+
+One gap remains: apply.sh re-runs every migration, and 002-008 each reset the
+view to plain `EventName` until 009 runs again a moment later. An event that
+arrives in that window while the exporter is degraded lands untyped. Restart
+the collector before re-running apply.sh if the log shows the failure.
+
+**Repairing rows written untyped before the fix.** Silver keeps rows for 30
+days and gold for 13 months, so finish before the oldest untyped day leaves
+silver: a day that has expired from silver cannot be re-inserted, and its gold
+rows must then be left alone. The event type follows from which typed field the
+row carries; a row with none of them can only be a `telemetry_probe`.
+
+1. Copy the untyped rows to a backup table with the same 30-day TTL.
+2. Re-insert them into `quality_events` with a fresh `ingested_at_utc` and
+   `event_type` set by `multiIf(refinement_outcome != '', 'refinement_attempt',
+   terminal_outcome != '', 'translation_message', lifecycle_phase != '',
+   'session_lifecycle', question_id != '', 'feedback_answer',
+   feedback_form_version != '', 'feedback_submitted', 'telemetry_probe')`.
+   First check that no row carries more than one of those fields. The insert
+   also refills the gold views.
+3. Check that the typed copies equal the backup in every other column, for
+   example by comparing `groupBitXor(cityHash64(* EXCEPT (event_type,
+   ingested_at_utc)))` over both.
+4. Delete the untyped rows from `quality_events`, and the `event_type = ''`
+   rows from `quality_events_daily` only for dates the backup covers:
+   `event_date >= (SELECT min(toDate(emitted_at_utc)) FROM <backup>)`.
+   `event_type` is in the sorting key, so an `ALTER ... UPDATE` cannot replace
+   these steps.
 
 ### Grafana Dashboard
 
