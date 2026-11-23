@@ -1067,9 +1067,9 @@ tqdm==4.69.0 \
     #   huggingface-hub
     #   sacremoses
     #   transformers
-transformers==5.21.0 \
-    --hash=sha256:43c971a3eb9ab68dc9dfff430f8ab8a0fba09af2f68b608fd70c6245d2ddb8e7 \
-    --hash=sha256:8803a8712932aa3441c1e8bb340e66d5e3eca079fe65d9b717ede2f3ead01c79
+transformers==5.23.0 \
+    --hash=sha256:018e82fd07490ad5bb58414f65e31576033dc7f36bed10c574843f69b90991bf \
+    --hash=sha256:19d647a4d5d903a7c644ca5cde2d86efc3dde7d8c687ae7988806ff2205efa71
     # via -r requirements.in
 triton==3.8.0 \
     --hash=sha256:1b84e7d512490ba529111260fa6f7cad8b254a6bb5fbdf41d5ef9a5e57f52d0a \
@@ -1096,6 +1096,7 @@ typing-extensions==4.16.0 \
     #   anyio
     #   fastapi
     #   huggingface-hub
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   starlette
