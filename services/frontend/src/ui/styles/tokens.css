@@ -4,6 +4,7 @@
 @import './brand.css';
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant ssf (&:where(html[data-brand='ssf'] *));
 
 @theme {
   /* ── Legacy Tailwind v3 theme, preserved for the pages outside ScreenShell ── */

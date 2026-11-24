@@ -30,12 +30,14 @@ function MicButton({
       className={cn(
         CONTROL,
         'shadow-lg transition-all duration-200',
-        recording ? 'bg-recording hover:bg-recording-hover' : 'bg-accent',
+        recording
+          ? 'bg-recording hover:bg-recording-hover ssf:bg-accent ssf:hover:bg-accent-hover'
+          : 'bg-accent',
         disabled && 'cursor-not-allowed opacity-40'
       )}
     >
       {recording ? (
-        <SendHorizontal size={24} strokeWidth={2} className="text-white" />
+        <SendHorizontal size={24} strokeWidth={2} className="text-white ssf:text-accent-on" />
       ) : (
         <Mic size={26} strokeWidth={2} className="text-accent-on" />
       )}
@@ -46,12 +48,12 @@ function MicButton({
 /** While typing, the draft is what decides whether the control can send. */
 function keyboardSkin(typing: boolean, hasDraft: boolean): string {
   if (!typing) {
-    return 'border-accent bg-surface-page';
+    return 'border-accent bg-surface-page ssf:border-fg-link';
   }
 
   return hasDraft
-    ? 'border-recording bg-recording hover:bg-recording-hover'
-    : 'cursor-not-allowed border-recording bg-recording/60';
+    ? 'border-recording bg-recording hover:bg-recording-hover ssf:border-accent ssf:bg-accent ssf:hover:bg-accent-hover'
+    : 'cursor-not-allowed border-recording bg-recording/60 ssf:border-accent ssf:bg-accent-60';
 }
 
 function KeyboardButton({
@@ -75,9 +77,9 @@ function KeyboardButton({
       )}
     >
       {typing ? (
-        <SendHorizontal size={22} strokeWidth={2} className="text-white" />
+        <SendHorizontal size={22} strokeWidth={2} className="text-white ssf:text-accent-on" />
       ) : (
-        <Keyboard size={22} strokeWidth={2} className="text-accent" />
+        <Keyboard size={22} strokeWidth={2} className="text-accent ssf:text-fg-link" />
       )}
     </button>
   );
