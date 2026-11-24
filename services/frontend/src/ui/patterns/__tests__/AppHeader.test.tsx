@@ -53,10 +53,11 @@ describe('AppHeader', () => {
     expect(block).toHaveClass('h-header-logo', 'group-data-[keyboard=open]/shell:hidden');
   });
 
-  it('uses the catalogue name instead of a Kassel image for another brand', () => {
+  it('renders the bundled SSF logo in the SSF header', () => {
     setup('ssf');
 
-    expect(screen.getByText('KasselDIALOG')).toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: 'KasselDIALOG' })).not.toBeInTheDocument();
+    const logo = screen.getByRole('img', { name: 'KasselDIALOG' });
+    expect(logo).toHaveAttribute('viewBox', '0 0 106.566 46');
+    expect(logo).toHaveClass('self-center', 'text-black');
   });
 });
