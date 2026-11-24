@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useTheme } from '@/app/providers/theme';
 import { useBrand } from '@/app/providers/brand';
+import { BrandLogo } from '@/ui/patterns/BrandLogo';
 
 interface AppHeaderProps {
   onBack: () => void;
@@ -66,9 +67,7 @@ export function AppHeader({
               className="h-full w-full object-contain"
             />
           ) : (
-            <span className="self-center text-center text-3xl font-semibold text-black">
-              {t('app.name')}
-            </span>
+            <BrandLogo className="h-[60px] w-[139px] self-center text-black md:h-[72px] md:w-[167px]" />
           )}
         </div>
 

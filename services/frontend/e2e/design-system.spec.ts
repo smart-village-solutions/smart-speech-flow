@@ -1,6 +1,30 @@
 import { expect, test } from '@playwright/test';
 import contract from '../design-system.contract.json' with { type: 'json' };
 
+for (const [theme, ssfSurface, kasselSurface] of [
+  ['light', 'rgb(221, 237, 243)', 'rgb(244, 244, 245)'],
+  ['dark', 'rgb(10, 40, 51)', 'rgb(32, 32, 32)'],
+]) {
+  test(`${theme}: SSF colours and typography stay inside the SSF brand`, async ({ page }) => {
+    await page.goto(`/design-system.html?theme=${theme}`);
+    const shell = page.locator('[data-screen-shell]');
+    const copy = page.getByTestId('default-copy');
+    const action = page.getByRole('button', { name: 'Start conversation' });
+    const field = page.getByTestId('field-default');
+    await expect(shell).toHaveCSS('background-color', kasselSurface);
+    await expect(copy).toHaveCSS('font-family', /Inter/);
+    await expect(action).toHaveCSS('background-color', 'rgb(36, 100, 165)');
+
+    await page.evaluate(() => { document.documentElement.dataset.brand = 'ssf'; });
+
+    await expect(shell).toHaveCSS('background-color', ssfSurface);
+    await expect(copy).toHaveCSS('font-family', /Hanken Grotesk.*Noto Sans Arabic/);
+    await expect(action).toHaveCSS('background-color', 'rgb(245, 130, 36)');
+    await expect(action).toHaveCSS('color', 'rgb(10, 40, 51)');
+    await expect(field).toHaveCSS('height', '46px');
+  });
+}
+
 for (const theme of ['light', 'dark']) {
   test(`${theme}: single-row account menu paints keyboard focus`, async ({ page }) => {
     await page.goto(`/design-system.html?theme=${theme}&menu=single`);

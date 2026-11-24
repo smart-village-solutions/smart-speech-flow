@@ -1,8 +1,7 @@
-/* Brand accents. BrandProvider (Task 11) sets data-brand on <html>.
-   Source: BRAND_COLORS in the Figma export, App.tsx:26-29. */
+/* BrandProvider sets data-brand on <html>. Shared theme tokens remain the
+   fallback for installations that do not opt into the SSF palette. */
 
-:root,
-html[data-brand='ssf'] {
+:root {
   --ac: #06b6d4;
   --ac-hover: #22d3ee;
   --ac-on: #083344;
@@ -10,6 +9,67 @@ html[data-brand='ssf'] {
   --ac-40: #06b6d466;
   --ac-15: #06b6d426;
   --ac-10: #06b6d41a;
+}
+
+html[data-brand='ssf'] {
+  --font-sans: 'Hanken Grotesk', 'Noto Sans Arabic', system-ui, sans-serif;
+  --font-legacy: var(--font-sans);
+
+  --ac: #f58224;
+  --ac-hover: #ff9b4e;
+  --ac-on: #0a2833;
+  --ac-60: #f5822499;
+  --ac-40: #f5822466;
+  --ac-15: #f5822426;
+  --ac-10: #f582241a;
+
+  --color-black: #0a2833;
+  --surface-page: #ddedf3;
+  --surface-card: #f0f7f9;
+  --surface-panel: #f0f7f9;
+  --surface-field: #f0f7f9;
+  --surface-status: #badce8;
+
+  --fg-strong: #0a2833;
+  --fg-chat: #0a2833;
+  --fg-body: #27353c;
+  --fg-muted: #3d4f58;
+  --fg-consent: #3d4f58;
+  --fg-icon: #566972;
+  --fg-link: #1d6480;
+  --fg-link-hover: #134356;
+  --fg-status: #134356;
+
+  --border-header: #d4dce0;
+  --border-card: #b8c4ca;
+  --border-divider: #d4dce0;
+  --border-field: #566972;
+  --focus-visible-on-light: #1d6480;
+}
+
+html.dark[data-brand='ssf'] {
+  --surface-page: #0a2833;
+  --surface-card: #134356;
+  --surface-panel: #123745;
+  --surface-field: #123745;
+  --surface-code-box: #123745;
+  --surface-status: #134356;
+
+  --fg-strong: #f0f7f9;
+  --fg-chat: #f0f7f9;
+  --fg-body: #ddedf3;
+  --fg-muted: #badce8;
+  --fg-consent: #badce8;
+  --fg-icon: #badce8;
+  --fg-link: #badce8;
+  --fg-link-hover: #ffffff;
+  --fg-status: #ddedf3;
+
+  --border-header: #3d7186;
+  --border-card: #3d7186;
+  --border-divider: #3d7186;
+  --border-field: #83c1d8;
+  --focus-visible: #83c1d8;
 }
 
 html[data-brand='kassel'] {
