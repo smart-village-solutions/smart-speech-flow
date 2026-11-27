@@ -236,6 +236,7 @@ def test_private_request_id_must_be_canonical(strict_service, request_id):
 
 @pytest.mark.asyncio
 async def test_cancelled_gateway_request_stops_after_active_segment(monkeypatch):
+    monkeypatch.setenv("SSF_TEXT_TRANSLATION_ACTIVITY_URL", "https://gateway.test/activity")
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_ENABLED", "1")
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_INTERNAL_TOKEN", "internal-secret")
     monkeypatch.setattr(translation_app, "supported_langs", ["de", "en"])
@@ -292,3 +293,9 @@ async def test_cancelled_gateway_request_stops_after_active_segment(monkeypatch)
                 assert response.status_code == 499
                 assert response.json()["detail"]["code"] == "REQUEST_CANCELLED"
                 assert len(model.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_activity_without_explicit_url_fails_closed(monkeypatch):
+    monkeypatch.delenv("SSF_TEXT_TRANSLATION_ACTIVITY_URL", raising=False)
+    assert await translation_app._strict_activity(None, 1.0, "request-id") is None

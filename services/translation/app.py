@@ -912,10 +912,9 @@ async def translate(request: Request):
 
 async def _strict_activity(request: Request, remaining: float, request_id: str) -> bool | None:
     """Only a successful, typed authoritative response permits dispatch."""
-    url = os.getenv(
-        "SSF_TEXT_TRANSLATION_ACTIVITY_URL",
-        "http://api_gateway:8000/internal/text-translation/activity",
-    )
+    url = os.getenv("SSF_TEXT_TRANSLATION_ACTIVITY_URL", "").strip()
+    if not url:
+        return None
     try:
         response = await request.app.state.strict_http_client.get(
             url,
