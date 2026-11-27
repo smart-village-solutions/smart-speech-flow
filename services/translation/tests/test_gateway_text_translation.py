@@ -23,6 +23,10 @@ from services.translation.tests.test_strict_text import Model, Tokenizer
 def laboratory(monkeypatch):
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_ENABLED", "1")
     monkeypatch.setenv("SSF_TEXT_TRANSLATION_INTERNAL_TOKEN", "integration-secret")
+    monkeypatch.setenv(
+        "SSF_TEXT_TRANSLATION_ACTIVITY_URL",
+        "https://gateway.test/internal/text-translation/activity",
+    )
     monkeypatch.setattr(translation, "m2m_model", Model())
     monkeypatch.setattr(translation, "m2m_tokenizer", Tokenizer())
     monkeypatch.setattr(translation, "tokenizer_lock", threading.Lock())
@@ -51,7 +55,7 @@ def laboratory(monkeypatch):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=gateway), base_url="http://gateway"
             ) as local:
-                return await original_get(local, "/internal/text-translation/activity", **kwargs)
+                return await original_get(local, url, **kwargs)
 
         monkeypatch.setattr(translation.httpx.AsyncClient, "get", callback)
         monkeypatch.setattr(requests, "get", lambda url, **kw: upstream.get("/languages"))
