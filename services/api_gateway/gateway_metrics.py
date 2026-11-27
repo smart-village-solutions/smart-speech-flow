@@ -19,6 +19,7 @@ from .recording.revocation import RevocationMetrics
 from .refinement_metrics import RefinementMetrics
 from .studio_content_metrics import StudioContentMetrics
 from .studio_policy_reads import StudioPolicyReadMetrics
+from .text_translation import TextTranslationMetrics
 from .websocket_monitor import WebSocketMetrics
 from .websocket_polling_routes import polling_dropped_counter
 
@@ -28,6 +29,7 @@ class GatewayMetrics:
     # The registry /metrics serves.
     registry: CollectorRegistry
     requests_total: Counter
+    text_translation: TextTranslationMetrics
     pipeline_admission: PipelineAdmissionMetrics
     refinement: RefinementMetrics
     websocket: WebSocketMetrics
@@ -51,6 +53,7 @@ class GatewayMetrics:
         return cls(
             registry=registry,
             requests_total=requests_total,
+            text_translation=TextTranslationMetrics(registry),
             pipeline_admission=PipelineAdmissionMetrics(registry),
             refinement=RefinementMetrics(registry),
             websocket=WebSocketMetrics(registry),

@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from .studio_login_directory import StudioLoginDirectoryService
     from .studio_runtime_flow import StudioRuntimeFlow
     from .studio_runtime_token import StudioRuntimeTokenProvider
+    from .text_translation import TextTranslationMetrics, TextTranslationService
     from .translation_refiner import BaseTranslationRefiner
     from .websocket import WebSocketManager
     from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
@@ -77,6 +78,7 @@ class GatewayDependencies:
     speech_pipeline: SpeechPipeline
     websocket_monitor: WebSocketMonitor
     oidc_key_cache: OidcKeyCache
+    text_translation: TextTranslationService | None = None
     pipeline_admission: PipelineAdmission | None = None
     quality_telemetry: QualityTelemetry | None = None
     quality_telemetry_exporter: Any = None
@@ -139,6 +141,7 @@ def build_gateway_dependencies(
     audio_storage_metrics: AudioStorageMetrics | None = None,
     retention_worker_metrics: RetentionWorkerMetrics | None = None,
     revocation_metrics: RevocationMetrics | None = None,
+    text_translation_metrics: TextTranslationMetrics | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -189,6 +192,7 @@ def build_gateway_dependencies(
     from .studio_content_metrics import StudioContentMetrics
     from .studio_content_service import StudioContentService
     from .studio_login_directory import login_directory_from_environment
+    from .text_translation import TextTranslationConfig, TextTranslationService
     from .websocket import WebSocketManager
     from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
     from .websocket_polling_routes import TenantPollingStore
@@ -228,6 +232,21 @@ def build_gateway_dependencies(
             metrics=StudioContentMetrics(CollectorRegistry()),
         )
     service_health = ServiceHealthManager()
+    try:
+        text_translation = TextTranslationService(
+            service_health.circuit_breakers["translation"],
+            TextTranslationConfig.from_environment(),
+            background_busy=(
+                (lambda: pipeline_admission.background_busy)
+                if pipeline_admission is not None
+                else None
+            ),
+            metrics=text_translation_metrics,
+        )
+    except ValueError:
+        # Invalid optional laboratory configuration must fail closed without
+        # taking down the conversation gateway.
+        text_translation = None
     speech_pipeline = SpeechPipeline(
         speech=HttpSpeechServices(service_health.circuit_breakers),
         refiner=translation_refiner,
@@ -261,6 +280,7 @@ def build_gateway_dependencies(
         websocket_monitor=websocket_monitor,
         # Empty until the first bearer token, as in a new process.
         oidc_key_cache=OidcKeyCache(),
+        text_translation=text_translation,
         pipeline_admission=pipeline_admission,
         quality_telemetry=quality_telemetry,
         quality_telemetry_exporter=quality_telemetry_exporter,
@@ -348,3 +368,8 @@ def get_oidc_key_cache(connection: HTTPConnection) -> OidcKeyCache:
 
 def get_quality_telemetry(connection: HTTPConnection) -> QualityTelemetry | None:
     return _container(connection).quality_telemetry
+
+
+def get_text_translation_service(connection: HTTPConnection) -> TextTranslationService | None:
+    container = optional_container(connection)
+    return container.text_translation if container is not None else None

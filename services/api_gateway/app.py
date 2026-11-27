@@ -168,6 +168,7 @@ def _build_dependencies(
     metrics: GatewayMetrics = app.state.gateway_metrics
     dependencies = build_gateway_dependencies(
         prometheus_registry=app.state.prometheus_registry,
+        text_translation_metrics=app.state.gateway_metrics.text_translation,
         redis=persistence.redis if persistence is not None else None,
         redis_namespace=persistence.namespace if persistence is not None else "ssf",
         studio_runtime_flow=runtime_flow,
@@ -573,6 +574,8 @@ from .routes import (
     recording_session,
     recording_verifications,
     session,
+    text_translation,
+    translation_activity,
 )
 from .routes.health import router as health_router
 from .routes.metrics import metrics
@@ -585,6 +588,8 @@ async def list_supported_languages() -> Any:
 
 def _include_routes(app: FastAPI) -> None:
     app.include_router(health_router)
+    app.include_router(text_translation.router)
+    app.include_router(translation_activity.router)
     app.include_router(session.router, prefix="/api", tags=["sessions"])
     app.include_router(login.router)
     app.include_router(admin.router, tags=["admin"])
