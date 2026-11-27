@@ -73,6 +73,16 @@ EXPECTED_SURFACE: dict[str, Family] = {
         frozenset(),
     ),
     "gateway_requests_total": ("counter", "Total API Gateway requests", frozenset()),
+    "text_translation_requests_total": (
+        "counter",
+        "Laboratory translation HTTP outcomes",
+        frozenset({"operation", "outcome"}),
+    ),
+    "text_translation_request_seconds": (
+        "histogram",
+        "Laboratory translation HTTP latency",
+        frozenset({"operation"}),
+    ),
     "process_cpu_seconds_total": (
         "counter",
         "Total user and system CPU time spent in seconds.",

@@ -1,4 +1,6 @@
 import asyncio
+import hmac
+import json
 import logging
 import math
 import os
@@ -9,6 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, NoReturn, Optional
 
+import httpx
 import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -19,6 +22,11 @@ from services.resource_metrics import (
     collect_resource_metrics,
     derive_auto_scaling_signal,
     get_system_stats,
+)
+from services.translation.strict_text import (
+    StrictTextEngine,
+    StrictTextError,
+    StrictTextExecutor,
 )
 
 try:
@@ -461,6 +469,9 @@ async def lifespan(app_: Any):
     will actually serve requests, and so tests can construct their own.
     """
     app_.state.translation_admission = TranslationAdmission()
+    app_.state.strict_text_executor = StrictTextExecutor()
+    app_.state.strict_http_client = httpx.AsyncClient()
+    app_.state.legacy_translation_pending = 0
     logger.info(
         "Translation admission control active: limit=%s queue_wait=%ss",
         MAX_CONCURRENT_TRANSLATIONS,
@@ -469,6 +480,8 @@ async def lifespan(app_: Any):
     try:
         yield
     finally:
+        await app_.state.strict_text_executor.close()
+        await app_.state.strict_http_client.aclose()
         app_.state.translation_admission = None
 
 
@@ -592,7 +605,30 @@ async def _run_inference_off_loop(
             _translate_texts, texts, source_lang, target_lang, gen_overrides
         )
 
-    return await admission.run(_translate_texts, texts, source_lang, target_lang, gen_overrides)
+    state = request.app.state
+    state.legacy_translation_pending = getattr(state, "legacy_translation_pending", 0) + 1
+    loop = asyncio.get_running_loop()
+    claim = _SlotClaim()
+
+    def release_priority():
+        state.legacy_translation_pending -= 1
+
+    def legacy_work():
+        if not claim.claim():
+            raise _WorkAbandoned
+        try:
+            return _translate_texts(texts, source_lang, target_lang, gen_overrides)
+        finally:
+            try:
+                loop.call_soon_threadsafe(release_priority)
+            except RuntimeError:
+                pass  # The service loop has already shut down.
+
+    try:
+        return await admission.run(legacy_work)
+    finally:
+        if claim.claim():
+            release_priority()
 
 
 def _busy_response(
@@ -872,3 +908,144 @@ async def translate(request: Request):
         except _DebugResponse as exc:
             return exc.response
         raise
+
+
+async def _strict_activity(request: Request, remaining: float, request_id: str) -> bool | None:
+    """Only a successful, typed authoritative response permits dispatch."""
+    url = os.getenv("SSF_TEXT_TRANSLATION_ACTIVITY_URL", "").strip()
+    if not url:
+        return None
+    try:
+        response = await request.app.state.strict_http_client.get(
+            url,
+            headers={"X-SSF-Lab-Token": os.getenv("SSF_TEXT_TRANSLATION_INTERNAL_TOKEN", "")},
+            timeout=min(1.0, remaining),
+            params={"request_id": request_id},
+        )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+        if (
+            isinstance(payload, dict)
+            and type(payload.get("busy")) is bool
+            and type(payload.get("cancelled")) is bool
+        ):
+            if payload["cancelled"]:
+                raise StrictTextError("REQUEST_CANCELLED", "Request no longer active", 499)
+            return payload["busy"]
+    except (httpx.HTTPError, ValueError, TypeError, RecursionError):
+        return None
+    return None
+
+
+def _strict_error(error: StrictTextError) -> JSONResponse:
+    headers = {"Cache-Control": "no-store"}
+    if error.status == 503:
+        headers["Retry-After"] = "1"
+    detail: Dict[str, Any] = {"code": error.code, "message": error.message}
+    if error.limits is not None:
+        detail["limits"] = error.limits
+    return JSONResponse(
+        {"detail": detail},
+        status_code=error.status,
+        headers=headers,
+    )
+
+
+async def _read_strict_payload(request: Request):
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 65536:
+            raise StrictTextError(
+                "WORK_LIMIT_EXCEEDED",
+                "Request body exceeds limit",
+                413,
+                limits={"max_body_bytes": 65536},
+            )
+    try:
+        payload = json.loads(body)
+    except (ValueError, RecursionError):
+        raise StrictTextError("INVALID_REQUEST", "Invalid JSON payload", 400) from None
+    return payload
+
+
+def _validate_strict_payload(payload):
+    if not isinstance(payload, dict) or set(payload) != {
+        "text",
+        "source_lang",
+        "target_lang",
+        "timeout_seconds",
+        "request_id",
+    }:
+        raise StrictTextError("INVALID_REQUEST", "Invalid request fields", 422)
+    texts, source, target, timeout = (
+        payload[k] for k in ("text", "source_lang", "target_lang", "timeout_seconds")
+    )
+    if (
+        not isinstance(texts, list)
+        or not texts
+        or any(not isinstance(text, str) or not text.strip() for text in texts)
+    ):
+        raise StrictTextError("INVALID_REQUEST", "Text must contain nonblank strings", 422)
+    if len(texts) > 10 or sum(map(len, texts)) > 5000:
+        raise StrictTextError(
+            "WORK_LIMIT_EXCEEDED",
+            "Input exceeds text limits",
+            413,
+            limits={"max_items": 10, "max_characters": 5000},
+        )
+    if type(timeout) not in (float, int) or not 0 < timeout <= 30 or not math.isfinite(timeout):
+        raise StrictTextError("INVALID_REQUEST", "Invalid remaining deadline", 422)
+    if (
+        type(source) is not str
+        or type(target) is not str
+        or source not in supported_langs
+        or target not in supported_langs
+    ):
+        raise StrictTextError("INVALID_REQUEST", "Unsupported language", 422)
+    request_id = payload["request_id"]
+    if not isinstance(request_id, str) or re.fullmatch(r"[0-9a-f]{32}", request_id) is None:
+        raise StrictTextError("INVALID_REQUEST", "Invalid private request identifier", 422)
+    return texts, source, target, timeout, request_id
+
+
+@app.post("/translate/text")
+async def translate_strict_text(request: Request):
+    """Private adapter; the gateway owns anonymous access and queueing."""
+    token = os.getenv("SSF_TEXT_TRANSLATION_INTERNAL_TOKEN", "")
+    if os.getenv("SSF_TEXT_TRANSLATION_ENABLED", "0") != "1" or not token:
+        return _strict_error(StrictTextError("UNAVAILABLE", "Text translation disabled", 503))
+    if not hmac.compare_digest(request.headers.get("X-SSF-Lab-Token", "").encode(), token.encode()):
+        return _strict_error(StrictTextError("FORBIDDEN", "Internal token required", 403))
+    try:
+        payload = await _read_strict_payload(request)
+        texts, source, target, timeout, request_id = _validate_strict_payload(payload)
+        if not model_loaded or m2m_model is None or m2m_tokenizer is None:
+            raise StrictTextError("UNAVAILABLE", "Translation model unavailable", 503)
+        if source == target:
+            return JSONResponse({"translations": texts}, headers={"Cache-Control": "no-store"})
+        admission = _resolve_admission(request)
+        executor = getattr(request.app.state, "strict_text_executor", None)
+        if admission is None or executor is None:
+            raise StrictTextError("UNAVAILABLE", "Translation scheduling unavailable", 503)
+        engine = StrictTextEngine(m2m_tokenizer, m2m_model, tokenizer_lock, device)
+        outputs = await executor.run(
+            engine,
+            texts,
+            source,
+            target,
+            float(timeout),
+            admission,
+            lambda remaining: _strict_activity(request, remaining, request_id),
+            lambda: getattr(request.app.state, "legacy_translation_pending", 0),
+        )
+        return JSONResponse({"translations": outputs}, headers={"Cache-Control": "no-store"})
+    except StrictTextError as error:
+        return _strict_error(error)
+    except TranslationBusyError:
+        return _strict_error(
+            StrictTextError("SYSTEM_BUSY", "Translation scheduling unavailable", 503)
+        )
+    except (RuntimeError, ValueError, TypeError, AttributeError, KeyError, OSError):
+        return _strict_error(StrictTextError("INCOMPLETE_TRANSLATION", "Translation failed", 502))

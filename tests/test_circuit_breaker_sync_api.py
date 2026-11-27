@@ -421,3 +421,18 @@ class TestHalfOpenAdmitsOneProbe:
         time.sleep(0.25)
         with breaker.guard():
             pass  # the window reopened on its own
+
+
+def test_background_guard_cannot_consume_conversation_recovery_probe():
+    breaker = CircuitBreaker(
+        "translation", CircuitBreakerConfig(failure_threshold=1, recovery_timeout=1)
+    )
+    breaker.record_failure("test fault")
+    breaker.next_attempt_time = 0
+    with pytest.raises(CircuitBreakerOpenError):
+        with breaker.guard(allow_recovery=False):
+            pytest.fail("background call must not reserve a recovery probe")
+    assert breaker.state is CircuitState.OPEN
+    with breaker.guard():
+        breaker.record_success(0.1)
+    assert breaker.state in (CircuitState.HALF_OPEN, CircuitState.CLOSED)

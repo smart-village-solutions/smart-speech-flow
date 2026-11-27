@@ -96,6 +96,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Apply rate limiting before the request reaches the endpoint."""
+        # The lab facade has its own bounded caller limiter and error contract.
+        # Its authenticated activity polling must not consume a shared client
+        # quota or turn a busy conversation into an unavailable activity signal.
+        if request.url.path in {
+            "/api/v1/translate",
+            "/api/v1/languages",
+            "/internal/text-translation/activity",
+        }:
+            return await call_next(request)
         session_key = self._session_message_key(request)
         if session_key:
             allowed, retry_after = await self.message_limiter.check(session_key)

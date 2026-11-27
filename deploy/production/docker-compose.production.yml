@@ -49,6 +49,10 @@ services:
   translation:
     expose:
     - '8000'
+    environment:
+    - SSF_TEXT_TRANSLATION_ENABLED=${SSF_TEXT_TRANSLATION_ENABLED:-0}
+    - SSF_TEXT_TRANSLATION_INTERNAL_TOKEN=${SSF_TEXT_TRANSLATION_INTERNAL_TOKEN:-}
+    - SSF_TEXT_TRANSLATION_ACTIVITY_URL=http://api_gateway:8000/internal/text-translation/activity
     volumes:
     - ../../models:/models
     deploy:
@@ -121,6 +125,10 @@ services:
     - CLIENT_BASE_URL=https://dialog.kassel.de
     - SSF_AUDIO_BASE_DIR=/tmp/audio
     - ENABLE_PIPELINE_METADATA=true
+    - SSF_TEXT_TRANSLATION_ENABLED=${SSF_TEXT_TRANSLATION_ENABLED:-0}
+    - SSF_TEXT_TRANSLATION_INTERNAL_TOKEN=${SSF_TEXT_TRANSLATION_INTERNAL_TOKEN:-}
+    - SSF_TEXT_TRANSLATION_API_KEY=${SSF_TEXT_TRANSLATION_API_KEY:-}
+    - SSF_TEXT_TRANSLATION_LANGUAGES=${SSF_TEXT_TRANSLATION_LANGUAGES:-de,en,fr,es,ar,tr}
     # Bounds concurrent GPU pipeline work. Set here, not left to the code
     # default, so the limit production runs on can be tuned from the env file
     # without a gateway build. Five is measured on this card (2026-09-24):

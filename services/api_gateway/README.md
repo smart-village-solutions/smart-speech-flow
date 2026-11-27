@@ -1,5 +1,111 @@
 # API Gateway Service
 
+## Shared-key laboratory text translation
+
+The optional synchronous laboratory API provides `POST /api/v1/translate` and
+`GET /api/v1/languages` with a fixed shared API key and no Keycloak login or per-user key management.
+It is disabled by default.
+To opt in, set `SSF_TEXT_TRANSLATION_ENABLED=1` and configure the same nonempty
+`SSF_TEXT_TRANSLATION_INTERNAL_TOKEN` in the gateway and translation service.
+Generate a private random token, for example with `openssl rand -hex 32`.
+The internal token authenticates service-to-service calls and must never be
+sent to API clients. Separately generate and store one fixed client key in the
+host's protected `.env` as `SSF_TEXT_TRANSLATION_API_KEY`. On the deployed host,
+the operator copy is `/etc/ssf/text-translation-api-key` (root-only). Both public endpoints
+require that key in `X-API-Key`; missing or incorrect keys return 401
+`INVALID_API_KEY` before rate accounting or inference. An enabled installation
+without a configured client key fails closed with 503. Client keys are never
+accepted in query parameters or JSON fields. Changing the key requires updating
+the server environment and recreating only the gateway.
+
+```bash
+curl http://localhost:8000/api/v1/translate \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $SSF_API_KEY" \
+  --data '{"text":["Guten Tag.","Bitte bringen Sie Ihren Ausweis mit."],"source_lang":"de","target_lang":"en"}'
+```
+
+The response has one `{"text": "..."}` object per input in `translations`,
+followed by `source_lang` and `target_lang`. Source language is mandatory.
+`GET /api/v1/languages` returns `{"languages": [...]}` from the installed model
+intersected with `SSF_TEXT_TRANSLATION_LANGUAGES` (default
+`de,en,fr,es,ar,tr`). These are translation capabilities, not the guest UI or
+TTS language list. Unknown fields and generation/debug options are rejected.
+
+An input array contains 1–10 nonblank strings totaling at most 5,000 Unicode
+code points, counting original whitespace. The HTTP body is limited to 64 KiB.
+One API request runs at a time and up to four wait in memory; a 30-second total
+deadline includes queueing. Caller rate is limited to six requests per minute
+with bounded client tracking. Caller identity uses the server's resolved socket
+address, not arbitrary forwarded headers. Configure trusted proxy handling at
+the server boundary if individual client IP limits are needed behind a proxy;
+otherwise those callers share the proxy's allowance.
+
+Long text is split using the actual model tokenizer, preserving paragraph
+separators. Incomplete output triggers bounded subdivision, never successful
+delivery of a knowingly capped translation. The whole request succeeds or
+fails; no partial result array is returned. Identical supported languages
+return the original text without inference. Content is not added to session
+history, Redis, application content logs or analytics. Responses use
+`Cache-Control: no-store`.
+
+The strict engine starts with a 256-token segment target, including special
+tokens, and at most 256 generated tokens per attempt, further bounded by the
+installed encoder/decoder capacities. A request allows at most 64 planned and
+recovery segments, 96 attempts, eight subdivision levels and 8,192 reserved
+output tokens across attempts. These conservative finite defaults are tuning
+candidates, not measured GPU throughput guarantees.
+
+Set `SSF_API_KEY` to the shared client key supplied separately by the operator.
+
+Expected failures have `{"error":{"code":"...","message":"..."}}` with
+`limits` where applicable: 400 malformed JSON, 401 missing/invalid API key, 422 invalid fields/languages,
+413 size or preflight work limit, 429 rate limit, 503 unavailable/full queue,
+504 processing deadline, and 502 malformed or incomplete upstream output. Rate and
+capacity rejections include `Retry-After`. Capacity failures use the stable
+error code `SYSTEM_BUSY` with HTTP 503, including expiry while waiting for
+conversation priority. Rate rejections use `RATE_LIMIT_EXCEEDED` with HTTP 429.
+
+For example, a full queue returns:
+
+```http
+HTTP/1.1 503 Service Unavailable
+Retry-After: 1
+Cache-Control: no-store
+Content-Type: application/json
+
+{"error":{"code":"SYSTEM_BUSY","message":"Translation queue is full."}}
+```
+
+Conversation work takes priority. Before each background segment, the
+translation service checks the authenticated internal
+`/internal/text-translation/activity` endpoint at
+`SSF_TEXT_TRANSLATION_ACTIVITY_URL` (Compose supplies the gateway address).
+Queued and executing conversation pipelines count as busy, including a worker
+that continues after its HTTP waiter disconnects. This covers ASR, translation,
+refinement and TTS. Unknown activity blocks new background work. An idle open
+session does not block it. Legacy translation work also takes precedence at
+the translation service. Activity is checked again in the inference worker
+after executor waiting. Private ephemeral cancellation references allow the
+service to stop subsequent segments after the API caller disconnects; unknown
+references stop processing. These references are not exposed as public jobs.
+An API segment already dispatched is allowed to finish;
+shared GPU hardware does not provide a guarantee of unchanged conversation
+latency.
+
+This V1 scheduling model supports one gateway process and one translation
+scheduler. Do not enable independent replicas without coordinating activity
+and admission. Queue entries and partial results disappear on restart or
+expiry; there are no job IDs, polling endpoints or durable jobs. Sustained
+conversation traffic may expire laboratory requests intentionally.
+
+The owner waived a dedicated load test on 2026-11-17 for rare laboratory use,
+based on stable observed server utilization and sufficient capacity. No mixed-load
+benchmark was performed. Queue bounds, conversation priority and work limits
+remain enforced; additional performance tuning is optional if actual usage
+requires it. Roll back by disabling the feature in both services; conversation
+routes and the internal legacy translation contract remain available.
+
 ## Studio runtime configuration contract v2
 
 The gateway reads one tenant's runtime configuration from Studio's

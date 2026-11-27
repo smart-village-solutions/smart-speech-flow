@@ -237,6 +237,8 @@ class PipelineAdmission:
         self._config = config or PipelineAdmissionConfig()
         self._metrics = metrics
         self._in_flight = 0
+        self._activity_lock = threading.Lock()
+        self._activity = 0
         # Only meaningful when the bound is enabled; sized once so the limit
         # cannot drift from the configuration it was built with.
         self._semaphore = asyncio.Semaphore(max(1, self._config.max_concurrent))
@@ -253,7 +255,42 @@ class PipelineAdmission:
     def in_flight(self) -> int:
         return self._in_flight
 
+    @property
+    def background_busy(self) -> bool:
+        """Whether queued or executing conversation work must pause lab work."""
+        with self._activity_lock:
+            return self._activity > 0
+
+    def _finish_activity(self) -> None:
+        with self._activity_lock:
+            self._activity -= 1
+
     async def run[T](self, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+        """Track conversation activity through the actual worker's lifetime.
+
+        Activity includes admission waiting and remains active after a cancelled
+        HTTP waiter if the pipeline thread is still running, even when the
+        concurrency bound is disabled.
+        """
+        with self._activity_lock:
+            self._activity += 1
+        claim = _SlotClaim()
+
+        def active() -> T:
+            if not claim.claim():
+                raise _WorkAbandoned
+            try:
+                return func(*args, **kwargs)
+            finally:
+                self._finish_activity()
+
+        try:
+            return await self._run(active)
+        finally:
+            if claim.claim():
+                self._finish_activity()
+
+    async def _run[T](self, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
         """Runs a synchronous pipeline function on a worker thread under the bound.
 
         Raises ``PipelineBusyError`` if no slot comes free within the configured

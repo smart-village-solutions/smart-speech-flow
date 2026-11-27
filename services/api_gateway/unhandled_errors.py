@@ -38,14 +38,17 @@ class UnhandledErrorMiddleware:
             await self.app(scope, receive, tracking_send)
         except Exception as error:
             if not started:
+                headers = [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(_BODY)).encode()),
+                ]
+                if scope.get("path") in {"/api/v1/translate", "/api/v1/languages"}:
+                    headers.append((b"cache-control", b"no-store"))
                 await send(
                     {
                         "type": "http.response.start",
                         "status": 500,
-                        "headers": [
-                            (b"content-type", b"application/json"),
-                            (b"content-length", str(len(_BODY)).encode()),
-                        ],
+                        "headers": headers,
                     }
                 )
                 await send({"type": "http.response.body", "body": _BODY})

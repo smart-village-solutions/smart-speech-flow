@@ -63,6 +63,10 @@ services:
       # using translation_queue_wait_seconds and translation_rejected_total.
       - MAX_CONCURRENT_TRANSLATIONS=${MAX_CONCURRENT_TRANSLATIONS:-2}
       - TRANSLATION_QUEUE_WAIT_SECONDS=${TRANSLATION_QUEUE_WAIT_SECONDS:-25.0}
+      # Opt-in laboratory facade; use the same private callback token in both services.
+      - SSF_TEXT_TRANSLATION_ENABLED=${SSF_TEXT_TRANSLATION_ENABLED:-0}
+      - SSF_TEXT_TRANSLATION_INTERNAL_TOKEN=${SSF_TEXT_TRANSLATION_INTERNAL_TOKEN:-}
+      - SSF_TEXT_TRANSLATION_ACTIVITY_URL=http://api_gateway:8000/internal/text-translation/activity
     volumes:
       - ./models:/models
     deploy:
@@ -142,6 +146,10 @@ services:
       - CLIENT_BASE_URL=https://translate.smart-village.solutions
       - SSF_AUDIO_BASE_DIR=/tmp/audio
       - ENABLE_PIPELINE_METADATA=true
+      - SSF_TEXT_TRANSLATION_ENABLED=${SSF_TEXT_TRANSLATION_ENABLED:-0}
+      - SSF_TEXT_TRANSLATION_INTERNAL_TOKEN=${SSF_TEXT_TRANSLATION_INTERNAL_TOKEN:-}
+      - SSF_TEXT_TRANSLATION_API_KEY=${SSF_TEXT_TRANSLATION_API_KEY:-}
+      - SSF_TEXT_TRANSLATION_LANGUAGES=${SSF_TEXT_TRANSLATION_LANGUAGES:-de,en,fr,es,ar,tr}
       # LLM Refinement Configuration
       - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
       # No default here: an explicit default would always win over the

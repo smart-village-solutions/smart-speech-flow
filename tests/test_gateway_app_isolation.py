@@ -40,6 +40,7 @@ CONTAINER_BUILT = (
     "service_health",
     "circuit_breaker_client",
     "speech_pipeline",
+    "text_translation",
     "pipeline_admission",
     "quality_telemetry",
     "quality_telemetry_exporter",
